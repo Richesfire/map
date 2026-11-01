@@ -577,6 +577,14 @@ func _on_travel(target_dir: Vector3) -> void:
 
 	print("[TravelTrace] 闭眼完成，开始重建")
 	map.travel_to(target_dir, 1)
+
+	# 传送只同步建了中心 1 块地（±500m）。玩家原来的 x/z 可能离旧中心 1km 以上，
+	# 沿用就会直接站到新地块外面 —— 那里没有碰撞，一睁眼就往下掉。
+	# 所以把人拉回新地图中心，再贴地。
+	if player != null:
+		player.position = Vector3(0.0, player.position.y, 0.0)
+	if horse != null:
+		horse.position = Vector3(0.0, horse.position.y, 0.0)
 	if _minimap != null:
 		_minimap.refresh()
 	await get_tree().process_frame
@@ -614,9 +622,11 @@ func _on_travel(target_dir: Vector3) -> void:
 func _test_travelto() -> void:
 	var c0 := map.region_center_dir
 	print("[TravelTest] 出发: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c0).x, GeoSphere.dir_to_lonlat(c0).y, map.biome.biome_at(c0)])
-	var target := GeoSphere.lonlat_to_dir(-60.0, -5.0)
+	player.position = Vector3(1400.0, player.position.y, 900.0)   # 故意离中心很远
+	print("[FARTEST] 传送前 local=(%.0f, %.0f)" % [player.position.x, player.position.z])
+	var target := GeoSphere.lonlat_to_dir(30.0, 10.0)
 	print("[TravelTest] 目标: %.2f,%.2f  群系=%s" % [-60.0, -5.0, map.biome.biome_at(target)])
-	map.travel_to(target, 1)
+	await _on_travel(target)
 	await get_tree().process_frame
 	var c1 := map.region_center_dir
 	print("[TravelTest] 抵达: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c1).x, GeoSphere.dir_to_lonlat(c1).y, map.biome.biome_at(c1)])
