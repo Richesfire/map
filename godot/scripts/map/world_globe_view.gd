@@ -38,11 +38,11 @@ var _loading: Label
 
 var _zoom := 1.0             # 滚轮缩放 0.6~2.6
 const STATE_PATH := "user://globe_view.cfg"
-var _spin := 0.0             # 绕地轴自转（弧度）
+var _spin_q := Quaternion.IDENTITY   # 球的朝向（四元数，任意方向都能转）
 var _orbit_q := Quaternion.IDENTITY   # 相机环绕（四元数，任意角度都不会卡死）
 var _save_timer := 0.0
 var _tilt := 0.0             # 前后倾（弧度，限幅）
-var _pivot_base_tilt := deg_to_rad(23.4)   # 真地球仪的地轴倾角，底座和环都跟着倾
+var _pivot_base_tilt := 0.0   # 不要地球仪造型了：球自由滚动，没有固定轴
 
 
 func _ready() -> void:
@@ -108,7 +108,7 @@ func _build_scene() -> void:
 	root.add_child(_cam)
 
 	# ---- 底座 + 子午环（静止，不跟球转）
-	_build_stand(root)
+	# _build_stand(root)   # 不要地球仪造型了，架子和环会穿帮
 
 	# ---- 可转的球
 	_tilt_node = Node3D.new()
@@ -228,23 +228,15 @@ func _apply_size() -> void:
 # ================================================================ 转动
 ## 只转球体本身：水平拖 = 绕极轴自转，竖直拖 = 前后倾（限幅）
 func rotate_by(rel: Vector2) -> void:
-	# 只绕地轴自转。上下拖动不再让球前后倒 ——
-	# 那样会让北纬 20 度看起来"掉到南半球"，很反直觉。
-	_spin += rel.x * 0.006
+	# 球体自由滚动：横竖两个方向都转，累乘四元数，所以能翻到任意姿态。
+	var qy := Quaternion(Vector3.UP, rel.x * 0.006)
+	var qx := Quaternion(Vector3.RIGHT, rel.y * 0.006)
+	_spin_q = (qy * qx * _spin_q).normalized()
 	_apply_rotation()
 	_save_state_later()
 
 
-## 滚轮缩放：滚轮上 = 放大
-func zoom_by(steps: float) -> void:
-	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 2.6)
-	# 只改 FOV，不碰相机位置。
-	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
-	#   又会把环绕角度冲掉，等于缩放一下视角就归位了。）
-	_apply_orbit()
-	_save_state_later()
-
-
+## 空白处拖动：绕着球转相机（球不动，等于换个角度看）
 ## 屏幕坐标 -> 球面上的地理方向；没打中球返回 Vector3.ZERO
 func pick(point: Vector2) -> Vector3:
 	if _cam == null or _pivot == null:
@@ -269,6 +261,11 @@ func pick(point: Vector2) -> Vector3:
 ## 把一个"在球背面看不见"的方向，投到球的轮廓边缘。
 ## 用方向在屏幕平面上的分量决定贴哪一边 —— 所以转动时它会沿着边缘滑动，
 ## 从左边贴着走、走过中线就自然换到右边，不会跳。
+
+
+## 把一个"在球背面看不见"的方向，投到球的轮廓边缘。
+## 用方向在屏幕平面上的分量决定贴哪一边 —— 所以转动时它会沿着边缘滑动，
+## 从左边贴着走、走过中线就自然换到右边，不会跳。
 func edge_point(dir: Vector3) -> Vector2:
 	if _cam == null or _pivot == null:
 		return Vector2.ZERO
@@ -285,11 +282,26 @@ func edge_point(dir: Vector3) -> Vector2:
 	return center + v2.normalized() * radius
 
 
+## 滚轮缩放：滚轮上 = 放大
+func zoom_by(steps: float) -> void:
+	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 2.6)
+	# 只改 FOV，不碰相机位置。
+	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
+	#   又会把环绕角度冲掉，等于缩放一下视角就归位了。）
+	_apply_orbit()
+	_save_state_later()
+
+
+## 屏幕坐标 -> 球面上的地理方向；没打中球返回 Vector3.ZERO
+
+
 func get_camera_z() -> float:
 	return _cam.position.z if _cam != null else 0.0
 
 
 ## 空白处拖动：绕着球转相机（球不动，等于换个角度看）
+
+
 func orbit_by(rel: Vector2) -> void:
 	# 用四元数累乘，而不是 yaw/pitch 两个欧拉角：
 	# 欧拉角一到 ±90° 就会万向锁（转到极点就翻不动了），四元数没有这个问题。
@@ -320,7 +332,7 @@ func _apply_orbit() -> void:
 
 func save_state() -> void:
 	var cfg := ConfigFile.new()
-	cfg.set_value("globe", "spin", _spin)
+	cfg.set_value("globe", "spin_q", [_spin_q.x, _spin_q.y, _spin_q.z, _spin_q.w])
 	cfg.set_value("globe", "orbit_q", [_orbit_q.x, _orbit_q.y, _orbit_q.z, _orbit_q.w])
 	cfg.set_value("globe", "zoom", _zoom)
 	cfg.save(STATE_PATH)
@@ -330,7 +342,9 @@ func load_state() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(STATE_PATH) != OK:
 		return
-	_spin = float(cfg.get_value("globe", "spin", _spin))
+	var sv: Array = cfg.get_value("globe", "spin_q", [])
+	if sv.size() == 4:
+		_spin_q = Quaternion(sv[0], sv[1], sv[2], sv[3]).normalized()
 	var qv: Array = cfg.get_value("globe", "orbit_q", [])
 	if qv.size() == 4:
 		_orbit_q = Quaternion(qv[0], qv[1], qv[2], qv[3]).normalized()
@@ -356,17 +370,14 @@ func _apply_rotation() -> void:
 	if _pivot == null or _tilt_node == null:
 		return
 	# 分成两级：倾角绕世界 X，自转绕自身 Y，两者不互相污染
-	pass  # 倾角固定为地轴倾角，不再随拖拽变化
-	_pivot.rotation = Vector3(0.0, _spin, 0.0)
+	_pivot.basis = Basis(_spin_q)
 
 
 ## 让某个地理方向正对镜头
 func face_direction(dir: Vector3) -> void:
 	var p := dir.normalized()
-	# 球体应用的是 R_y(spin)：把 p 的水平分量转到 +Z（镜头方向）就是 spin = -atan2(x, z)
-	_spin = -atan2(p.x, p.z)
-	# 不做纬度倾斜：地球仪要竖着，赤道保持水平
-	_tilt = 0.0
+	# 自由滚动之后，"正对镜头"就是绕竖轴把 p 转到前方
+	_spin_q = Quaternion(Vector3.UP, -atan2(p.x, p.z))
 	_apply_rotation()
 
 
