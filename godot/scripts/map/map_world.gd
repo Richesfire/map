@@ -47,6 +47,25 @@ var _prop_material: StandardMaterial3D
 var _prop_meshes: Dictionary = {}
 var _built := false
 var biome: BiomeMap
+
+## 地表染色（和地球仪上那套同源，只是压淡一些，免得地面过饱和）
+const BIOME_TINTS := {
+	"ocean": Color(0.35, 0.55, 0.85),
+	"ice": Color(0.95, 0.97, 1.00),
+	"tundra": Color(0.72, 0.76, 0.68),
+	"alpine": Color(0.86, 0.86, 0.84),
+	"mountain": Color(0.78, 0.74, 0.68),
+	"hills": Color(0.86, 0.92, 0.78),
+	"forest": Color(0.62, 0.78, 0.58),
+	"jungle": Color(0.48, 0.72, 0.42),
+	"savanna": Color(1.02, 0.98, 0.66),
+	"steppe": Color(1.00, 0.96, 0.72),
+	"desert": Color(1.18, 1.04, 0.72),
+	"badland": Color(1.05, 0.98, 0.88),
+	"marsh": Color(0.66, 0.80, 0.68),
+	"plain": Color(0.92, 1.00, 0.88),
+	"inland_water": Color(0.45, 0.65, 0.90),
+}
 var _biome_parts: Dictionary = {}
 var _tiles_x := 0
 var _tiles_z := 0
@@ -280,6 +299,7 @@ func _spawn_tile(i: int, j: int, do_scatter: bool, deferred: bool = false) -> Te
 	var tile := TerrainTile.new()
 	tile.biome_id = bid
 	tile.biome_parts = _biome_parts.get(bid, {})
+	tile.biome_color = BIOME_TINTS.get(bid, Color.WHITE)
 	tile.ground_material = _ground_material
 	tile.prop_material = _prop_material
 	tile.prop_meshes = _prop_meshes

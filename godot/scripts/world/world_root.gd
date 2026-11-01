@@ -128,10 +128,10 @@ func _process(_delta: float) -> void:
 ## 否则光标被游戏抓着，桌面上的鼠标会"消失"
 func _notification(what: int) -> void:
 	match what:
-		NOTIFICATION_APPLICATION_FOCUS_OUT:
+		NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		NOTIFICATION_APPLICATION_FOCUS_IN:
+		NOTIFICATION_APPLICATION_FOCUS_IN, NOTIFICATION_WM_WINDOW_FOCUS_IN:
 			if not _soul and not _map_open and player != null:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 

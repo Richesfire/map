@@ -47,6 +47,7 @@ var u_center := 0.0
 var v_center := 0.0
 var build_scatter := true
 var biome_id := "plain"
+var biome_color := Color.WHITE
 var biome_parts: Dictionary = {}      # kind -> [零件编号]
 
 ## 本格的球面地址 (face, x, y)
@@ -227,7 +228,7 @@ func _commit_mesh() -> void:
 	else:
 		_ground = MeshInstance3D.new()
 		_ground.name = "Ground"
-		_ground.material_override = ground_material
+		_ground.material_override = _make_tinted_material()
 		add_child(_ground)
 		_ground.mesh = mesh
 
@@ -632,3 +633,12 @@ static func _hash01(x: int, y: int, salt: int) -> float:
 	h = ((h ^ (h >> 13)) * 1274126177) & 0x7FFFFFFF
 	h = h ^ (h >> 16)
 	return float(h & 0xFFFF) / 65535.0
+
+
+## 每块地一份材质实例，只为了给 biome_tint 传不同的颜色。
+func _make_tinted_material() -> Material:
+	if ground_material is ShaderMaterial:
+		var m := (ground_material as ShaderMaterial).duplicate() as ShaderMaterial
+		m.set_shader_parameter("biome_tint", biome_color)
+		return m
+	return ground_material

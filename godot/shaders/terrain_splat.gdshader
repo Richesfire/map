@@ -33,6 +33,10 @@ uniform float tri_scale = 0.16;
 uniform float tri_sharpness = 4.0;
 
 // 调试：只看白膜（策划总纲里"地形（白膜地形）"那一步）
+// 生物群系染色：整体乘上去，配合地表纹理把草原/沙漠/冰原区分开
+uniform vec3 biome_tint : source_color = vec3(1.0, 1.0, 1.0);
+uniform float biome_tint_strength = 1.0;
+
 uniform bool show_white_model = false;
 uniform vec3 white_color : source_color = vec3(0.84, 0.84, 0.82);
 
@@ -96,6 +100,7 @@ void fragment() {
 		col = white_color;
 	}
 
+	col = mix(col, col * biome_tint, biome_tint_strength);
 	ALBEDO = col;
 	ROUGHNESS = 0.94;
 	SPECULAR = 0.16;
