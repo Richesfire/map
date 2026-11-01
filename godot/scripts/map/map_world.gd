@@ -50,21 +50,21 @@ var biome: BiomeMap
 
 ## 地表染色（和地球仪上那套同源，只是压淡一些，免得地面过饱和）
 const BIOME_TINTS := {
-	"ocean": Color(0.35, 0.55, 0.85),
-	"ice": Color(0.95, 0.97, 1.00),
-	"tundra": Color(0.72, 0.76, 0.68),
-	"alpine": Color(0.86, 0.86, 0.84),
-	"mountain": Color(0.78, 0.74, 0.68),
-	"hills": Color(0.86, 0.92, 0.78),
-	"forest": Color(0.62, 0.78, 0.58),
-	"jungle": Color(0.48, 0.72, 0.42),
-	"savanna": Color(1.02, 0.98, 0.66),
-	"steppe": Color(1.00, 0.96, 0.72),
-	"desert": Color(1.18, 1.04, 0.72),
-	"badland": Color(1.05, 0.98, 0.88),
-	"marsh": Color(0.66, 0.80, 0.68),
-	"plain": Color(0.92, 1.00, 0.88),
-	"inland_water": Color(0.45, 0.65, 0.90),
+	"ocean": Color(0.25, 0.42, 0.62),
+	"ice": Color(0.93, 0.96, 1.00),
+	"tundra": Color(0.52, 0.56, 0.50),
+	"alpine": Color(0.72, 0.74, 0.74),
+	"mountain": Color(0.52, 0.50, 0.45),
+	"hills": Color(0.52, 0.64, 0.38),
+	"forest": Color(0.34, 0.52, 0.30),
+	"jungle": Color(0.26, 0.50, 0.24),
+	"savanna": Color(0.80, 0.75, 0.46),
+	"steppe": Color(0.74, 0.70, 0.44),
+	"desert": Color(0.88, 0.78, 0.55),
+	"badland": Color(0.80, 0.75, 0.68),
+	"marsh": Color(0.42, 0.52, 0.40),
+	"plain": Color(0.55, 0.72, 0.40),
+	"inland_water": Color(0.30, 0.48, 0.62),
 }
 var _biome_parts: Dictionary = {}
 var _tiles_x := 0

@@ -103,7 +103,7 @@ void fragment() {
 	// 相乘只能压暗，压不出雪地/沙漠这种换色。
 	// 这里按亮度把地面往目标色上拉：亮度提供细节，目标色提供色相。
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
-	vec3 tinted = biome_tint * (0.55 + 0.75 * lum);
+	vec3 tinted = biome_tint * (0.28 + 1.15 * lum);
 	col = mix(col, tinted, biome_tint_strength);
 	ALBEDO = col;
 	ROUGHNESS = 0.94;

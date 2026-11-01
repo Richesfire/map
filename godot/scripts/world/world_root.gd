@@ -17,7 +17,7 @@ extends Node3D
 ## ==============================================================
 
 ## 每次改完都改这个，用来确认你运行的到底是不是最新代码
-const BUILD_TAG := "2026-11-01 19:35 地形换色修正"
+const BUILD_TAG := "2026-11-01 19:55 配色重做+撤掉每帧抢鼠标"
 
 @export_group("地图")
 @export var start_lon := 108.71
@@ -113,8 +113,8 @@ func _process(_delta: float) -> void:
 	# 外部程序（QQ 截图、输入法、录屏）会把鼠标从游戏手里抢走，
 	# 还回来时 Godot 不会自动重捕 —— 表现就是鼠标撞边、视角不能无限转。
 	# 所以每帧核对一次：该捕获却没收回来，就重新捕获。
-	if _want_capture() and get_window().has_focus() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# 不再每帧重捕：那会和 QQ 截图等外部工具抢鼠标，导致它们退不出去。
+	# 恢复捕获放在「获得焦点」和「在窗口内按下鼠标」这两处（见 _notification / _input）。
 
 	# 坠落救援：只在**真的掉下去了**（低于地表 20m）才介入。
 	# 之前用 0.8m 做"实时纠正"是错的：粗版还没建碰撞的那几帧会反复触发，
@@ -280,6 +280,9 @@ func _build_hint() -> void:
 
 # ================================================================ 输入
 func _input(event: InputEvent) -> void:
+	# 点击窗口时把鼠标捕获拿回来（不每帧抢，避免打死外部截图工具）
+	if event is InputEventMouseButton and event.pressed and _want_capture() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if not (event is InputEventKey):
 		return
 	var k := event as InputEventKey
