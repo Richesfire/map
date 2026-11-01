@@ -394,7 +394,10 @@ func build_world_texture() -> void:
 ## 而我们的经纬约定是 x=cos(lat)cos(lon), z=-cos(lat)sin(lon)，代入得 atan2 = lon + 90°，
 ## 所以 uv.x = 1 - (lon + 90)/360，反解即可。
 static func _lon_of_x(x: int) -> float:
-	var u := 1.0 - (float(x) + 0.5) / float(TEX_W)
+	# Godot SphereMesh：x = sin(u·2π)·w, z = cos(u·2π)·w, uv = (u, v)
+	# 我们的经纬约定 x = cos(lat)cos(lon), z = -cos(lat)sin(lon)
+	# 代入得 u = (lon + 90) / 360 —— 之前多写了个 1.0 - u，整张图东西镜像了。
+	var u := (float(x) + 0.5) / float(TEX_W)
 	return u * 360.0 - 90.0
 
 
