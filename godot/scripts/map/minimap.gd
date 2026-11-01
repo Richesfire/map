@@ -329,6 +329,22 @@ func get_dialog() -> WorldMapDialog:
 	return _dialog
 
 
+## 在进入游戏的黑屏期间把地球仪和它的贴图先建好，
+## 这样第一次按 M 是瞬间打开的。
+func prewarm_world_map() -> void:
+	if world == null:
+		return
+	open_world_map()
+	var dlg := get_dialog()
+	if dlg != null:
+		# 等地球贴图生成完（open() 内部是协程）
+		for i in 400:
+			await get_tree().process_frame
+			if dlg.is_ready_for_map():
+				break
+	close_world_map()
+
+
 func close_world_map() -> void:
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.close()

@@ -28,6 +28,7 @@ var _dragging := false
 var _built := false
 var _target_dir := Vector3.ZERO
 var _pin_dragging := false
+var _pin_pos := Vector2(56, 240)
 var _pin: Panel
 var _bar: ColorRect
 var _pin_home := Vector2(24, 220)
@@ -138,6 +139,23 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed and _near_pin(mb.position):
+				_pin_dragging = true
+				_pin_pos = mb.position
+				get_viewport().set_input_as_handled()
+				return
+			if not mb.pressed and _pin_dragging:
+				_pin_dragging = false
+				var hit := _globe.pick(mb.position)
+				if hit == Vector3.ZERO:
+					_target_dir = Vector3.ZERO
+					_pin_pos = Vector2(56, 240)
+				else:
+					_target_dir = hit
+					_pin_pos = mb.position
+				_overlay.queue_redraw()
+				get_viewport().set_input_as_handled()
+				return
 			if false:
 				_pin_dragging = true
 				_pin.position = mb.position - Vector2(32, 32)
@@ -165,13 +183,11 @@ func _input(event: InputEvent) -> void:
 			_globe.zoom_by(-1.0)
 			_overlay.queue_redraw()
 			get_viewport().set_input_as_handled()
-	elif event is InputEventMouseMotion:
+	elif event is InputEventMouseMotion and _pin_dragging:
 		var mmv := event as InputEventMouseMotion
-		var hv := _globe.pick(mmv.position)
-		var changed := hv != _target_dir
-		_target_dir = hv
-		if changed:
-			_overlay.queue_redraw()
+		_pin_pos = mmv.position
+		_overlay.queue_redraw()
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _pin_dragging:
 		var mm2 := event as InputEventMouseMotion
 		_pin.position = mm2.position - Vector2(32, 32)
@@ -223,3 +239,17 @@ func clear_target() -> void:
 	_target_dir = Vector3.ZERO
 	if _pin != null:
 		_pin.position = _pin_home
+
+
+## 鼠标是否落在准星上（半径 34 像素）
+func _near_pin(p: Vector2) -> bool:
+	return p.distance_to(_pin_pos) <= 34.0
+
+
+func pin_pos() -> Vector2:
+	return _pin_pos
+
+
+## 地球贴图是否已生成完（预加载时用来判断）
+func is_ready_for_map() -> bool:
+	return _globe != null and _globe._tex != null

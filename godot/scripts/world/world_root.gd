@@ -84,6 +84,10 @@ func _ready() -> void:
 
 	_cli()
 
+	# 趁黑屏把地球仪贴图先算好，第一次按 M 就不会卡
+	if _minimap != null:
+		await _minimap.prewarm_world_map()
+
 	var wake := get_node_or_null("/root/Wake")
 	if wake != null:
 		wake.reveal()
