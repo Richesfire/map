@@ -38,7 +38,9 @@ var _loading: Label
 
 var _zoom := 1.0             # 滚轮缩放 0.6~2.6
 const STATE_PATH := "user://globe_view.cfg"
-var _spin_q := Quaternion.IDENTITY   # 球的朝向（四元数，任意方向都能转）
+var _spin_yaw := 0.0         # 绕竖轴，无限转
+var _spin_pitch := 0.0       # 前后翻，限位 ±78°，不然南北极会颠倒
+const PITCH_LIMIT := deg_to_rad(78.0)
 var _orbit_q := Quaternion.IDENTITY   # 相机环绕（四元数，任意角度都不会卡死）
 var _save_timer := 0.0
 var _tilt := 0.0             # 前后倾（弧度，限幅）
@@ -228,10 +230,9 @@ func _apply_size() -> void:
 # ================================================================ 转动
 ## 只转球体本身：水平拖 = 绕极轴自转，竖直拖 = 前后倾（限幅）
 func rotate_by(rel: Vector2) -> void:
-	# 球体自由滚动：横竖两个方向都转，累乘四元数，所以能翻到任意姿态。
-	var qy := Quaternion(Vector3.UP, rel.x * 0.006)
-	var qx := Quaternion(Vector3.RIGHT, rel.y * 0.006)
-	_spin_q = (qy * qx * _spin_q).normalized()
+	# 左右不限；上下夹在 ±78°，可以翻到接近极点，但不会把南北极翻过来
+	_spin_yaw -= rel.x * 0.006
+	_spin_pitch = clampf(_spin_pitch - rel.y * 0.006, -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_rotation()
 	_save_state_later()
 
@@ -332,7 +333,8 @@ func _apply_orbit() -> void:
 
 func save_state() -> void:
 	var cfg := ConfigFile.new()
-	cfg.set_value("globe", "spin_q", [_spin_q.x, _spin_q.y, _spin_q.z, _spin_q.w])
+	cfg.set_value("globe", "spin_yaw", _spin_yaw)
+	cfg.set_value("globe", "spin_pitch", _spin_pitch)
 	cfg.set_value("globe", "orbit_q", [_orbit_q.x, _orbit_q.y, _orbit_q.z, _orbit_q.w])
 	cfg.set_value("globe", "zoom", _zoom)
 	cfg.save(STATE_PATH)
@@ -342,9 +344,9 @@ func load_state() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(STATE_PATH) != OK:
 		return
-	var sv: Array = cfg.get_value("globe", "spin_q", [])
-	if sv.size() == 4:
-		_spin_q = Quaternion(sv[0], sv[1], sv[2], sv[3]).normalized()
+	_spin_yaw = float(cfg.get_value("globe", "spin_yaw", _spin_yaw))
+	_spin_pitch = clampf(float(cfg.get_value("globe", "spin_pitch", _spin_pitch)),
+			-PITCH_LIMIT, PITCH_LIMIT)
 	var qv: Array = cfg.get_value("globe", "orbit_q", [])
 	if qv.size() == 4:
 		_orbit_q = Quaternion(qv[0], qv[1], qv[2], qv[3]).normalized()
@@ -370,14 +372,16 @@ func _apply_rotation() -> void:
 	if _pivot == null or _tilt_node == null:
 		return
 	# 分成两级：倾角绕世界 X，自转绕自身 Y，两者不互相污染
-	_pivot.basis = Basis(_spin_q)
+	# 先绕竖轴转，再绕世界 X 前后翻 —— 顺序固定，俯仰受限，所以极轴永远不会倒过来
+	_pivot.basis = Basis(Vector3.RIGHT, _spin_pitch) * Basis(Vector3.UP, _spin_yaw)
 
 
 ## 让某个地理方向正对镜头
 func face_direction(dir: Vector3) -> void:
 	var p := dir.normalized()
 	# 自由滚动之后，"正对镜头"就是绕竖轴把 p 转到前方
-	_spin_q = Quaternion(Vector3.UP, -atan2(p.x, p.z))
+	_spin_yaw = -atan2(p.x, p.z)
+	_spin_pitch = clampf(asin(clampf(p.y, -1.0, 1.0)), -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_rotation()
 
 
