@@ -78,12 +78,20 @@ func _build_scene() -> void:
 	sun.shadow_enabled = false
 	root.add_child(sun)
 
+	# 补光：反方向再打一盏弱的。只有一盏方向光时，背光面暗成一团，会被误认成海洋。
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-18.0, 142.0, 0.0)
+	fill.light_energy = 0.55
+	fill.light_color = Color(0.78, 0.84, 1.0)
+	fill.shadow_enabled = false
+	root.add_child(fill)
+
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.03, 0.045, 0.07)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.30, 0.36, 0.46)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 1.25
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	var we := WorldEnvironment.new()
 	we.environment = env

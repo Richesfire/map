@@ -412,6 +412,8 @@ func _cli() -> void:
 				_test_drag()
 			"--test-travelui":
 				_test_travelui()
+			"--test-mask":
+				_test_mask()
 			"--test-travelto":
 				_test_travelto()
 			"--test-stream":
@@ -523,6 +525,11 @@ func _maybe_capture() -> void:
 			out = a.substr(6)
 	if out.is_empty():
 		return
+	# 截图前如果要求开地图，就在预加载完成之后再开一次（预加载会开关一次地图）
+	for a2 in OS.get_cmdline_user_args():
+		if a2 == "--mapshot":
+			toggle_world_map()
+			break
 	for i in 80:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
@@ -680,3 +687,19 @@ func _want_capture() -> bool:
 func _restore_hint() -> void:
 	if _hint != null:
 		_hint.text = "Backspace: 灵魂状态    M: 世界地图    " + BUILD_TAG
+
+
+## 用游戏里的掩膜读一批已知点，和 Python 侧的结果对照
+func _test_mask() -> void:
+	var pts := [
+		["非洲中部", 20.0, 5.0], ["咸阳", 108.71, 34.33], ["撒哈拉", 25.0, 23.0],
+		["纽约", -74.0, 40.7], ["印度", 78.0, 22.0], ["太平洋", -150.0, 0.0],
+		["巴西", -60.0, -5.0], ["南极", 101.93, -81.18],
+	]
+	var bm: BiomeMap = map.biome
+	if bm == null:
+		print("[MaskTest] biome 为空")
+		return
+	for p in pts:
+		var d := GeoSphere.lonlat_to_dir(float(p[1]), float(p[2]))
+		print("[MaskTest] %-6s %8.2f,%7.2f -> %s" % [p[0], p[1], p[2], "陆地" if bm.is_land(d) else "海洋"])
