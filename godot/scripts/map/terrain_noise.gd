@@ -23,6 +23,7 @@ var _layers: Array = []
 var _forest: FastNoiseLite
 var _rock: FastNoiseLite
 var _lowveg: FastNoiseLite
+var _wet: FastNoiseLite      # 湿度场：和高度完全独立的气候噪声
 
 
 func _init(config: MapConfig = null, seed_value: int = 209) -> void:
@@ -82,6 +83,19 @@ func height_at(dir: Vector3) -> float:
 
 
 ## 坡度（度）。eps 是沿地表的采样距离（米）。
+## 湿度 0..1。独立的低频噪声，与高度无关——用来分森林/草原/沙漠。
+func wet_at(dir: Vector3) -> float:
+	if _wet == null:
+		_wet = FastNoiseLite.new()
+		_wet.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_wet.seed = world_seed + 7717
+		_wet.frequency = 0.0000005    # 波长约 2000km，才配叫"气候带"
+		_wet.fractal_type = FastNoiseLite.FRACTAL_FBM
+		_wet.fractal_octaves = 3
+	var n: float = _wet.get_noise_3dv(dir * 6371000.0)
+	return clampf(n * 0.5 + 0.5, 0.0, 1.0)
+
+
 func slope_deg_at(dir: Vector3, eps: float = 3.0) -> float:
 	var frame := GeoSphere.tangent_frame(dir)
 	var e := GeoSphere.tangent_to_dir(frame, eps, 0.0)

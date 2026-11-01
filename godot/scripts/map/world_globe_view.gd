@@ -275,6 +275,29 @@ const MASK_PATH := "res://data/earth_land_mask.png"
 ## 一次性把地球采样成等距圆柱贴图：
 ## 海陆来自 Natural Earth 110m 海岸线（公有领域）栅格化出来的掩膜，
 ## 陆地按地形高度着色（低=绿，高=土黄/灰），极地加冰盖，海洋按"海底高度"给深浅。
+## 地形类型的显示颜色（地球仪和小地图共用同一套，避免两边对不上）
+const BIOME_COLORS := {
+	"ocean": Color(0.055, 0.145, 0.290),
+	"ice": Color(0.930, 0.950, 0.970),
+	"tundra": Color(0.520, 0.560, 0.480),
+	"alpine": Color(0.760, 0.760, 0.740),
+	"mountain": Color(0.520, 0.470, 0.400),
+	"hills": Color(0.400, 0.470, 0.250),
+	"forest": Color(0.180, 0.330, 0.170),
+	"jungle": Color(0.110, 0.360, 0.140),
+	"savanna": Color(0.620, 0.600, 0.280),
+	"steppe": Color(0.640, 0.610, 0.370),
+	"desert": Color(0.820, 0.720, 0.450),
+	"badland": Color(0.680, 0.620, 0.540),
+	"marsh": Color(0.250, 0.350, 0.280),
+	"plain": Color(0.330, 0.470, 0.230),
+	"inland_water": Color(0.130, 0.330, 0.480),
+}
+
+
+## 一次性把地球采样成等距圆柱贴图：**按生物群系上色**。
+## 这是验证"全球分布合不合理"最直接的方式——按一次 M 就能看整张世界图，
+## 而不是骑马跑 31 天。
 func build_world_texture() -> void:
 	if world == null or world.gen == null:
 		return
@@ -285,55 +308,41 @@ func build_world_texture() -> void:
 	if mask_tex != null:
 		mask = mask_tex.get_image()
 	else:
-		push_warning("[Globe] 找不到海陆掩膜 %s，退回纯陆地贴图" % MASK_PATH)
+		push_warning("[Globe] 找不到海陆掩膜 %s" % MASK_PATH)
+
+	var bm := BiomeMap.new()
+	bm.setup(world.gen, mask)
 
 	var img := Image.create(TEX_W, TEX_H, false, Image.FORMAT_RGB8)
-	var mw := 1
-	var mh := 1
-	if mask != null:
-		mw = mask.get_width()
-		mh = mask.get_height()
+	var counts := {}
 
 	for y in TEX_H:
 		var lat := 90.0 - (float(y) + 0.5) / float(TEX_H) * 180.0
 		for x in TEX_W:
 			var lon := _lon_of_x(x)
 			var dir := GeoSphere.lonlat_to_dir(lon, lat)
-			var h := world.get_height_dir(dir)
+			var bid := bm.biome_at(dir)
+			counts[bid] = counts.get(bid, 0) + 1
 
-			var is_land := true
-			if mask != null:
-				var mx := clampi(int((fposmod(lon + 180.0, 360.0)) / 360.0 * float(mw)), 0, mw - 1)
-				var my := clampi(int((90.0 - lat) / 180.0 * float(mh)), 0, mh - 1)
-				is_land = mask.get_pixel(mx, my).r > 0.5
-
-			var c: Color
-			if is_land:
-				var t := clampf((h - 5.0) / 110.0, 0.0, 1.0)
-				c = Color(0.24, 0.38, 0.18).lerp(Color(0.62, 0.55, 0.38), t)
-				if t > 0.72:
-					c = c.lerp(Color(0.55, 0.54, 0.52), (t - 0.72) / 0.28)
-				# 极冠
-				var polar := clampf((absf(lat) - 62.0) / 14.0, 0.0, 1.0)
-				if polar > 0.0:
-					c = c.lerp(Color(0.93, 0.95, 0.97), polar)
-			else:
-				var shallow := clampf((h + 55.0) / 60.0, 0.0, 1.0)
-				c = Color(0.035, 0.10, 0.22).lerp(Color(0.10, 0.30, 0.45), shallow)
-
+			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
+			# 高度带来的明暗，让球面不至于死板
+			if bid != "ocean":
+				var h := world.get_height_dir(dir)
+				var shade := clampf(0.82 + h / 600.0, 0.82, 1.12)
+				c = Color(c.r * shade, c.g * shade, c.b * shade)
 			img.set_pixel(x, y, c)
 
-	# 经纬网（每 30 度），叠在最后，方便看出在转
+	# 经纬网
 	for y in TEX_H:
 		var lat2 := 90.0 - (float(y) + 0.5) / float(TEX_H) * 180.0
 		if _near_multiple(lat2, 30.0, 0.9):
 			for x in TEX_W:
-				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.85, 0.90, 0.95), 0.35))
+				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.9, 0.93, 0.97), 0.22))
 	for x in TEX_W:
 		var lon2 := _lon_of_x(x)
 		if _near_multiple(lon2, 30.0, 0.9):
 			for y in TEX_H:
-				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.85, 0.90, 0.95), 0.35))
+				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.9, 0.93, 0.97), 0.22))
 
 	img.generate_mipmaps()
 	_tex = ImageTexture.create_from_image(img)
@@ -341,7 +350,14 @@ func build_world_texture() -> void:
 		(_sphere.material_override as StandardMaterial3D).albedo_texture = _tex
 	if _loading != null:
 		_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
-	print("[Globe] 地球贴图 %dx%d（含海陆掩膜）生成完成：%d ms" % [TEX_W, TEX_H, Time.get_ticks_msec() - t0])
+	print("[Globe] 地形分布贴图 %dx%d 生成完成：%d ms" % [TEX_W, TEX_H, Time.get_ticks_msec() - t0])
+
+	# 分布统计：海洋占比、各类地形占比（这是设计评审要看的数字）
+	var total := float(TEX_W * TEX_H)
+	var keys := counts.keys()
+	keys.sort_custom(func(a, b): return counts[a] > counts[b])
+	for k in keys:
+		print("  %-6s %-5s %5.2f%%" % [k, bm.name_of(k), float(counts[k]) / total * 100.0])
 	texture_ready.emit()
 
 ## 贴图第 x 列应该填哪个经度。
