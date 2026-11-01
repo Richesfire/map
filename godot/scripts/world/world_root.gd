@@ -43,6 +43,7 @@ var _warn_cd := 0
 var _traveling := false
 var _last_tiles_ready := -1
 var _minimap: MapMinimap
+var _compass: Compass
 var _hint: Label
 
 
@@ -288,12 +289,25 @@ func _build_hint() -> void:
 	layer.name = "HintLayer"
 	layer.layer = 3
 	_hint = Label.new()
-	_hint.position = Vector2(18, 12)
+	_hint.position = Vector2(18, 52)
 	_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
 	_hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	_hint.add_theme_constant_override("outline_size", 5)
 	_hint.text = "Backspace: 灵魂状态    M: 世界地图    " + BUILD_TAG
 	layer.add_child(_hint)
+
+	# ---- 顶部方向标
+	_compass = Compass.new()
+	_compass.name = "Compass"
+	_compass.setup(player, _player_cam, map, map.annotations)
+	_compass.anchor_left = 0.5
+	_compass.anchor_right = 0.5
+	_compass.offset_left = -310.0
+	_compass.offset_right = 310.0
+	_compass.offset_top = 8.0
+	_compass.offset_bottom = 66.0
+	layer.add_child(_compass)
+
 	add_child(layer)
 
 
