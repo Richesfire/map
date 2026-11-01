@@ -163,7 +163,8 @@ func build(center_dir: Vector3, tiles_x: int, tiles_z: int, do_scatter: bool = t
 ## 只按玩家 1.2km 的移动重建一次（约 70ms）。
 const FAR_EXTENT := 9000.0
 const FAR_RES := 96
-## 不挖洞：整张网铺满，靠「下压 0.5m + 瓦片在上层」遮住。
+## 不挖洞：整张网铺满，靠「下压 4m + 瓦片在上层」遮住。
+## 下压要足够大：远景壳 190m 一格，粗网在坡地上会顶穿精细地形（看起来像两层地面重叠）。
 ## 挖洞省不到 2% 的三角形，却会留下缺口和 z-fighting 风险，得不偿失。
 const FAR_HOLE := 0.0
 
@@ -205,7 +206,7 @@ func _update_far_shell(pos: Vector3) -> void:
 			var z := pos.z - FAR_EXTENT + float(j) * step
 			var dir := GeoSphere.tangent_to_dir(region_frame, x, -z)
 			var p := render_position(dir)
-			verts[j * n + i] = Vector3(p.x, p.y - 0.5, p.z)
+			verts[j * n + i] = Vector3(p.x, p.y - 4.0, p.z)
 
 	var idx := PackedInt32Array()
 	var k := 0

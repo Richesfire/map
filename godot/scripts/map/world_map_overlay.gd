@@ -27,7 +27,8 @@ func _draw() -> void:
 					-1, 15, Color(1, 1, 1, 0.96))
 
 	# ---- 旅行准星：只在还没定下目标时画（定下后只画球上那个，跟着球转）
-	if dialog._target_dir == Vector3.ZERO:
+	# 拖动中（或还没定目标）都要画准星，否则一拖到球上准星就消失了，看着像拖不动
+	if dialog._pin_dragging or dialog._target_dir == Vector3.ZERO:
 		_draw_reticle(dialog.pin_pos())
 
 	# ---- 旅行目标标记：跟着球体一起转
