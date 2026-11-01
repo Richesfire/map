@@ -27,7 +27,8 @@ func _draw() -> void:
 					-1, 15, Color(1, 1, 1, 0.96))
 
 	# ---- 旅行准星：只有一个。定了目标就跟着球面走，没定就停在鼠标松手的位置
-	_draw_reticle(dialog.reticle_pos())
+	var behind: bool = dialog.target_behind()
+	_draw_reticle(dialog.reticle_pos(), behind)
 
 	# ---- 提示文字（海洋「敬请期待」等）
 	if dialog._notice != "":
@@ -62,9 +63,10 @@ func _loc_text() -> String:
 	return "%.1f°%s  %.1f°%s  %s" % [absf(ll.x), ew, absf(ll.y), ns, kind]
 
 
-func _draw_reticle(pp: Vector2) -> void:
+func _draw_reticle(pp: Vector2, behind: bool = false) -> void:
 	draw_circle(pp, 15.0, Color(0.06, 0.05, 0.03, 0.55))
-	draw_arc(pp, 15.0, 0.0, TAU, 32, Color(0.98, 0.82, 0.32, 0.95), 2.5)
+	var rc := Color(0.98, 0.82, 0.32, 0.95) if not behind else Color(0.62, 0.55, 0.32, 0.85)
+	draw_arc(pp, 15.0, 0.0, TAU, 32, rc, 2.5)
 	draw_line(pp + Vector2(-22, 0), pp + Vector2(-8, 0), Color(0.98, 0.82, 0.32), 2.0)
 	draw_line(pp + Vector2(8, 0), pp + Vector2(22, 0), Color(0.98, 0.82, 0.32), 2.0)
 	draw_line(pp + Vector2(0, -22), pp + Vector2(0, -8), Color(0.98, 0.82, 0.32), 2.0)

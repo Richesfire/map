@@ -262,7 +262,8 @@ func reticle_pos() -> Vector2:
 	if _target_dir != Vector3.ZERO:
 		var sp := project(_target_dir)
 		if sp.x >= 0.0:
-			return sp
+			return sp                      # 可见半球：贴着球面
+		return _globe.edge_point(_target_dir)   # 转到背面：贴在轮廓边缘
 	return _pin_pos
 
 
@@ -304,3 +305,20 @@ func probe() -> void:
 		var d := GeoSphere.lonlat_to_dir(float(p[0]), float(p[1]))
 		var sp := project(d)
 		print("[PROBE] lon=%7.1f lat=%5.1f -> screen %s" % [p[0], p[1], str(sp)])
+
+
+## 目标是否在球背面（看不见）
+func target_behind() -> bool:
+	if _target_dir == Vector3.ZERO:
+		return false
+	return project(_target_dir).x < 0.0
+
+
+## 诊断：检查背面方向的边缘点是否合理
+func edge_test() -> void:
+	var pts := [[0.0,0.0],[90.0,0.0],[180.0,0.0],[-90.0,0.0],[45.0,30.0],[-135.0,30.0]]
+	for q in pts:
+		var d := GeoSphere.lonlat_to_dir(float(q[0]), float(q[1]))
+		var sp := project(d)
+		var ep := _globe.edge_point(d)
+		print("[EDGETEST] lon=%7.1f lat=%5.1f  proj=%s  edge=(%.0f,%.0f)  behind=%s" % [q[0], q[1], str(sp), ep.x, ep.y, str(sp.x < 0.0)])

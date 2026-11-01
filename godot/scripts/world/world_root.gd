@@ -532,6 +532,7 @@ func _maybe_capture() -> void:
 			break
 	if _minimap.get_dialog() != null:
 		_minimap.get_dialog().probe()
+		_minimap.get_dialog().edge_test()
 	for i in 80:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()

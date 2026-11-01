@@ -257,6 +257,25 @@ func pick(point: Vector2) -> Vector3:
 	return local.normalized()
 
 
+## 把一个"在球背面看不见"的方向，投到球的轮廓边缘。
+## 用方向在屏幕平面上的分量决定贴哪一边 —— 所以转动时它会沿着边缘滑动，
+## 从左边贴着走、走过中线就自然换到右边，不会跳。
+func edge_point(dir: Vector3) -> Vector2:
+	if _cam == null or _pivot == null:
+		return Vector2.ZERO
+	var center := _cam.unproject_position(Vector3.ZERO)
+	var right_w := _cam.global_transform.basis.x
+	var up_w := _cam.global_transform.basis.y
+	# 轮廓半径：把屏幕右方向的世界单位向量投影出来，它到球心的距离就是像素半径
+	var radius := center.distance_to(_cam.unproject_position(right_w))
+
+	var w: Vector3 = _pivot.global_transform * dir.normalized()
+	var v2 := Vector2(w.dot(right_w), w.dot(up_w))
+	if v2.length() < 0.001:
+		v2 = Vector2(1.0, 0.0)          # 正对/正背时没有方向，默认贴右边
+	return center + v2.normalized() * radius
+
+
 func get_camera_z() -> float:
 	return _cam.position.z if _cam != null else 0.0
 
