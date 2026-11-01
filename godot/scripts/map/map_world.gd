@@ -238,6 +238,14 @@ func _update_far_shell(pos: Vector3) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	_far_shell.mesh = mesh
+
+	# 远景壳也要跟着当前地形的颜色走，否则默认白 tint 会在草原/森林里显出一大块白斑
+	if _far_shell.material_override is ShaderMaterial and biome != null:
+		var cdir := GeoSphere.tangent_to_dir(region_frame, pos.x, -pos.z)
+		var bid := biome.biome_at(cdir)
+		var sm2 := _far_shell.material_override as ShaderMaterial
+		sm2.set_shader_parameter("biome_tint", BIOME_TINTS.get(bid, Color(0.55, 0.72, 0.40)))
+		sm2.set_shader_parameter("biome_tint_strength", 0.82)
 	print("[FarShell] 远景壳重建：%d ms（%d 顶点）" % [Time.get_ticks_msec() - t0, n * n])
 
 
