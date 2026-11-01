@@ -414,12 +414,18 @@ func _find_mesh(n: Node) -> Mesh:
 
 ## 这一类零件该用哪个模型：有生物群系就给 glb，没有就退回程序化占位
 func _mesh_for_kind(kind: String) -> Mesh:
-	var ids: Array = biome_parts.get(kind, [])
-	if not ids.is_empty():
+	# 只要这个地形在表里出现过，就**以表为准**：
+	# 表里这一类是空的（海洋没树、冰原没草），就该什么都不长，
+	# 绝不能退回占位圆锥——否则传送到海上会冒出一片树林。
+	if not biome_parts.is_empty():
+		var ids: Array = biome_parts.get(kind, [])
+		if ids.is_empty():
+			return null
 		var idx := absi(hash(str(grid_pos) + kind)) % ids.size()
 		var m := _glb_mesh(str(ids[idx]))
-		if m != null:
-			return m
+		if m == null:
+			return null
+		return m
 	return prop_meshes.get(kind)
 
 

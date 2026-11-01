@@ -373,6 +373,8 @@ func _cli() -> void:
 				_test_soul()
 			"--test-drag":
 				_test_drag()
+			"--test-travelui":
+				_test_travelui()
 			"--test-travelto":
 				_test_travelto()
 			"--test-stream":
@@ -542,3 +544,65 @@ func _test_travelto() -> void:
 	var c1 := map.region_center_dir
 	print("[TravelTest] 抵达: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c1).x, GeoSphere.dir_to_lonlat(c1).y, map.biome.biome_at(c1)])
 	print("[TravelTest] 地块数=%d  玩家pos=%s" % [map.get_tiles().size(), str(player.position)])
+
+
+## 合成真实操作：拖准星到球上 -> 按回车，验证 UI 这条链路
+func _test_travelui() -> void:
+	# 等预加载（开局那次开/关地图）跑完，否则测试事件会撞在一起
+	for i in 400:
+		await get_tree().process_frame
+		var d0 := _minimap.get_dialog()
+		if d0 != null and d0.is_ready_for_map():
+			break
+	toggle_world_map()
+	for i in 6:
+		await get_tree().process_frame
+	var dlg := _minimap.get_dialog()
+	if dlg == null:
+		print("[UI] 拿不到对话框")
+		return
+
+	var from: Vector2 = dlg.pin_pos()
+	var vp := get_viewport().get_visible_rect().size
+	var to := Vector2(vp.x * 0.42, vp.y * 0.68)     # 球面左下方
+
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.pressed = true
+	down.position = from
+	down.global_position = from
+	Input.parse_input_event(down)
+	await get_tree().process_frame
+
+	var mv := InputEventMouseMotion.new()
+	mv.position = to
+	mv.global_position = to
+	mv.relative = to - from
+	Input.parse_input_event(mv)
+	await get_tree().process_frame
+
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.pressed = false
+	up.position = to
+	up.global_position = to
+	Input.parse_input_event(up)
+	await get_tree().process_frame
+
+	var tgt: Vector3 = dlg.target_dir()
+	print("[UI] 松手后目标 = %s" % ("(无)" if tgt == Vector3.ZERO else str(GeoSphere.dir_to_lonlat(tgt))))
+	if tgt == Vector3.ZERO:
+		print("[UI] 拖拽没打中球，链路止步于此")
+		return
+
+	var enter := InputEventKey.new()
+	enter.keycode = KEY_ENTER
+	enter.pressed = true
+	Input.parse_input_event(enter)
+	print("[UI] 已合成回车")
+
+	for i in 120:
+		await get_tree().process_frame
+	var c := map.region_center_dir
+	var ll := GeoSphere.dir_to_lonlat(c)
+	print("[UI] 结束后中心 = %.2f,%.2f  群系=%s  地块=%d" % [ll.x, ll.y, map.biome.biome_at(c), map.get_tiles().size()])
