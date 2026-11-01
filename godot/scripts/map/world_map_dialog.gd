@@ -65,38 +65,15 @@ func _ensure_built() -> void:
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bar)
 
-	_pin = null
-	if false:
-		_pin = Panel.new()
-	_pin.name = "TravelPin"
-	_pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.93, 0.74, 0.28)
-	sb.set_corner_radius_all(8)
-	sb.set_border_width_all(2)
-	sb.border_color = Color(1, 1, 1, 0.85)
-	_pin.add_theme_stylebox_override("panel", sb)
-	add_child(_pin)
-
-	var pin_label := Label.new()
-	pin_label.text = "旅"
-	pin_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pin_label.add_theme_font_size_override("font_size", 26)
-	pin_label.add_theme_color_override("font_color", Color(0.15, 0.10, 0.02))
-	pin_label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	pin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	pin_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_pin.add_child(pin_label)
-
 	var tip := Label.new()
-	tip.text = "把「旅」拖到地球仪上，再按回车"
+	tip.text = "鼠标移到地球仪上选目的地，回车出发"
 	tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tip.add_theme_font_size_override("font_size", 13)
 	tip.add_theme_color_override("font_color", Color(0.8, 0.82, 0.86))
-	tip.position = Vector2(8, 300)
-	tip.size = Vector2(100, 80)
+	tip.position = Vector2(8, 24)
+	tip.size = Vector2(100, 100)
 	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	add_child(tip)
+
 
 
 
