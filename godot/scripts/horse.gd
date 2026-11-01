@@ -145,9 +145,8 @@ func _update_turn_head(delta: float) -> void:
 	_dbg_acc += delta
 	if _dbg_acc >= 0.5:
 		_dbg_acc = 0.0
-		print("[horse.turn] in=", turn, " dir=", _turn_dir, " t=", _turn_t, "/", length,
-			" cur=", _turn_ap.current_animation, " pos=", _turn_ap.current_animation_position,
-			" active=", _turn_ap.is_playing())
+		# 原本这里每帧打印转向状态，会把日志冲掉；排查转向问题时再临时打开
+		pass
 
 func _switch_turn(dir: int) -> void:
 	_turn_dir = dir
