@@ -163,10 +163,11 @@ func build(center_dir: Vector3, tiles_x: int, tiles_z: int, do_scatter: bool = t
 ## 只按玩家 1.2km 的移动重建一次（约 70ms）。
 const FAR_EXTENT := 9000.0
 const FAR_RES := 96
-## 不挖洞：整张网铺满，靠「下压 4m + 瓦片在上层」遮住。
+## 挖洞但**比地块小**：地块覆盖 ±1500m，洞挖到 1250m，
+## 所以 1250~1500 这一段壳藏在瓦片底下，瓦片边缘之外立刻接上壳 —— 无缝、无台阶。
 ## 下压要足够大：远景壳 190m 一格，粗网在坡地上会顶穿精细地形（看起来像两层地面重叠）。
 ## 挖洞省不到 2% 的三角形，却会留下缺口和 z-fighting 风险，得不偿失。
-const FAR_HOLE := 0.0
+const FAR_HOLE := 1250.0
 
 var _far_shell: MeshInstance3D
 var _far_center := Vector3(1e9, 0.0, 0.0)
