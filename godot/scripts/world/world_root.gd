@@ -373,6 +373,8 @@ func _cli() -> void:
 				_test_soul()
 			"--test-drag":
 				_test_drag()
+			"--test-travelto":
+				_test_travelto()
 			"--test-stream":
 				_test_stream()
 			"--test-openclose":
@@ -495,6 +497,7 @@ func _on_travel(target_dir: Vector3) -> void:
 	if _traveling:
 		return
 	_traveling = true
+	print("[TravelTrace] 收到请求 %.2f,%.2f" % [GeoSphere.dir_to_lonlat(target_dir).x, GeoSphere.dir_to_lonlat(target_dir).y])
 
 	_map_open = false
 	_minimap.close_world_map()
@@ -503,6 +506,7 @@ func _on_travel(target_dir: Vector3) -> void:
 	if wake != null:
 		await wake.cover()
 
+	print("[TravelTrace] 闭眼完成，开始重建")
 	map.travel_to(target_dir, 1)
 	if _minimap != null:
 		_minimap.refresh()
@@ -521,7 +525,20 @@ func _on_travel(target_dir: Vector3) -> void:
 
 	if wake != null:
 		await wake.reveal()
+	print("[TravelTrace] 完成，当前群系=%s" % map.biome.biome_at(map.region_center_dir))
 	_traveling = false
 	print("[World] 已抵达 %.2f, %.2f" % [GeoSphere.dir_to_lonlat(target_dir).x, GeoSphere.dir_to_lonlat(target_dir).y])
 	_apply_player_active(true)
 
+
+## 直接传送到南极，检查生物群系和地形是否真的变了
+func _test_travelto() -> void:
+	var c0 := map.region_center_dir
+	print("[TravelTest] 出发: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c0).x, GeoSphere.dir_to_lonlat(c0).y, map.biome.biome_at(c0)])
+	var target := GeoSphere.lonlat_to_dir(0.0, -88.0)
+	print("[TravelTest] 目标: %.2f,%.2f  群系=%s" % [0.0, -88.0, map.biome.biome_at(target)])
+	map.travel_to(target, 1)
+	await get_tree().process_frame
+	var c1 := map.region_center_dir
+	print("[TravelTest] 抵达: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c1).x, GeoSphere.dir_to_lonlat(c1).y, map.biome.biome_at(c1)])
+	print("[TravelTest] 地块数=%d  玩家pos=%s" % [map.get_tiles().size(), str(player.position)])
