@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://cwp0pv1ew2x3k"]
+
+[ext_resource type="PackedScene" uid="uid://chyc1boaya6b1" path="res://scenes/character_model.tscn" id="1_char"]
+[ext_resource type="PackedScene" uid="uid://bq3m7x2p1w9zk" path="res://scenes/weapon.tscn" id="2_weapon"]
+
+[node name="WeaponPreview" type="Node3D"]
+
+[node name="CharacterRig" type="Node3D" parent="."]
+
+[node name="character" parent="CharacterRig" unique_id=1351488556 instance=ExtResource("1_char")]
+
+[node name="Skeleton3D" parent="CharacterRig/character/ren" parent_id_path=PackedInt32Array(1351488556, 770754331) index="0" unique_id=839814941]
+
+[node name="WeaponSocket" type="BoneAttachment3D" parent="CharacterRig/character/ren/Skeleton3D" index="1" unique_id=1965197613]
+transform = Transform3D(-0.013697185, 0.9445787, 0.32799816, 0.99981153, 0.008422304, 0.017497703, 0.013765454, 0.32817587, -0.9445161, -0.09399763, 1.3123493, 0.18968387)
+bone_name = "RightHand"
+bone_idx = 19
+
+[node name="Weapon" parent="CharacterRig/character/ren/Skeleton3D/WeaponSocket" unique_id=881234567 instance=ExtResource("2_weapon")]
+
+[editable path="CharacterRig/character"]

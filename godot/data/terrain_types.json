@@ -1,0 +1,586 @@
+{
+  "version": 1,
+  "note": "按地球地形粗略划分的地形类型表。第 1 项（plain）是策划标注的「整合地形」，由策划在 PSD 里单独制作；其余为粗补。零件编号全局唯一，可跨地形复用。land_share_pct 为粗估，定义有重叠，仅用于排优先级。",
+  "coordinate_note": "distribution 只是大致区域，真正的全球分布需要陆地/海洋掩膜 + 生物群系数据，尚未实现。",
+  "terrain_types": [
+    {
+      "id": "plain",
+      "index": 1,
+      "name_cn": "平原",
+      "is_integrated": true,
+      "terrain_model": "地形_01",
+      "texture_set": "纹理_01",
+      "textures": [
+        "绿草",
+        "泥土",
+        "河滩砾石"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_02",
+          "树_03"
+        ],
+        "rocks": [
+          "石头_01",
+          "石头_02"
+        ],
+        "low": [
+          "草_01"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          20,
+          40
+        ],
+        "slope_bias": "flat",
+        "max_slope_deg": 8
+      },
+      "distribution": [
+        "华北平原",
+        "关中",
+        "两河",
+        "尼罗河三角洲",
+        "恒河",
+        "多瑙河"
+      ],
+      "land_share_pct": 11,
+      "priority": 0
+    },
+    {
+      "id": "forest",
+      "index": 2,
+      "name_cn": "森林",
+      "terrain_model": "地形_02",
+      "texture_set": "纹理_02",
+      "textures": [
+        "林下苔草",
+        "腐叶土",
+        "裸岩"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_01",
+          "树_04",
+          "树_05"
+        ],
+        "rocks": [
+          "石头_03"
+        ],
+        "low": [
+          "草_02"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          40,
+          80
+        ],
+        "slope_bias": "rolling",
+        "max_slope_deg": 20
+      },
+      "distribution": [
+        "东北",
+        "江南山地",
+        "西欧",
+        "北欧",
+        "刚果",
+        "亚马逊"
+      ],
+      "land_share_pct": 31,
+      "priority": 0
+    },
+    {
+      "id": "desert",
+      "index": 3,
+      "name_cn": "沙漠",
+      "terrain_model": "地形_03",
+      "texture_set": "纹理_03",
+      "textures": [
+        "细沙",
+        "砾石",
+        "风蚀岩板"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_06"
+        ],
+        "rocks": [
+          "石头_04",
+          "石头_05"
+        ],
+        "low": [
+          "草_03"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          5,
+          25
+        ],
+        "slope_bias": "dune",
+        "max_slope_deg": 32
+      },
+      "distribution": [
+        "撒哈拉",
+        "阿拉伯",
+        "塔克拉玛干",
+        "戈壁",
+        "澳洲内陆"
+      ],
+      "land_share_pct": 20,
+      "priority": 0
+    },
+    {
+      "id": "steppe",
+      "index": 4,
+      "name_cn": "草原·干草原",
+      "terrain_model": "地形_04",
+      "texture_set": "纹理_04",
+      "textures": [
+        "黄草",
+        "黑土",
+        "裸土"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_07"
+        ],
+        "rocks": [
+          "石头_06"
+        ],
+        "low": [
+          "草_04"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          15,
+          40
+        ],
+        "slope_bias": "very_flat",
+        "max_slope_deg": 10
+      },
+      "distribution": [
+        "蒙古高原",
+        "哈萨克",
+        "北美大平原",
+        "潘帕斯",
+        "东非"
+      ],
+      "land_share_pct": 20,
+      "priority": 0
+    },
+    {
+      "id": "hills",
+      "index": 5,
+      "name_cn": "丘陵",
+      "terrain_model": "地形_05",
+      "texture_set": "纹理_05",
+      "textures": [
+        "草",
+        "泥土",
+        "碎石"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_08"
+        ],
+        "rocks": [
+          "石头_07",
+          "石头_08"
+        ],
+        "low": [
+          "草_05"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          60,
+          120
+        ],
+        "slope_bias": "rounded",
+        "max_slope_deg": 25
+      },
+      "distribution": [
+        "江南丘陵",
+        "英格兰丘陵",
+        "托斯卡纳"
+      ],
+      "land_share_pct": null,
+      "priority": 1,
+      "included_in": "forest"
+    },
+    {
+      "id": "mountain",
+      "index": 6,
+      "name_cn": "山地",
+      "terrain_model": "地形_06",
+      "texture_set": "纹理_06",
+      "textures": [
+        "岩坡",
+        "碎石坡",
+        "高山草甸"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_09"
+        ],
+        "rocks": [
+          "石头_09",
+          "石头_10"
+        ],
+        "low": [
+          "草_06"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          150,
+          400
+        ],
+        "slope_bias": "ridge",
+        "max_slope_deg": 55
+      },
+      "distribution": [
+        "秦岭",
+        "太行",
+        "阿尔卑斯",
+        "高加索",
+        "安第斯"
+      ],
+      "land_share_pct": 24,
+      "priority": 1
+    },
+    {
+      "id": "alpine",
+      "index": 7,
+      "name_cn": "高山·雪线",
+      "terrain_model": "地形_07",
+      "texture_set": "纹理_07",
+      "textures": [
+        "裸岩",
+        "积雪",
+        "冰碛"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_10"
+        ],
+        "rocks": [
+          "石头_11",
+          "石头_12"
+        ],
+        "low": [
+          "草_07"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          300,
+          800
+        ],
+        "slope_bias": "cliff",
+        "max_slope_deg": 70
+      },
+      "distribution": [
+        "喜马拉雅",
+        "天山",
+        "帕米尔",
+        "阿尔卑斯高处"
+      ],
+      "land_share_pct": null,
+      "priority": 2,
+      "included_in": "mountain"
+    },
+    {
+      "id": "tundra",
+      "index": 8,
+      "name_cn": "苔原",
+      "terrain_model": "地形_08",
+      "texture_set": "纹理_08",
+      "textures": [
+        "苔藓",
+        "冻土",
+        "砾石"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_11"
+        ],
+        "rocks": [
+          "石头_13"
+        ],
+        "low": [
+          "草_08"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          20,
+          60
+        ],
+        "slope_bias": "polygon",
+        "max_slope_deg": 12
+      },
+      "distribution": [
+        "西伯利亚北部",
+        "加拿大北部",
+        "北欧极北"
+      ],
+      "land_share_pct": 8,
+      "priority": 2
+    },
+    {
+      "id": "ice",
+      "index": 9,
+      "name_cn": "冰盖",
+      "terrain_model": "地形_09",
+      "texture_set": "纹理_09",
+      "textures": [
+        "雪",
+        "蓝冰",
+        "冰碛"
+      ],
+      "vegetation": {
+        "trees": [],
+        "rocks": [
+          "石头_14"
+        ],
+        "low": []
+      },
+      "shape": {
+        "relief_m": [
+          10,
+          50
+        ],
+        "slope_bias": "crevasse",
+        "max_slope_deg": 15
+      },
+      "distribution": [
+        "格陵兰",
+        "南极"
+      ],
+      "land_share_pct": 10,
+      "priority": 2
+    },
+    {
+      "id": "jungle",
+      "index": 10,
+      "name_cn": "热带雨林",
+      "terrain_model": "地形_10",
+      "texture_set": "纹理_10",
+      "textures": [
+        "落叶层",
+        "湿土",
+        "盘根",
+        "泥"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_12",
+          "树_13"
+        ],
+        "rocks": [
+          "石头_15"
+        ],
+        "low": [
+          "草_09"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          30,
+          90
+        ],
+        "slope_bias": "gully",
+        "max_slope_deg": 30
+      },
+      "distribution": [
+        "亚马逊",
+        "刚果",
+        "东南亚",
+        "印度西南"
+      ],
+      "land_share_pct": 6,
+      "priority": 1
+    },
+    {
+      "id": "savanna",
+      "index": 11,
+      "name_cn": "稀树草原",
+      "terrain_model": "地形_11",
+      "texture_set": "纹理_11",
+      "textures": [
+        "干草",
+        "红土"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_14"
+        ],
+        "rocks": [
+          "石头_16"
+        ],
+        "low": [
+          "草_10"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          20,
+          60
+        ],
+        "slope_bias": "flat",
+        "max_slope_deg": 12
+      },
+      "distribution": [
+        "东非",
+        "印度德干",
+        "澳洲北部",
+        "南美草原"
+      ],
+      "land_share_pct": 10,
+      "priority": 1
+    },
+    {
+      "id": "marsh",
+      "index": 12,
+      "name_cn": "沼泽·湿地",
+      "terrain_model": "地形_12",
+      "texture_set": "纹理_12",
+      "textures": [
+        "淤泥",
+        "水藻",
+        "芦苇"
+      ],
+      "vegetation": {
+        "trees": [
+          "树_15"
+        ],
+        "rocks": [
+          "石头_17"
+        ],
+        "low": [
+          "草_11"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          2,
+          10
+        ],
+        "slope_bias": "flat",
+        "max_slope_deg": 4
+      },
+      "distribution": [
+        "两河沼泽",
+        "尼罗河三角洲",
+        "江南水乡",
+        "湄公河"
+      ],
+      "land_share_pct": 3,
+      "priority": 2
+    },
+    {
+      "id": "inland_water",
+      "index": 13,
+      "name_cn": "河湖",
+      "terrain_model": "地形_13",
+      "texture_set": "纹理_13",
+      "textures": [
+        "浅水",
+        "深水",
+        "岸滩"
+      ],
+      "vegetation": {
+        "trees": [],
+        "rocks": [],
+        "low": [
+          "草_12"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          0,
+          2
+        ],
+        "slope_bias": "flat",
+        "max_slope_deg": 2
+      },
+      "distribution": [
+        "各大河湖"
+      ],
+      "land_share_pct": 1,
+      "priority": 1
+    },
+    {
+      "id": "ocean",
+      "index": 14,
+      "name_cn": "海洋",
+      "terrain_model": "地形_14",
+      "texture_set": "纹理_14",
+      "textures": [
+        "浅海",
+        "深海",
+        "浪花带"
+      ],
+      "vegetation": {
+        "trees": [],
+        "rocks": [],
+        "low": []
+      },
+      "shape": {
+        "relief_m": [
+          0,
+          0
+        ],
+        "slope_bias": "flat",
+        "max_slope_deg": 0
+      },
+      "distribution": [
+        "全球海洋"
+      ],
+      "land_share_pct": null,
+      "surface_share_pct": 71,
+      "priority": 0
+    },
+    {
+      "id": "badland",
+      "index": 15,
+      "name_cn": "盐碱·戈壁",
+      "terrain_model": "地形_15",
+      "texture_set": "纹理_15",
+      "textures": [
+        "盐壳",
+        "砾漠",
+        "风蚀岩"
+      ],
+      "vegetation": {
+        "trees": [],
+        "rocks": [
+          "石头_18"
+        ],
+        "low": [
+          "草_13"
+        ]
+      },
+      "shape": {
+        "relief_m": [
+          10,
+          60
+        ],
+        "slope_bias": "eroded",
+        "max_slope_deg": 35
+      },
+      "distribution": [
+        "柴达木",
+        "罗布泊",
+        "美国西部",
+        "中亚"
+      ],
+      "land_share_pct": 2,
+      "priority": 3
+    }
+  ]
+}

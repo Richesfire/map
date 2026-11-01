@@ -1,0 +1,7 @@
+﻿.godot/
+*.blend1
+export.cfg
+export_presets.cfg
+*.translation
+Thumbs.db
+.DS_Store

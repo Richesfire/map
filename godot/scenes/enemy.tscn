@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://ceqe83eqshuly"]
+
+[ext_resource type="Script" uid="uid://b7alrlrfp4rse" path="res://scripts/enemy.gd" id="1_enemy"]
+[ext_resource type="PackedScene" uid="uid://chyc1boaya6b1" path="res://scenes/character_model.tscn" id="2_model"]
+
+[sub_resource type="CapsuleShape3D" id="4_body_shape"]
+radius = 0.15820313
+height = 1.143
+
+[sub_resource type="BoxShape3D" id="5_chest_shape"]
+size = Vector3(0.5210415, 0.5364383, 0.3106)
+
+[sub_resource type="SphereShape3D" id="6_head_shape"]
+radius = 0.12451194
+
+[node name="Enemy" type="CharacterBody3D" unique_id=128684500 groups=["enemy"]]
+script = ExtResource("1_enemy")
+move_speed = 3.0
+revive_time = 1.0
+
+[node name="BodyCollision" type="CollisionShape3D" parent="." unique_id=1187100357]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5717159, -0.03457564)
+shape = SubResource("4_body_shape")
+
+[node name="ChestCollision" type="CollisionShape3D" parent="." unique_id=390626004]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00072553754, 1.3537997, -0.030222744)
+shape = SubResource("5_chest_shape")
+
+[node name="HeadCollision" type="CollisionShape3D" parent="." unique_id=870346003]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7385178, -0.005874142)
+shape = SubResource("6_head_shape")
+
+[node name="Model" parent="." unique_id=550672851 instance=ExtResource("2_model")]
+
+[node name="HealthBar" type="Node3D" parent="." unique_id=310387309]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.15, 0)
+
+[node name="Background" type="Sprite3D" parent="HealthBar" unique_id=2116755597]
+transform = Transform3D(90, 0, 0, 0, 12, 0, 0, 0, 1, 0, 0, -0.01)
+modulate = Color(0.05, 0.05, 0.05, 0.9)
+billboard = 1
+no_depth_test = true
+
+[node name="Fill" type="Sprite3D" parent="HealthBar" unique_id=622880887]
+transform = Transform3D(84, 0, 0, 0, 8, 0, 0, 0, 1, 0, 0, 0)
+modulate = Color(0.2, 0.8, 0.25, 1)
+billboard = 1
+no_depth_test = true

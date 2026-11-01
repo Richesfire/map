@@ -1,0 +1,342 @@
+[gd_scene format=3 uid="uid://c8a6l7k3415d3"]
+
+[ext_resource type="Script" uid="uid://bd7eax6p2dcbf" path="res://scripts/player.gd" id="1"]
+[ext_resource type="PackedScene" uid="uid://chyc1boaya6b1" path="res://scenes/character_model.tscn" id="2_g2els"]
+[ext_resource type="PackedScene" uid="uid://bq3m7x2p1xa0k" path="res://scenes/weapon.tscn" id="4_weaponscene"]
+
+[sub_resource type="CapsuleShape3D" id="5_body_shape"]
+radius = 0.14892578
+height = 1.143
+
+[sub_resource type="BoxShape3D" id="6_chest_shape"]
+size = Vector3(0.5210415, 0.5364383, 0.3106)
+
+[sub_resource type="SphereShape3D" id="7_head_shape"]
+radius = 0.12451194
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_fjrip"]
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_left_raise"]
+animation = &"s_attack_left_raise"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_left_recover"]
+animation = &"s_attack_left_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_left_swing"]
+animation = &"s_attack_left_swing"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_right_raise"]
+animation = &"s_attack_right_raise"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_right_recover"]
+animation = &"s_attack_right_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_right_swing"]
+animation = &"s_attack_right_swing"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_thrust_raise"]
+animation = &"s_attack_thrust_raise"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_thrust_recover"]
+animation = &"s_attack_thrust_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_thrust_swing"]
+animation = &"s_attack_thrust_swing"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_up_raise"]
+animation = &"s_attack_up_raise"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_up_recover"]
+animation = &"s_attack_up_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_attack_up_swing"]
+animation = &"s_attack_up_swing"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_down"]
+animation = &"s_block_down"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_down_recover"]
+animation = &"s_block_down_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_left"]
+animation = &"s_block_left"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_left_recover"]
+animation = &"s_block_left_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_right"]
+animation = &"s_block_right"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_right_recover"]
+animation = &"s_block_right_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_up"]
+animation = &"s_block_up"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_up_recover"]
+animation = &"s_block_up_recover"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_success_up"]
+animation = &"s_block_success_up"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_success_down"]
+animation = &"s_block_success_down"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_success_left"]
+animation = &"s_block_success_left"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_block_success_right"]
+animation = &"s_block_success_right"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_death"]
+animation = &"death"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_idle_empty"]
+animation = &"idle_empty"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_hit_weapon"]
+animation = &"hit_weapon"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_idle_weapon"]
+animation = &"s_idle_weapon"
+
+[sub_resource type="Curve" id="Curve_fsf"]
+_data = [Vector2(0, 0), 0.0, 0.0, 1, 1, Vector2(0.25, 0.1), 0.0, 0.0, 1, 1, Vector2(0.5, 0.5), 0.0, 0.0, 1, 1, Vector2(0.75, 0.9), 0.0, 0.0, 1, 1, Vector2(1, 1), 0.0, 0.0, 1, 1]
+point_count = 5
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_atk_start"]
+xfade_time = 0.15
+xfade_curve = SubResource("Curve_fsf")
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_atk_fade"]
+xfade_time = 0.15
+xfade_curve = SubResource("Curve_fsf")
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_combo"]
+xfade_time = 0.3
+xfade_curve = SubResource("Curve_fsf")
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_block_in"]
+xfade_time = 0.1
+xfade_curve = SubResource("Curve_fsf")
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_qhqgy"]
+states/End/position = Vector2(1000, 100)
+states/Start/position = Vector2(150, 100)
+states/attack_left_raise/node = SubResource("Anim_attack_left_raise")
+states/attack_left_raise/position = Vector2(-100, -100)
+states/attack_left_recover/node = SubResource("Anim_attack_left_recover")
+states/attack_left_recover/position = Vector2(600, -100)
+states/attack_left_swing/node = SubResource("Anim_attack_left_swing")
+states/attack_left_swing/position = Vector2(340, -100)
+states/attack_right_raise/node = SubResource("Anim_attack_right_raise")
+states/attack_right_raise/position = Vector2(-100, 240)
+states/attack_right_recover/node = SubResource("Anim_attack_right_recover")
+states/attack_right_recover/position = Vector2(600, 240)
+states/attack_right_swing/node = SubResource("Anim_attack_right_swing")
+states/attack_right_swing/position = Vector2(340, 240)
+states/attack_thrust_raise/node = SubResource("Anim_attack_thrust_raise")
+states/attack_thrust_raise/position = Vector2(-100, 520)
+states/attack_thrust_recover/node = SubResource("Anim_attack_thrust_recover")
+states/attack_thrust_recover/position = Vector2(600, 520)
+states/attack_thrust_swing/node = SubResource("Anim_attack_thrust_swing")
+states/attack_thrust_swing/position = Vector2(340, 520)
+states/attack_up_raise/node = SubResource("Anim_attack_up_raise")
+states/attack_up_raise/position = Vector2(-100, 380)
+states/attack_up_recover/node = SubResource("Anim_attack_up_recover")
+states/attack_up_recover/position = Vector2(600, 380)
+states/attack_up_swing/node = SubResource("Anim_attack_up_swing")
+states/attack_up_swing/position = Vector2(340, 380)
+states/block_down/node = SubResource("Anim_block_down")
+states/block_down/position = Vector2(340, 660)
+states/block_down_recover/node = SubResource("Anim_block_down_recover")
+states/block_down_recover/position = Vector2(600, 660)
+states/block_left/node = SubResource("Anim_block_left")
+states/block_left/position = Vector2(-100, 800)
+states/block_left_recover/node = SubResource("Anim_block_left_recover")
+states/block_left_recover/position = Vector2(-300, 800)
+states/block_right/node = SubResource("Anim_block_right")
+states/block_right/position = Vector2(340, 800)
+states/block_right_recover/node = SubResource("Anim_block_right_recover")
+states/block_right_recover/position = Vector2(600, 800)
+states/block_up/node = SubResource("Anim_block_up")
+states/block_up/position = Vector2(-100, 660)
+states/block_up_recover/node = SubResource("Anim_block_up_recover")
+states/block_up_recover/position = Vector2(-300, 660)
+states/block_success_up/node = SubResource("Anim_block_success_up")
+states/block_success_up/position = Vector2(-100, 1080)
+states/block_success_down/node = SubResource("Anim_block_success_down")
+states/block_success_down/position = Vector2(100, 1080)
+states/block_success_left/node = SubResource("Anim_block_success_left")
+states/block_success_left/position = Vector2(300, 1080)
+states/block_success_right/node = SubResource("Anim_block_success_right")
+states/block_success_right/position = Vector2(500, 1080)
+states/death/node = SubResource("Anim_death")
+states/death/position = Vector2(340, 940)
+states/hit_empty/node = SubResource("Anim_idle_empty")
+states/hit_empty/position = Vector2(-300, 1000)
+states/hit_weapon/node = SubResource("Anim_hit_weapon")
+states/hit_weapon/position = Vector2(-100, 940)
+states/idle_weapon/node = SubResource("Anim_idle_weapon")
+states/idle_weapon/position = Vector2(340, 100)
+transitions = ["Start", "idle_weapon", SubResource("T_atk_start"), "idle_weapon", "attack_left_raise", SubResource("T_atk_fade"), "idle_weapon", "attack_right_raise", SubResource("T_atk_fade"), "idle_weapon", "attack_up_raise", SubResource("T_atk_fade"), "idle_weapon", "attack_thrust_raise", SubResource("T_atk_fade"), "attack_left_raise", "attack_left_swing", SubResource("T_atk_fade"), "attack_right_raise", "attack_right_swing", SubResource("T_atk_fade"), "attack_up_raise", "attack_up_swing", SubResource("T_atk_fade"), "attack_thrust_raise", "attack_thrust_swing", SubResource("T_atk_fade"), "attack_left_swing", "idle_weapon", SubResource("T_atk_fade"), "attack_right_swing", "idle_weapon", SubResource("T_atk_fade"), "attack_up_swing", "idle_weapon", SubResource("T_atk_fade"), "attack_thrust_swing", "idle_weapon", SubResource("T_atk_fade"), "attack_left_swing", "attack_left_raise", SubResource("T_combo"), "attack_left_swing", "attack_right_raise", SubResource("T_combo"), "attack_left_swing", "attack_up_raise", SubResource("T_combo"), "attack_left_swing", "attack_thrust_raise", SubResource("T_combo"), "attack_right_swing", "attack_left_raise", SubResource("T_combo"), "attack_right_swing", "attack_right_raise", SubResource("T_combo"), "attack_right_swing", "attack_up_raise", SubResource("T_combo"), "attack_right_swing", "attack_thrust_raise", SubResource("T_combo"), "attack_up_swing", "attack_left_raise", SubResource("T_combo"), "attack_up_swing", "attack_right_raise", SubResource("T_combo"), "attack_up_swing", "attack_up_raise", SubResource("T_combo"), "attack_up_swing", "attack_thrust_raise", SubResource("T_combo"), "attack_thrust_swing", "attack_left_raise", SubResource("T_combo"), "attack_thrust_swing", "attack_right_raise", SubResource("T_combo"), "attack_thrust_swing", "attack_up_raise", SubResource("T_combo"), "attack_thrust_swing", "attack_thrust_raise", SubResource("T_combo"), "idle_weapon", "block_up", SubResource("T_atk_fade"), "idle_weapon", "block_down", SubResource("T_atk_fade"), "idle_weapon", "block_left", SubResource("T_atk_fade"), "idle_weapon", "block_right", SubResource("T_atk_fade"), "block_up", "idle_weapon", SubResource("T_atk_fade"), "block_down", "idle_weapon", SubResource("T_atk_fade"), "block_left", "idle_weapon", SubResource("T_atk_fade"), "block_right", "idle_weapon", SubResource("T_atk_fade"), "idle_weapon", "hit_weapon", SubResource("T_atk_fade"), "hit_weapon", "idle_weapon", SubResource("T_atk_fade"), "idle_weapon", "death", SubResource("T_atk_fade"), "attack_left_swing", "attack_left_recover", SubResource("T_atk_fade"), "attack_right_swing", "attack_right_recover", SubResource("T_atk_fade"), "attack_up_swing", "attack_up_recover", SubResource("T_atk_fade"), "attack_thrust_swing", "attack_thrust_recover", SubResource("T_atk_fade"), "attack_left_recover", "idle_weapon", SubResource("T_atk_fade"), "attack_right_recover", "idle_weapon", SubResource("T_atk_fade"), "attack_up_recover", "idle_weapon", SubResource("T_atk_fade"), "attack_thrust_recover", "idle_weapon", SubResource("T_atk_fade"), "block_up", "block_up_recover", SubResource("T_atk_fade"), "block_down", "block_down_recover", SubResource("T_atk_fade"), "block_left", "block_left_recover", SubResource("T_atk_fade"), "block_right", "block_right_recover", SubResource("T_atk_fade"), "block_up_recover", "idle_weapon", SubResource("T_atk_fade"), "block_down_recover", "idle_weapon", SubResource("T_atk_fade"), "block_left_recover", "idle_weapon", SubResource("T_atk_fade"), "block_right_recover", "idle_weapon", SubResource("T_atk_fade"), "attack_left_recover", "attack_left_raise", SubResource("T_atk_fade"), "attack_right_recover", "attack_right_raise", SubResource("T_atk_fade"), "attack_up_recover", "attack_up_raise", SubResource("T_atk_fade"), "attack_thrust_recover", "attack_thrust_raise", SubResource("T_atk_fade"), "attack_left_raise", "block_up", SubResource("T_block_in"), "attack_left_raise", "block_down", SubResource("T_block_in"), "attack_left_raise", "block_left", SubResource("T_block_in"), "attack_left_raise", "block_right", SubResource("T_block_in"), "attack_left_swing", "block_up", SubResource("T_block_in"), "attack_left_swing", "block_down", SubResource("T_block_in"), "attack_left_swing", "block_left", SubResource("T_block_in"), "attack_left_swing", "block_right", SubResource("T_block_in"), "attack_left_recover", "block_up", SubResource("T_block_in"), "attack_left_recover", "block_down", SubResource("T_block_in"), "attack_left_recover", "block_left", SubResource("T_block_in"), "attack_left_recover", "block_right", SubResource("T_block_in"), "attack_right_raise", "block_up", SubResource("T_block_in"), "attack_right_raise", "block_down", SubResource("T_block_in"), "attack_right_raise", "block_left", SubResource("T_block_in"), "attack_right_raise", "block_right", SubResource("T_block_in"), "attack_right_swing", "block_up", SubResource("T_block_in"), "attack_right_swing", "block_down", SubResource("T_block_in"), "attack_right_swing", "block_left", SubResource("T_block_in"), "attack_right_swing", "block_right", SubResource("T_block_in"), "attack_right_recover", "block_up", SubResource("T_block_in"), "attack_right_recover", "block_down", SubResource("T_block_in"), "attack_right_recover", "block_left", SubResource("T_block_in"), "attack_right_recover", "block_right", SubResource("T_block_in"), "attack_up_raise", "block_up", SubResource("T_block_in"), "attack_up_raise", "block_down", SubResource("T_block_in"), "attack_up_raise", "block_left", SubResource("T_block_in"), "attack_up_raise", "block_right", SubResource("T_block_in"), "attack_up_swing", "block_up", SubResource("T_block_in"), "attack_up_swing", "block_down", SubResource("T_block_in"), "attack_up_swing", "block_left", SubResource("T_block_in"), "attack_up_swing", "block_right", SubResource("T_block_in"), "attack_up_recover", "block_up", SubResource("T_block_in"), "attack_up_recover", "block_down", SubResource("T_block_in"), "attack_up_recover", "block_left", SubResource("T_block_in"), "attack_up_recover", "block_right", SubResource("T_block_in"), "attack_thrust_raise", "block_up", SubResource("T_block_in"), "attack_thrust_raise", "block_down", SubResource("T_block_in"), "attack_thrust_raise", "block_left", SubResource("T_block_in"), "attack_thrust_raise", "block_right", SubResource("T_block_in"), "attack_thrust_swing", "block_up", SubResource("T_block_in"), "attack_thrust_swing", "block_down", SubResource("T_block_in"), "attack_thrust_swing", "block_left", SubResource("T_block_in"), "attack_thrust_swing", "block_right", SubResource("T_block_in"), "attack_thrust_recover", "block_up", SubResource("T_block_in"), "attack_thrust_recover", "block_down", SubResource("T_block_in"), "attack_thrust_recover", "block_left", SubResource("T_block_in"), "attack_thrust_recover", "block_right", SubResource("T_block_in"), "block_up", "attack_left_raise", SubResource("T_block_in"), "block_up", "attack_right_raise", SubResource("T_block_in"), "block_up", "attack_up_raise", SubResource("T_block_in"), "block_up", "attack_thrust_raise", SubResource("T_block_in"), "block_down", "attack_left_raise", SubResource("T_block_in"), "block_down", "attack_right_raise", SubResource("T_block_in"), "block_down", "attack_up_raise", SubResource("T_block_in"), "block_down", "attack_thrust_raise", SubResource("T_block_in"), "block_left", "attack_left_raise", SubResource("T_block_in"), "block_left", "attack_right_raise", SubResource("T_block_in"), "block_left", "attack_up_raise", SubResource("T_block_in"), "block_left", "attack_thrust_raise", SubResource("T_block_in"), "block_right", "attack_left_raise", SubResource("T_block_in"), "block_right", "attack_right_raise", SubResource("T_block_in"), "block_right", "attack_up_raise", SubResource("T_block_in"), "block_right", "attack_thrust_raise", SubResource("T_block_in"), "block_up_recover", "attack_left_raise", SubResource("T_block_in"), "block_up_recover", "attack_right_raise", SubResource("T_block_in"), "block_up_recover", "attack_up_raise", SubResource("T_block_in"), "block_up_recover", "attack_thrust_raise", SubResource("T_block_in"), "block_down_recover", "attack_left_raise", SubResource("T_block_in"), "block_down_recover", "attack_right_raise", SubResource("T_block_in"), "block_down_recover", "attack_up_raise", SubResource("T_block_in"), "block_down_recover", "attack_thrust_raise", SubResource("T_block_in"), "block_left_recover", "attack_left_raise", SubResource("T_block_in"), "block_left_recover", "attack_right_raise", SubResource("T_block_in"), "block_left_recover", "attack_up_raise", SubResource("T_block_in"), "block_left_recover", "attack_thrust_raise", SubResource("T_block_in"), "block_right_recover", "attack_left_raise", SubResource("T_block_in"), "block_right_recover", "attack_right_raise", SubResource("T_block_in"), "block_right_recover", "attack_up_raise", SubResource("T_block_in"), "block_right_recover", "attack_thrust_raise", SubResource("T_block_in"), "block_up_recover", "block_up", SubResource("T_block_in"), "block_up_recover", "block_down", SubResource("T_block_in"), "block_up_recover", "block_left", SubResource("T_block_in"), "block_up_recover", "block_right", SubResource("T_block_in"), "block_down_recover", "block_up", SubResource("T_block_in"), "block_down_recover", "block_down", SubResource("T_block_in"), "block_down_recover", "block_left", SubResource("T_block_in"), "block_down_recover", "block_right", SubResource("T_block_in"), "block_left_recover", "block_up", SubResource("T_block_in"), "block_left_recover", "block_down", SubResource("T_block_in"), "block_left_recover", "block_left", SubResource("T_block_in"), "block_left_recover", "block_right", SubResource("T_block_in"), "block_right_recover", "block_up", SubResource("T_block_in"), "block_right_recover", "block_down", SubResource("T_block_in"), "block_right_recover", "block_left", SubResource("T_block_in"), "block_right_recover", "block_right", SubResource("T_block_in")]
+
+[sub_resource type="AnimationNodeBlend2" id="AnimationNodeBlend2_body"]
+filter_enabled = true
+filters = ["ren/Skeleton3D:Chest", "ren/Skeleton3D:Head", "ren/Skeleton3D:LeftHand", "ren/Skeleton3D:LeftLowerArm", "ren/Skeleton3D:LeftShoulder", "ren/Skeleton3D:LeftUpperArm", "ren/Skeleton3D:Neck", "ren/Skeleton3D:RightHand", "ren/Skeleton3D:RightLowerArm", "ren/Skeleton3D:RightShoulder", "ren/Skeleton3D:RightUpperArm", "ren/Skeleton3D:Spine", "ren/Skeleton3D:UpperChest"]
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_jump"]
+animation = &"jump"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_run_back_empty"]
+animation = &"run_back_empty"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_run_back_weapon"]
+animation = &"s_run_back_weapon"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_run_forward_empty"]
+animation = &"run_forward_empty"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_run_forward_weapon"]
+animation = &"s_run_forward_weapon"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_walk_back_empty"]
+animation = &"walk_back_empty"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_walk_back_weapon"]
+animation = &"s_walk_back_weapon"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_walk_forward_empty"]
+animation = &"walk_forward_empty"
+
+[sub_resource type="AnimationNodeAnimation" id="Anim_walk_forward_weapon"]
+animation = &"s_walk_forward_weapon"
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_move_start"]
+xfade_time = 0.15
+xfade_curve = SubResource("Curve_fsf")
+advance_mode = 2
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_move_fade"]
+xfade_time = 0.15
+xfade_curve = SubResource("Curve_fsf")
+reset = false
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_move_land"]
+xfade_time = 0.5
+xfade_curve = SubResource("Curve_fsf")
+reset = false
+
+[sub_resource type="AnimationNodeStateMachineTransition" id="T_move_cut"]
+
+[sub_resource type="AnimationNodeStateMachine" id="AnimationNodeStateMachine_dqkch"]
+states/Start/position = Vector2(150, 100)
+states/idle_empty/node = SubResource("Anim_idle_empty")
+states/idle_empty/position = Vector2(-100, 200)
+states/idle_weapon/node = SubResource("Anim_idle_weapon")
+states/idle_weapon/position = Vector2(340, 100)
+states/jump/node = SubResource("Anim_jump")
+states/jump/position = Vector2(560, 160)
+states/run_back_empty/node = SubResource("Anim_run_back_empty")
+states/run_back_empty/position = Vector2(-100, 760)
+states/run_back_weapon/node = SubResource("Anim_run_back_weapon")
+states/run_back_weapon/position = Vector2(340, 660)
+states/run_forward_empty/node = SubResource("Anim_run_forward_empty")
+states/run_forward_empty/position = Vector2(-100, 480)
+states/run_forward_weapon/node = SubResource("Anim_run_forward_weapon")
+states/run_forward_weapon/position = Vector2(340, 380)
+states/walk_back_empty/node = SubResource("Anim_walk_back_empty")
+states/walk_back_empty/position = Vector2(-100, 620)
+states/walk_back_weapon/node = SubResource("Anim_walk_back_weapon")
+states/walk_back_weapon/position = Vector2(340, 520)
+states/walk_forward_empty/node = SubResource("Anim_walk_forward_empty")
+states/walk_forward_empty/position = Vector2(-100, 340)
+states/walk_forward_weapon/node = SubResource("Anim_walk_forward_weapon")
+states/walk_forward_weapon/position = Vector2(340, 240)
+transitions = ["Start", "idle_weapon", SubResource("T_move_start"), "idle_weapon", "walk_forward_weapon", SubResource("T_move_fade"), "idle_weapon", "run_forward_weapon", SubResource("T_move_fade"), "idle_weapon", "walk_back_weapon", SubResource("T_move_fade"), "walk_forward_weapon", "idle_weapon", SubResource("T_move_fade"), "walk_forward_weapon", "run_forward_weapon", SubResource("T_move_fade"), "walk_forward_weapon", "walk_back_weapon", SubResource("T_move_fade"), "run_forward_weapon", "idle_weapon", SubResource("T_move_fade"), "run_forward_weapon", "walk_forward_weapon", SubResource("T_move_fade"), "run_forward_weapon", "walk_back_weapon", SubResource("T_move_fade"), "walk_back_weapon", "idle_weapon", SubResource("T_move_fade"), "walk_back_weapon", "walk_forward_weapon", SubResource("T_move_fade"), "walk_back_weapon", "run_forward_weapon", SubResource("T_move_fade"), "run_back_weapon", "idle_weapon", SubResource("T_move_fade"), "run_back_weapon", "walk_forward_weapon", SubResource("T_move_fade"), "run_back_weapon", "run_forward_weapon", SubResource("T_move_fade"), "run_back_weapon", "walk_back_weapon", SubResource("T_move_fade"), "idle_weapon", "run_back_weapon", SubResource("T_move_fade"), "walk_forward_weapon", "run_back_weapon", SubResource("T_move_fade"), "run_forward_weapon", "run_back_weapon", SubResource("T_move_fade"), "walk_back_weapon", "run_back_weapon", SubResource("T_move_fade"), "idle_empty", "walk_forward_empty", SubResource("T_move_fade"), "idle_empty", "run_forward_empty", SubResource("T_move_fade"), "idle_empty", "walk_back_empty", SubResource("T_move_fade"), "walk_forward_empty", "idle_empty", SubResource("T_move_fade"), "walk_forward_empty", "run_forward_empty", SubResource("T_move_fade"), "walk_forward_empty", "walk_back_empty", SubResource("T_move_fade"), "run_forward_empty", "idle_empty", SubResource("T_move_fade"), "run_forward_empty", "walk_forward_empty", SubResource("T_move_fade"), "run_forward_empty", "walk_back_empty", SubResource("T_move_fade"), "walk_back_empty", "idle_empty", SubResource("T_move_fade"), "walk_back_empty", "walk_forward_empty", SubResource("T_move_fade"), "walk_back_empty", "run_forward_empty", SubResource("T_move_fade"), "run_back_empty", "idle_empty", SubResource("T_move_fade"), "run_back_empty", "walk_forward_empty", SubResource("T_move_fade"), "run_back_empty", "run_forward_empty", SubResource("T_move_fade"), "run_back_empty", "walk_back_empty", SubResource("T_move_fade"), "idle_empty", "run_back_empty", SubResource("T_move_fade"), "walk_forward_empty", "run_back_empty", SubResource("T_move_fade"), "run_forward_empty", "run_back_empty", SubResource("T_move_fade"), "walk_back_empty", "run_back_empty", SubResource("T_move_fade"), "jump", "idle_empty", SubResource("T_move_land"), "jump", "idle_weapon", SubResource("T_move_land"), "jump", "walk_forward_empty", SubResource("T_move_land"), "jump", "walk_forward_weapon", SubResource("T_move_land"), "jump", "run_forward_empty", SubResource("T_move_land"), "jump", "run_forward_weapon", SubResource("T_move_land"), "jump", "walk_back_empty", SubResource("T_move_land"), "jump", "walk_back_weapon", SubResource("T_move_land"), "jump", "run_back_empty", SubResource("T_move_land"), "jump", "run_back_weapon", SubResource("T_move_land"), "idle_empty", "jump", SubResource("T_move_cut"), "idle_weapon", "jump", SubResource("T_move_cut"), "walk_forward_empty", "jump", SubResource("T_move_cut"), "walk_forward_weapon", "jump", SubResource("T_move_cut"), "run_forward_empty", "jump", SubResource("T_move_cut"), "run_forward_weapon", "jump", SubResource("T_move_cut"), "walk_back_empty", "jump", SubResource("T_move_cut"), "walk_back_weapon", "jump", SubResource("T_move_cut"), "run_back_empty", "jump", SubResource("T_move_cut"), "run_back_weapon", "jump", SubResource("T_move_cut")]
+graph_offset = Vector2(-100, 0)
+
+[sub_resource type="AnimationNodeBlendTree" id="AnimationNodeBlendTree_kxstr"]
+nodes/output/position = Vector2(650, 100)
+nodes/body_blend/node = SubResource("AnimationNodeBlend2_body")
+nodes/body_blend/position = Vector2(300, 100)
+nodes/move_state/node = SubResource("AnimationNodeStateMachine_dqkch")
+nodes/move_state/position = Vector2(-64, 304)
+nodes/attack_state/node = SubResource("AnimationNodeStateMachine_qhqgy")
+nodes/attack_state/position = Vector2(-64, 48)
+node_connections = [&"output", 0, &"body_blend", &"body_blend", 0, &"move_state", &"body_blend", 1, &"attack_state"]
+
+[node name="Player" type="CharacterBody3D" unique_id=1369614931 groups=["player"]]
+script = ExtResource("1")
+walk_speed = 1.0
+run_speed = 3.0
+
+[node name="BodyCollision" type="CollisionShape3D" parent="." unique_id=1115854824]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5717159, 0.03033948)
+shape = SubResource("5_body_shape")
+
+[node name="ChestCollision" type="CollisionShape3D" parent="." unique_id=1563762803]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.00072553754, 1.3537997, 0.034692377)
+shape = SubResource("6_chest_shape")
+
+[node name="HeadCollision" type="CollisionShape3D" parent="." unique_id=1833504151]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.7385178, 0)
+shape = SubResource("7_head_shape")
+
+[node name="CharacterRig" type="Node3D" parent="." unique_id=1088804194]
+transform = Transform3D(-1, 0, -8.742278e-08, 0, 1, 0, 8.742278e-08, 0, -1, 0, 0, 0)
+
+[node name="character" parent="CharacterRig" unique_id=1351488556 instance=ExtResource("2_g2els")]
+
+[node name="Skeleton3D" parent="CharacterRig/character/ren" parent_id_path=PackedInt32Array(1351488556, 1887988203) index="0" unique_id=217159516]
+bones/0/position = Vector3(-0.00015434623, 0.90970546, -0.04585922)
+bones/0/rotation = Quaternion(0.013501823, 0.70697796, 0.013501851, 0.70697784)
+bones/1/position = Vector3(-8.8191765e-09, -8.010492e-09, 0.1034565)
+bones/1/rotation = Quaternion(0.00030724145, 0.042091798, 0.99874955, 0.026976025)
+bones/2/rotation = Quaternion(-0.03644628, 0.0005030407, 0.03495057, 0.9987241)
+bones/3/rotation = Quaternion(-0.0036496327, -0.0029152795, -0.6867803, 0.7268501)
+bones/4/position = Vector3(-5.484426e-09, 8.374433e-09, -0.1034565)
+bones/4/rotation = Quaternion(0.9987495, -0.026976679, 0.0003067641, -0.042090755)
+bones/5/rotation = Quaternion(-0.036446307, -0.0005027683, -0.03495055, 0.9987241)
+bones/6/rotation = Quaternion(-0.003643601, 0.002909326, 0.6867793, 0.7268511)
+bones/7/rotation = Quaternion(8.6154833e-10, 1.4086099e-09, -0.019094463, 0.99981767)
+bones/8/rotation = Quaternion(-1.327199e-08, -1.6501721e-07, -0.1110486, 0.993815)
+bones/9/rotation = Quaternion(5.7380776e-09, 2.5393814e-07, 0.30850428, 0.95122296)
+bones/10/position = Vector3(0.028704729, 0.04764826, 0.2108723)
+bones/10/rotation = Quaternion(0.8120688, -0.38481134, 0.37421575, 0.2289696)
+bones/11/position = Vector3(-3.7567382e-08, 0.32412395, -7.547022e-09)
+bones/11/rotation = Quaternion(0.25255248, -0.030009389, 0.5762441, 0.7766977)
+bones/12/position = Vector3(-0.000436312, 0.25645307, -0.00063716294)
+bones/12/rotation = Quaternion(0.21911365, -0.052826814, 0.17215188, 0.9589381)
+bones/13/rotation = Quaternion(0.13056205, -0.095972225, -0.11811029, 0.9796902)
+bones/15/rotation = Quaternion(2.8978604e-15, -3.078581e-22, 1.1572367e-14, 1)
+bones/16/position = Vector3(0.028704775, 0.0476482, -0.21087223)
+bones/16/rotation = Quaternion(-0.038414065, -0.13504611, 0.9693383, 0.20166893)
+bones/17/position = Vector3(-5.0131675e-08, 0.3241241, -4.2118906e-08)
+bones/17/rotation = Quaternion(0.37985075, 0.011758888, -0.7575216, 0.5307881)
+bones/18/position = Vector3(-0.00033107476, 0.2556098, 0.00025417557)
+bones/18/rotation = Quaternion(0.17799482, -0.12803108, 0.040150274, 0.97484046)
+bones/19/position = Vector3(-1.0669611e-07, 0.10550078, -1.1269961e-08)
+bones/19/rotation = Quaternion(0.13056104, 0.095972024, 0.118110314, 0.9796903)
+
+[node name="Body" parent="CharacterRig/character/ren/Skeleton3D" index="0" unique_id=1627879746]
+transform = Transform3D(0.99692655, 0, 0, 0, 0.99692655, 0, 0, 0, 0.99692655, 0, 0, 0)
+
+[node name="WeaponSocket" type="BoneAttachment3D" parent="CharacterRig/character/ren/Skeleton3D" index="1" unique_id=1965197613]
+transform = Transform3D(-0.0014129803, 0.9115014, 0.4112956, 0.9999472, -0.0028875656, 0.009834841, 0.010152221, 0.41128805, -0.9114493, -0.099141605, 1.3015901, 0.1886633)
+bone_name = "RightHand"
+bone_idx = 19
+
+[node name="Weapon" parent="CharacterRig/character/ren/Skeleton3D/WeaponSocket" unique_id=881234567 instance=ExtResource("4_weaponscene")]
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="." unique_id=2059497772]
+libraries/ = SubResource("AnimationLibrary_fjrip")
+
+[node name="AnimationTree" type="AnimationTree" parent="." unique_id=674991301]
+root_node = NodePath("../CharacterRig/character")
+tree_root = SubResource("AnimationNodeBlendTree_kxstr")
+anim_player = NodePath("../CharacterRig/character/AnimationPlayer")
+parameters/body_blend/blend_amount = 0.0
+
+[editable path="CharacterRig/character"]

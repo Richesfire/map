@@ -1,0 +1,45 @@
+[gd_scene format=3 uid="uid://drmw7v8bcyqa5"]
+
+[ext_resource type="Script" uid="uid://dahm6x1agw447" path="res://scripts/horse.gd" id="1_horse"]
+[ext_resource type="PackedScene" uid="uid://bprabs4tbdjar" path="res://assets/models/horse.glb" id="2_model"]
+
+[sub_resource type="CapsuleShape3D" id="col_horse"]
+radius = 0.3046875
+height = 2.7157319
+
+[sub_resource type="BoxShape3D" id="mount_area_shape"]
+size = Vector3(4.013794, 2.5, 5)
+
+[node name="Horse" type="CharacterBody3D" unique_id=1985470082 groups=["horse"]]
+script = ExtResource("1_horse")
+turn_speed = 1.0
+turn_speed_fast = 0.5
+
+[node name="Model" parent="." unique_id=1415816563 instance=ExtResource("2_model")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
+
+[node name="TurnPlayer" type="AnimationPlayer" parent="." unique_id=1471389019]
+
+[node name="Collision" type="CollisionShape3D" parent="." unique_id=863186912]
+transform = Transform3D(1, 2.1321476e-08, 5.7213285e-08, 5.7213285e-08, -0.6544437, -0.7561107, 2.1321476e-08, 0.7561107, -0.6544437, 5.7815724e-11, 0.99363637, -0.19471876)
+shape = SubResource("col_horse")
+
+[node name="MountArea" type="Area3D" parent="." unique_id=863186913]
+collision_layer = 0
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MountArea" unique_id=863186914]
+transform = Transform3D(0.36, 0, 0, 0, 0.36, 0, 0, 0, 0.36, 0.0068969727, 1.25, 0)
+shape = SubResource("mount_area_shape")
+
+[node name="RideBone" type="BoneAttachment3D" parent="." unique_id=249432965]
+transform = Transform3D(-1, 4.440892e-15, 6.1896536e-08, -6.185116e-08, 0.038292203, -0.99926645, -2.3701499e-09, -0.9992664, -0.03829214, 1.9703313e-14, 1.2734998, -0.1373814)
+bone_name = "spine.005"
+bone_idx = 18
+use_external_skeleton = true
+external_skeleton = NodePath("../Model/ma/Skeleton3D")
+
+[node name="Seat" type="Marker3D" parent="RideBone" unique_id=1754051455]
+transform = Transform3D(-1, -1.2695561e-07, 8.2622094e-08, -9.209518e-08, 0.07652612, -0.99706775, 1.2026057e-07, -0.99706775, -0.07652617, 0.505, -0.186, 1.268)
+
+[node name="SeatRight" type="Marker3D" parent="RideBone" unique_id=1754051456]
+transform = Transform3D(-1, -1.2695561e-07, 8.2622094e-08, -9.209518e-08, 0.07652612, -0.99706775, 1.2026057e-07, -0.99706775, -0.07652617, -0.505, -0.186, 1.268)
