@@ -28,6 +28,7 @@ var _dragging := false
 var _built := false
 var _target_dir := Vector3.ZERO
 var _pin_dragging := false
+var _notice := ""          # 屏幕提示（例如海洋「敬请期待」）
 var _pin_pos := Vector2(56, 240)
 var _pin: Panel
 var _bar: ColorRect
@@ -203,6 +204,11 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventKey:
 		var k := event as InputEventKey
 		if k.pressed and not k.echo and _target_dir != Vector3.ZERO and (k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER):
+			# 海里暂时去不了：不做海战，也没有水域系统
+			if not _target_is_land():
+				show_notice("这里是海洋 · 敬请期待")
+				get_viewport().set_input_as_handled()
+				return
 			travel_requested.emit(_target_dir)
 			get_viewport().set_input_as_handled()
 			return
@@ -265,3 +271,22 @@ func pin_pos() -> Vector2:
 ## 地球贴图是否已生成完（预加载时用来判断）
 func is_ready_for_map() -> bool:
 	return _globe != null and _globe._tex != null
+
+
+## 目标点是不是陆地
+func _target_is_land() -> bool:
+	if _target_dir == Vector3.ZERO or world == null or world.biome == null:
+		return false
+	return world.biome.is_land(_target_dir)
+
+
+## 在地图上显示一条提示，2.5 秒后自动消失
+func show_notice(text: String) -> void:
+	_notice = text
+	if _overlay != null:
+		_overlay.queue_redraw()
+	var tw := get_tree().create_timer(2.5)
+	tw.timeout.connect(func():
+		_notice = ""
+		if _overlay != null:
+			_overlay.queue_redraw())

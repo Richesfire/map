@@ -652,6 +652,7 @@ func _test_travelui() -> void:
 	await get_tree().process_frame
 
 	var tgt: Vector3 = dlg.target_dir()
+	print("[UI] 目标是陆地 = %s" % str(dlg._target_is_land()))
 	print("[UI] 松手后目标 = %s" % ("(无)" if tgt == Vector3.ZERO else str(GeoSphere.dir_to_lonlat(tgt))))
 	if tgt == Vector3.ZERO:
 		print("[UI] 拖拽没打中球，链路止步于此")
@@ -663,8 +664,9 @@ func _test_travelui() -> void:
 	Input.parse_input_event(enter)
 	print("[UI] 已合成回车")
 
-	for i in 120:
+	for i in 60:
 		await get_tree().process_frame
+	print("[UI] 提示文字 = [%s]  还在地图里 = %s" % [dlg._notice, str(dlg.visible)])
 	var c := map.region_center_dir
 	var ll := GeoSphere.dir_to_lonlat(c)
 	print("[UI] 结束后中心 = %.2f,%.2f  群系=%s  地块=%d" % [ll.x, ll.y, map.biome.biome_at(c), map.get_tiles().size()])

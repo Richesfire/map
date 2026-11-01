@@ -29,6 +29,15 @@ func _draw() -> void:
 	# ---- 旅行准星：只有一个。定了目标就跟着球面走，没定就停在鼠标松手的位置
 	_draw_reticle(dialog.reticle_pos())
 
+	# ---- 提示文字（海洋「敬请期待」等）
+	if dialog._notice != "":
+		var f2 := ThemeDB.fallback_font
+		if f2 != null:
+			var msg: String = dialog._notice
+			var sz := Vector2(size.x * 0.5, 0)
+			draw_string(f2, Vector2(sz.x - 150.0, size.y - 90.0), msg,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(1, 0.86, 0.42, 0.98))
+
 	# ---- 玩家当前位置（红点 + 光环）
 	var pm := dialog.project(dialog.world.region_center_dir)
 	if pm.x >= 0.0:
