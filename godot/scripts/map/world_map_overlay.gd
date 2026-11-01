@@ -30,19 +30,7 @@ func _draw() -> void:
 	if dialog._target_dir == Vector3.ZERO:
 		_draw_reticle(dialog.pin_pos())
 
-	if false:
-		pass
-
-	# ---- 旅行准星（停靠在左侧，可拖到球上）
-	var pp := dialog.pin_pos()
-	draw_circle(pp, 15.0, Color(0.06, 0.05, 0.03, 0.55))
-	draw_arc(pp, 15.0, 0.0, TAU, 32, Color(0.98, 0.82, 0.32, 0.95), 2.5)
-	draw_line(pp + Vector2(-22, 0), pp + Vector2(-8, 0), Color(0.98, 0.82, 0.32), 2.0)
-	draw_line(pp + Vector2(8, 0), pp + Vector2(22, 0), Color(0.98, 0.82, 0.32), 2.0)
-	draw_line(pp + Vector2(0, -22), pp + Vector2(0, -8), Color(0.98, 0.82, 0.32), 2.0)
-	draw_line(pp + Vector2(0, 8), pp + Vector2(0, 22), Color(0.98, 0.82, 0.32), 2.0)
-	
-	# ---- 旅行目标标记
+	# ---- 旅行目标标记：跟着球体一起转
 	if dialog._target_dir != Vector3.ZERO:
 		var tp := dialog.project(dialog._target_dir)
 		if tp.x >= 0.0:

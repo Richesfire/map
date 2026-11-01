@@ -46,6 +46,7 @@ var _ground_material: ShaderMaterial
 var _prop_material: StandardMaterial3D
 var _prop_meshes: Dictionary = {}
 var _built := false
+var tiles_ready := 0    # 每建成一块（含碰撞）就 +1
 var biome: BiomeMap
 
 ## 地表染色（和地球仪上那套同源，只是压淡一些，免得地面过饱和）
@@ -330,6 +331,7 @@ func _spawn_tile(i: int, j: int, do_scatter: bool, deferred: bool = false) -> Te
 
 	_tiles[sid] = tile
 	_grid[Vector2i(i, j)] = tile
+	tiles_ready += 1
 	return tile
 
 

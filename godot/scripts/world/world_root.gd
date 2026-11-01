@@ -41,6 +41,7 @@ var _soul := false
 var _map_open := false
 var _warn_cd := 0
 var _traveling := false
+var _last_tiles_ready := -1
 var _minimap: MapMinimap
 var _hint: Label
 
@@ -109,6 +110,14 @@ func _process(_delta: float) -> void:
 	if player == null or map == null or not map.is_built():
 		return
 	map.stream_update(player.position)
+
+	# 新地块建成后重新贴地一次：
+	# 粗版地形比精细版低（山丘上能差 2~3m），如果人物是在粗版期间落地的，
+	# 精细版一出来他就被"埋"进去了。这里在每块建成时纠正一次，不是每帧纠。
+	if map.tiles_ready != _last_tiles_ready:
+		_last_tiles_ready = map.tiles_ready
+		if not _soul and not _traveling:
+			_snap_one(player, 0.2)
 
 	# 外部程序（QQ 截图、输入法、录屏）会把鼠标从游戏手里抢走，
 	# 还回来时 Godot 不会自动重捕 —— 表现就是鼠标撞边、视角不能无限转。
