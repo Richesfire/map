@@ -37,9 +37,13 @@ var _tex: ImageTexture
 var _loading: Label
 
 var _zoom := 1.0             # 滚轮缩放 0.6~2.6
-var _spin := 0.0             # 绕极轴自转（弧度）
+const STATE_PATH := "user://globe_view.cfg"
+var _spin := 0.0             # 绕地轴自转（弧度）
+var _orbit_yaw := 0.0        # 相机环绕（水平）
+var _orbit_pitch := 0.0      # 相机环绕（俯仰）
+var _save_timer := 0.0
 var _tilt := 0.0             # 前后倾（弧度，限幅）
-var _pivot_base_tilt := 0.0   # 地轴竖直，底座不倾
+var _pivot_base_tilt := deg_to_rad(23.4)   # 真地球仪的地轴倾角，底座和环都跟着倾
 
 
 func _ready() -> void:
@@ -112,6 +116,8 @@ func _build_scene() -> void:
 	_tilt_node.name = "GlobeTilt"
 	root.add_child(_tilt_node)
 
+	_tilt_node.rotation = Vector3(0.0, 0.0, _pivot_base_tilt)
+
 	_pivot = Node3D.new()
 	_pivot.name = "GlobePivot"
 	_tilt_node.add_child(_pivot)
@@ -132,6 +138,8 @@ func _build_scene() -> void:
 	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_sphere.material_override = mat
 	_pivot.add_child(_sphere)
+
+	load_state()
 
 	_loading = Label.new()
 	_loading.text = "生成地球纹理…"
@@ -221,12 +229,11 @@ func _apply_size() -> void:
 # ================================================================ 转动
 ## 只转球体本身：水平拖 = 绕极轴自转，竖直拖 = 前后倾（限幅）
 func rotate_by(rel: Vector2) -> void:
-	# 镜头在 +Z 看 -Z：绕 Y 增大 = 正面的点往 +X（屏幕右）移动
-	# 所以右拖（rel.x>0）要**加**，之前是减，方向是反的
+	# 只绕地轴自转。上下拖动不再让球前后倒 ——
+	# 那样会让北纬 20 度看起来"掉到南半球"，很反直觉。
 	_spin += rel.x * 0.006
-	# 绕 X 增大 = 正面的点往下移，所以下拖（rel.y>0）也是加
-	_tilt = clampf(_tilt + rel.y * 0.005, deg_to_rad(-75.0), deg_to_rad(75.0))
 	_apply_rotation()
+	_save_state_later()
 
 
 ## 滚轮缩放：滚轮上 = 放大（相机靠近）
@@ -280,11 +287,67 @@ func get_camera_z() -> float:
 	return _cam.position.z if _cam != null else 0.0
 
 
+## 空白处拖动：绕着球转相机（球不动，等于换个角度看）
+func orbit_by(rel: Vector2) -> void:
+	_orbit_yaw -= rel.x * 0.005
+	_orbit_pitch = clampf(_orbit_pitch - rel.y * 0.004,
+			deg_to_rad(-70.0), deg_to_rad(70.0))
+	_apply_orbit()
+	_save_state_later()
+
+
+func _apply_orbit() -> void:
+	if _cam == null or not _cam.is_inside_tree():
+		return
+	var dist := 4.55 / _zoom
+	var pivot := Vector3(0.0, 0.05, 0.0)
+	var pos := Vector3(0.0, 0.0, dist)
+	pos = pos.rotated(Vector3.RIGHT, _orbit_pitch)
+	pos = pos.rotated(Vector3.UP, _orbit_yaw)
+	_cam.position = pivot + pos
+	_cam.look_at(pivot, Vector3.UP)
+
+
+## 视角状态存盘，下次打开地图还是这个角度
+func save_state() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("globe", "spin", _spin)
+	cfg.set_value("globe", "orbit_yaw", _orbit_yaw)
+	cfg.set_value("globe", "orbit_pitch", _orbit_pitch)
+	cfg.set_value("globe", "zoom", _zoom)
+	cfg.save(STATE_PATH)
+
+
+func load_state() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(STATE_PATH) != OK:
+		return
+	_spin = float(cfg.get_value("globe", "spin", _spin))
+	_orbit_yaw = float(cfg.get_value("globe", "orbit_yaw", _orbit_yaw))
+	_orbit_pitch = float(cfg.get_value("globe", "orbit_pitch", _orbit_pitch))
+	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 2.6)
+	_apply_rotation()
+	_apply_orbit()
+
+
+func _save_state_later() -> void:
+	if _save_timer > 0.0:
+		return
+	_save_timer = 0.8      # 停手 0.8 秒后再写盘，别每帧写
+
+
+func _process(delta: float) -> void:
+	if _save_timer > 0.0:
+		_save_timer -= delta
+		if _save_timer <= 0.0:
+			save_state()
+
+
 func _apply_rotation() -> void:
 	if _pivot == null or _tilt_node == null:
 		return
 	# 分成两级：倾角绕世界 X，自转绕自身 Y，两者不互相污染
-	_tilt_node.rotation = Vector3(_tilt, 0.0, 0.0)
+	pass  # 倾角固定为地轴倾角，不再随拖拽变化
 	_pivot.rotation = Vector3(0.0, _spin, 0.0)
 
 

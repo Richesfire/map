@@ -28,6 +28,7 @@ var _dragging := false
 var _built := false
 var _target_dir := Vector3.ZERO
 var _pin_dragging := false
+var _orbiting := false
 var _notice := ""          # 屏幕提示（例如海洋「敬请期待」）
 var _pin_pos := Vector2(56, 240)
 var _pin: Panel
@@ -145,6 +146,11 @@ func _input(event: InputEvent) -> void:
 				_pin_pos = mb.position
 				get_viewport().set_input_as_handled()
 				return
+			if not mb.pressed and _orbiting:
+				_orbiting = false
+				_globe.save_state()
+				get_viewport().set_input_as_handled()
+				return
 			if not mb.pressed and _pin_dragging:
 				_pin_dragging = false
 				var hit := _globe.pick(mb.position)
@@ -174,7 +180,13 @@ func _input(event: InputEvent) -> void:
 				_overlay.queue_redraw()
 				get_viewport().set_input_as_handled()
 				return
-			_dragging = mb.pressed
+			# 球面上 = 绕地轴转；工具栏里 = 不理；其余空白 = 环绕相机（换个角度看）
+			if mb.pressed and _on_globe(mb.position):
+				_dragging = true
+			elif mb.pressed and not _inside_bar(mb.position):
+				_orbiting = true
+			else:
+				_dragging = false
 			get_viewport().set_input_as_handled()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_globe.zoom_by(1.0)
@@ -197,6 +209,11 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _pin_dragging:
 		var mm2 := event as InputEventMouseMotion
 		_pin.position = mm2.position - Vector2(32, 32)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _orbiting:
+		var mmo := event as InputEventMouseMotion
+		_globe.orbit_by(mmo.relative)
+		_overlay.queue_redraw()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _dragging:
 		var mm := event as InputEventMouseMotion
@@ -327,3 +344,15 @@ func edge_test() -> void:
 		var sp := project(d)
 		var ep := _globe.edge_point(d)
 		print("[EDGETEST] lon=%7.1f lat=%5.1f  proj=%s  edge=(%.0f,%.0f)  behind=%s" % [q[0], q[1], str(sp), ep.x, ep.y, str(sp.x < 0.0)])
+
+
+## 鼠标是不是落在球面上
+func _on_globe(p: Vector2) -> bool:
+	return _globe != null and _globe.pick(p) != Vector3.ZERO
+
+
+## 鼠标是不是在左侧工具栏里
+func _inside_bar(p: Vector2) -> bool:
+	if _bar == null:
+		return false
+	return Rect2(_bar.position, _bar.size).has_point(p)
