@@ -625,6 +625,9 @@ func _test_travelto() -> void:
 		if map.get_tiles().size() >= 3:
 			break
 	_snap_to_ground()   # 测试里也要贴地
+	var pd := GeoSphere.tangent_to_dir(map.region_frame, player.position.x, -player.position.z)
+	var gh := map.render_position(pd).y
+	print("[SNAPTEST] 贴地后 player.y=%.2f  解析地面=%.2f  差=%.2f" % [player.position.y, gh, player.position.y - gh])
 	for i in 120:
 		await get_tree().process_frame
 	print("[TravelTest] 地块数=%d  玩家pos=%s" % [map.get_tiles().size(), str(player.position)])

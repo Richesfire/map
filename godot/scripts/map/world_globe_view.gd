@@ -300,10 +300,14 @@ func orbit_by(rel: Vector2) -> void:
 func _apply_orbit() -> void:
 	if _cam == null or not _cam.is_inside_tree():
 		return
-	var dist := 4.55 / _zoom
+	# 缩放**不改相机距离**：改距离会改变透视（近大远小、球的两侧被拉伸），
+	# 看起来就像视角变了。改 FOV 才是真正的放大，投影方向一模一样。
+	var dist := 4.55
 	var pivot := Vector3(0.0, 0.05, 0.0)
 	var pos: Vector3 = _orbit_q * Vector3(0.0, 0.0, dist)
 	_cam.position = pivot + pos
+	if _cam != null:
+		_cam.fov = clampf(40.0 / _zoom, 8.0, 70.0)
 	# up 也要跟着转，否则 look_at 在极点会退化
 	var up: Vector3 = _orbit_q * Vector3.UP
 	if absf(up.dot(-pos.normalized())) > 0.999:
