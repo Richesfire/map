@@ -17,7 +17,7 @@ extends Node3D
 ## ==============================================================
 
 ## 每次改完都改这个，用来确认你运行的到底是不是最新代码
-const BUILD_TAG := "2026-11-01 17:10 碰撞提前+前方优先"
+const BUILD_TAG := "2026-11-01 19:15 鼠标重捕+抵达提示+草修复"
 
 @export_group("地图")
 @export var start_lon := 108.71
@@ -100,6 +100,12 @@ func _process(_delta: float) -> void:
 	if player == null or map == null or not map.is_built():
 		return
 	map.stream_update(player.position)
+
+	# 外部程序（QQ 截图、输入法、录屏）会把鼠标从游戏手里抢走，
+	# 还回来时 Godot 不会自动重捕 —— 表现就是鼠标撞边、视角不能无限转。
+	# 所以每帧核对一次：该捕获却没收回来，就重新捕获。
+	if _want_capture() and get_window().has_focus() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 	# 坠落救援：只在**真的掉下去了**（低于地表 20m）才介入。
 	# 之前用 0.8m 做"实时纠正"是错的：粗版还没建碰撞的那几帧会反复触发，
@@ -529,7 +535,17 @@ func _on_travel(target_dir: Vector3) -> void:
 		await wake.reveal()
 	print("[TravelTrace] 完成，当前群系=%s" % map.biome.biome_at(map.region_center_dir))
 	_traveling = false
-	print("[World] 已抵达 %.2f, %.2f" % [GeoSphere.dir_to_lonlat(target_dir).x, GeoSphere.dir_to_lonlat(target_dir).y])
+	var ll := GeoSphere.dir_to_lonlat(target_dir)
+	var bname := "?"
+	if map.biome != null:
+		bname = map.biome.name_of(map.biome.biome_at(target_dir))
+	print("[World] 已抵达 %.2f, %.2f  地形=%s" % [ll.x, ll.y, bname])
+	if _hint != null:
+		_hint.visible = true
+		_hint.text = "已抵达 %.2f, %.2f   地形：%s" % [ll.x, ll.y, bname]
+		var tw := get_tree().create_timer(4.0)
+		tw.timeout.connect(_restore_hint)
+
 	_apply_player_active(true)
 
 
@@ -621,3 +637,13 @@ func _test_travelui() -> void:
 	var c := map.region_center_dir
 	var ll := GeoSphere.dir_to_lonlat(c)
 	print("[UI] 结束后中心 = %.2f,%.2f  群系=%s  地块=%d" % [ll.x, ll.y, map.biome.biome_at(c), map.get_tiles().size()])
+
+
+## 当前是否应该抓着鼠标：只有正常游玩时才是
+func _want_capture() -> bool:
+	return player != null and not _soul and not _map_open and not _traveling
+
+
+func _restore_hint() -> void:
+	if _hint != null:
+		_hint.text = "Backspace: 灵魂状态    M: 世界地图    " + BUILD_TAG
