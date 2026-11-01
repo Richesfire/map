@@ -235,11 +235,14 @@ func rotate_by(rel: Vector2) -> void:
 	_save_state_later()
 
 
-## 滚轮缩放：滚轮上 = 放大（相机靠近）
+## 滚轮缩放：滚轮上 = 放大
 func zoom_by(steps: float) -> void:
 	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 2.6)
-	if _cam != null:
-		_cam.position = Vector3(0.0, 0.05, 4.55 / _zoom)
+	# 只改 FOV，不碰相机位置。
+	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
+	#   又会把环绕角度冲掉，等于缩放一下视角就归位了。）
+	_apply_orbit()
+	_save_state_later()
 
 
 ## 屏幕坐标 -> 球面上的地理方向；没打中球返回 Vector3.ZERO
