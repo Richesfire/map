@@ -344,22 +344,30 @@ func _toggle_soul() -> void:
 	_apply_player_active(not (_soul or _map_open))
 
 	if _soul:
-		# 从"当前看到的东西"接管：位置和朝向都照搬玩家相机，
-		# 然后再往上抬一点、往后退一点，避免一进去就看到自己后脑勺。
-		if _player_cam != null:
+		# 灵魂出窍 = 相机原地脱体。**不抬高、不后退**：
+		# 抬起来会让人以为"飞上去了"，而且看不到自己骑在马上。
+		var cam_ok := false
+		if _player_cam != null and player != null:
+			# 相机得真的在人物后方，否则（比如刚进游戏就按）会照搬到身体内部
+			cam_ok = _player_cam.global_position.distance_to(player.global_position) > 1.5
+		if cam_ok:
 			_soul_cam.global_transform = _player_cam.global_transform
-			_soul_cam.global_position += _player_cam.global_transform.basis.z * 6.0 \
-					+ Vector3.UP * 4.0
 		else:
 			var base := Vector3.ZERO
 			if player != null:
 				base = player.global_position
-			_soul_cam.global_position = base + Vector3(0.0, 25.0, 30.0)
-			_soul_cam.rotation_degrees = Vector3(-20.0, 0.0, 0.0)
+			# 兜底：人物后上方 3.5m，不飞天
+			var back: Vector3 = Vector3(0.0, 0.0, 3.5)
+			if player != null:
+				back = player.global_transform.basis.z * 3.5
+			_soul_cam.global_position = base + back + Vector3.UP * 1.6
+			_soul_cam.rotation_degrees = Vector3(-8.0, 0.0, 0.0)
 		_soul_cam.current = true
 	else:
 		if _player_cam != null:
 			_player_cam.current = true
+
+	_freeze_mount(_soul)
 
 	print("[World] 灵魂状态 = %s, 相机 = %s" % [_soul, _current_cam_name()])
 	_update_hint()
@@ -739,3 +747,19 @@ func _test_mask() -> void:
 	for p in pts:
 		var d := GeoSphere.lonlat_to_dir(float(p[1]), float(p[2]))
 		print("[MaskTest] %-6s %8.2f,%7.2f -> %s" % [p[0], p[1], p[2], "陆地" if bm.is_land(d) else "海洋"])
+
+
+## 灵魂状态下把坐骑冻住：玩家已经停更，马还在自己跑，会出现"人停在原地、马跑远了"
+func _freeze_mount(freeze: bool) -> void:
+	if player == null:
+		return
+	var h = player.get("mount_horse")
+	if h == null or not is_instance_valid(h):
+		return
+	if freeze:
+		h.set("speed", 0.0)
+		h.set_physics_process(false)
+		h.set_process(false)
+	else:
+		h.set_physics_process(true)
+		h.set_process(true)
