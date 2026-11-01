@@ -228,6 +228,27 @@ func zoom_by(steps: float) -> void:
 		_cam.position = Vector3(0.0, 0.05, 4.55 / _zoom)
 
 
+## 屏幕坐标 -> 球面上的地理方向；没打中球返回 Vector3.ZERO
+func pick(point: Vector2) -> Vector3:
+	if _cam == null or _pivot == null:
+		return Vector3.ZERO
+	var from := _cam.project_ray_origin(point)
+	var ray := _cam.project_ray_normal(point)
+	var b := from.dot(ray)
+	var c := from.dot(from) - 1.0
+	var disc := b * b - c
+	if disc < 0.0:
+		return Vector3.ZERO
+	var t := -b - sqrt(disc)
+	if t < 0.0:
+		t = -b + sqrt(disc)
+	if t < 0.0:
+		return Vector3.ZERO
+	var hit := from + ray * t
+	var local := _pivot.global_transform.basis.inverse() * hit
+	return local.normalized()
+
+
 func get_camera_z() -> float:
 	return _cam.position.z if _cam != null else 0.0
 

@@ -40,6 +40,7 @@ var _player_cam: Camera3D
 var _soul := false
 var _map_open := false
 var _warn_cd := 0
+var _traveling := false
 var _minimap: MapMinimap
 var _hint: Label
 
@@ -79,6 +80,10 @@ func _ready() -> void:
 	_build_hint()
 
 	_cli()
+
+	var wake := get_node_or_null("/root/Wake")
+	if wake != null:
+		wake.reveal()
 
 	_maybe_capture()
 
@@ -327,6 +332,9 @@ func toggle_world_map() -> void:
 			_player_cam.current = true
 	else:
 		_minimap.open_world_map()
+		var dlg := _minimap.get_dialog()
+		if dlg != null and not dlg.travel_requested.is_connected(_on_travel):
+			dlg.travel_requested.connect(_on_travel)
 		_map_open = true
 		_apply_player_active(false)
 	print("[World] 世界地图 = %s" % _map_open)
@@ -467,9 +475,46 @@ func _maybe_capture() -> void:
 			out = a.substr(6)
 	if out.is_empty():
 		return
-	for i in 10:
+	for i in 80:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(out)
 	print("[World] screenshot -> " + out)
 	get_tree().quit()
+
+
+## 时间旅行：拖到哪落到哪。闭眼 -> 重建地图 -> 落地 -> 睁眼
+func _on_travel(target_dir: Vector3) -> void:
+	if _traveling:
+		return
+	_traveling = true
+
+	_map_open = false
+	_minimap.close_world_map()
+
+	var wake := get_node_or_null("/root/Wake")
+	if wake != null:
+		await wake.cover()
+
+	map.travel_to(target_dir, 1)
+	if _minimap != null:
+		_minimap.refresh()
+	await get_tree().process_frame
+	_snap_to_ground()
+	if _soul_cam != null:
+		_soul_cam.global_position = player.global_position + Vector3(0.0, 25.0, 30.0)
+	if _soul:
+		_soul_cam.current = true
+	elif _player_cam != null:
+		_player_cam.current = true
+
+	# 等几帧把落点周围的地块建出来，再睁眼
+	for i in 12:
+		await get_tree().process_frame
+
+	if wake != null:
+		await wake.reveal()
+	_traveling = false
+	print("[World] 已抵达 %.2f, %.2f" % [GeoSphere.dir_to_lonlat(target_dir).x, GeoSphere.dir_to_lonlat(target_dir).y])
+	_apply_player_active(true)
+

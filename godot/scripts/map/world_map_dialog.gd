@@ -1,4 +1,4 @@
-﻿class_name WorldMapDialog
+class_name WorldMapDialog
 extends Control
 
 ## ==============================================================
@@ -15,6 +15,7 @@ extends Control
 ## ==============================================================
 
 signal closed
+signal travel_requested(target_dir: Vector3)
 
 var world: MapWorld
 var annotations: Array = []
@@ -25,6 +26,11 @@ var _overlay: MapGlobeOverlay
 var _title: Label
 var _dragging := false
 var _built := false
+var _target_dir := Vector3.ZERO
+var _pin_dragging := false
+var _pin: Panel
+var _bar: ColorRect
+var _pin_home := Vector2(24, 220)
 
 
 func _ready() -> void:
@@ -53,6 +59,43 @@ func _ensure_built() -> void:
 	_overlay.dialog = self
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_overlay)
+	# ---- 左侧工具栏：独立于 3D 视口，缩放不会改变它的大小
+	_bar = ColorRect.new()
+	_bar.color = Color(0.08, 0.09, 0.11, 0.92)
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_bar)
+
+	_pin = Panel.new()
+	_pin.name = "TravelPin"
+	_pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.93, 0.74, 0.28)
+	sb.set_corner_radius_all(8)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(1, 1, 1, 0.85)
+	_pin.add_theme_stylebox_override("panel", sb)
+	add_child(_pin)
+
+	var pin_label := Label.new()
+	pin_label.text = "旅"
+	pin_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pin_label.add_theme_font_size_override("font_size", 26)
+	pin_label.add_theme_color_override("font_color", Color(0.15, 0.10, 0.02))
+	pin_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	pin_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pin_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_pin.add_child(pin_label)
+
+	var tip := Label.new()
+	tip.text = "把「旅」拖到地球仪上，再按回车"
+	tip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tip.add_theme_font_size_override("font_size", 13)
+	tip.add_theme_color_override("font_color", Color(0.8, 0.82, 0.86))
+	tip.position = Vector2(8, 300)
+	tip.size = Vector2(100, 80)
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(tip)
+
 
 
 
@@ -93,6 +136,14 @@ func _layout() -> void:
 	if _globe != null:
 		_globe.position = Vector2.ZERO
 		_globe.size = vp
+	if _bar != null:
+		_bar.position = Vector2.ZERO
+		_bar.size = Vector2(112, vp.y)
+	if _pin != null and not _pin_dragging and _target_dir == Vector3.ZERO:
+		_pin.position = _pin_home
+		_pin.size = Vector2(64, 64)
+	if _title != null:
+		_title.position = Vector2(24, 18)
 	if _overlay != null:
 		_overlay.position = Vector2.ZERO
 		_overlay.size = vp
@@ -108,6 +159,23 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed and _pin_rect().has_point(mb.position):
+				_pin_dragging = true
+				_pin.position = mb.position - Vector2(32, 32)
+				get_viewport().set_input_as_handled()
+				return
+			if not mb.pressed and _pin_dragging:
+				_pin_dragging = false
+				var hit := _globe.pick(mb.position)
+				if hit == Vector3.ZERO:
+					_target_dir = Vector3.ZERO
+					_pin.position = _pin_home
+				else:
+					_target_dir = hit
+					_pin.position = mb.position - Vector2(32, 32)
+				_overlay.queue_redraw()
+				get_viewport().set_input_as_handled()
+				return
 			_dragging = mb.pressed
 			get_viewport().set_input_as_handled()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -118,6 +186,10 @@ func _input(event: InputEvent) -> void:
 			_globe.zoom_by(-1.0)
 			_overlay.queue_redraw()
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _pin_dragging:
+		var mm2 := event as InputEventMouseMotion
+		_pin.position = mm2.position - Vector2(32, 32)
+		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _dragging:
 		var mm := event as InputEventMouseMotion
 		_globe.rotate_by(mm.relative)
@@ -125,6 +197,10 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event is InputEventKey:
 		var k := event as InputEventKey
+		if k.pressed and not k.echo and _target_dir != Vector3.ZERO and (k.keycode == KEY_ENTER or k.keycode == KEY_KP_ENTER):
+			travel_requested.emit(_target_dir)
+			get_viewport().set_input_as_handled()
+			return
 		if k.pressed and not k.echo and (k.keycode == KEY_ESCAPE or k.keycode == KEY_BACKSPACE):
 			close()
 			get_viewport().set_input_as_handled()
@@ -145,3 +221,19 @@ func get_view() -> Vector3:
 	if _globe == null:
 		return Vector3.FORWARD
 	return _globe._pivot.global_transform.basis.z
+
+
+func _pin_rect() -> Rect2:
+	if _pin == null:
+		return Rect2()
+	return Rect2(_pin.position, Vector2(64, 64))
+
+
+func target_dir() -> Vector3:
+	return _target_dir
+
+
+func clear_target() -> void:
+	_target_dir = Vector3.ZERO
+	if _pin != null:
+		_pin.position = _pin_home

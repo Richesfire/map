@@ -225,6 +225,15 @@ func enable_streaming(radius: int = 1) -> void:
 	enable_far_shell()
 
 
+## 传送到另一个地点：整张地图重建（视距内的地块会在随后几帧补上）
+func travel_to(center_dir: Vector3, start_n: int = 1) -> void:
+	_building.clear()
+	build(center_dir, start_n, start_n, true)
+	_stream_center = Vector2i(-99999, -99999)
+	_far_center = Vector3(1e9, 0.0, 0.0)
+	enable_far_shell()
+
+
 func stream_radius() -> int:
 	return _stream_radius
 
