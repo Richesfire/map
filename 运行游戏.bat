@@ -6,7 +6,9 @@ set GODOT=C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windo
 if not exist "%GODOT%" goto nogodot
 if not exist "%~dp0godot\project.godot" goto noproject
 
-start "" "%GODOT%" --path "%~dp0godot" res://scenes/main.tscn
+rem 不带场景参数：走 project.godot 里的启动场景（主菜单），
+rem 所以行为和编辑器里按 F5 一致。
+start "" "%GODOT%" --path "%~dp0godot"
 exit /b 0
 
 :nogodot

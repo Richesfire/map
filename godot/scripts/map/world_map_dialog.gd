@@ -186,6 +186,9 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _pin_dragging:
 		var mmv := event as InputEventMouseMotion
 		_pin_pos = mmv.position
+		var hv := _globe.pick(mmv.position)
+		if hv != Vector3.ZERO:
+			_target_dir = hv      # 拖到球面上：准星直接贴上去，跟着球走
 		_overlay.queue_redraw()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _pin_dragging:
@@ -243,7 +246,16 @@ func clear_target() -> void:
 
 ## 鼠标是否落在准星上（半径 34 像素）
 func _near_pin(p: Vector2) -> bool:
-	return p.distance_to(_pin_pos) <= 34.0
+	return p.distance_to(reticle_pos()) <= 34.0
+
+
+## 准星当前画在哪：定了目标就跟着球走，没定就停在鼠标松手的位置
+func reticle_pos() -> Vector2:
+	if _target_dir != Vector3.ZERO:
+		var sp := project(_target_dir)
+		if sp.x >= 0.0:
+			return sp
+	return _pin_pos
 
 
 func pin_pos() -> Vector2:

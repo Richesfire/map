@@ -27,6 +27,7 @@ PARTS_DIR = os.path.join(ROOT, "godot", "assets", "parts")
 
 SHEET_TERRAIN = "地形"
 SHEET_PARTS = "零件"
+SHEET_RULES = "群系规则"
 
 # 表头 -> 内部字段（顺序即列顺序）
 TERRAIN_COLS = [
@@ -116,6 +117,19 @@ def main():
     terrain_rows = read_sheet(wb, SHEET_TERRAIN, TERRAIN_COLS)
     parts_rows = read_sheet(wb, SHEET_PARTS, PARTS_COLS)
 
+    # ---- 群系规则（可选页）：参数名 -> 数值
+    rules = {}
+    if SHEET_RULES in wb.sheetnames:
+        ws = wb[SHEET_RULES]
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or row[0] is None:
+                continue
+            key = str(row[0]).strip()
+            try:
+                rules[key] = float(row[1])
+            except (TypeError, ValueError):
+                raise SystemExit(f"群系规则「{key}」的值不是数字：{row[1]}")
+
     # ---- 零件表按地形 id 归并
     parts_by_id = {}
     for r in parts_rows:
@@ -198,6 +212,7 @@ def main():
         "note": "本文件由 tools/export_terrain.py 从 data/地形表.xlsx 生成，不要手改。"
                 "第 1 项（is_integrated=是）是策划标注的「整合地形」，由策划在 PSD 里单独制作。"
                 "零件编号全局唯一，可跨地形复用。",
+        "biome_rules": rules,
         "coordinate_note": "distribution 只是大致区域；真正的全球分布需要陆地/海洋掩膜 + 生物群系数据，尚未实现。",
         "terrain_types": types,
     }
@@ -216,7 +231,7 @@ def main():
     shared = {k: v for k, v in shared.items() if len(v) > 1}
 
     print(f"导出完成 -> {OUT}")
-    print(f"  地形 {len(types)} 类，引用零件 {n_parts} 个")
+    print(f"  地形 {len(types)} 类，引用零件 {n_parts} 个，群系规则 {len(rules)} 条")
     if shared:
         print(f"  跨地形共享 {len(shared)} 个：")
         for k, v in sorted(shared.items()):

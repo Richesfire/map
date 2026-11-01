@@ -1,6 +1,23 @@
 {
   "version": 2,
   "note": "本文件由 tools/export_terrain.py 从 data/地形表.xlsx 生成，不要手改。第 1 项（is_integrated=是）是策划标注的「整合地形」，由策划在 PSD 里单独制作。零件编号全局唯一，可跨地形复用。",
+  "biome_rules": {
+    "ice_lat": 72.0,
+    "tundra_lat": 62.0,
+    "jungle_lat": 16.0,
+    "savanna_lat": 26.0,
+    "desert_lat": 38.0,
+    "h_alpine": 125.0,
+    "h_mountain": 95.0,
+    "h_hills": 66.0,
+    "wet_jungle": 0.56,
+    "wet_forest": 0.48,
+    "wet_steppe": 0.33,
+    "wet_desert": 0.22,
+    "arid_lo": 14.0,
+    "arid_hi": 34.0,
+    "arid_peak": 0.28
+  },
   "coordinate_note": "distribution 只是大致区域；真正的全球分布需要陆地/海洋掩膜 + 生物群系数据，尚未实现。",
   "terrain_types": [
     {

@@ -48,6 +48,10 @@ var _hint: Label
 
 func _ready() -> void:
 	print("[World] BUILD_TAG = " + BUILD_TAG)
+	# 黑屏期间给玩家一点信息，别让开局干等
+	var wake0 := get_node_or_null("/root/Wake")
+	if wake0 != null:
+		wake0.set_caption("正在生成脚下的土地")
 	var t0 := Time.get_ticks_msec()
 
 	var cfg := MapConfig.new()
@@ -100,6 +104,7 @@ func _ready() -> void:
 
 	var wake := get_node_or_null("/root/Wake")
 	if wake != null:
+		wake.set_caption("")
 		wake.reveal()
 
 	_maybe_capture()
