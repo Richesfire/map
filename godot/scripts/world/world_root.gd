@@ -17,7 +17,7 @@ extends Node3D
 ## ==============================================================
 
 ## 每次改完都改这个，用来确认你运行的到底是不是最新代码
-const BUILD_TAG := "2026-11-01 19:15 鼠标重捕+抵达提示+草修复"
+const BUILD_TAG := "2026-11-01 19:35 地形换色修正"
 
 @export_group("地图")
 @export var start_lon := 108.71
@@ -62,7 +62,16 @@ func _ready() -> void:
 	_lookup_nodes()
 	_make_sun()
 
-	var center := GeoSphere.lonlat_to_dir(start_lon, start_lat)
+	# 测试用：--at=经度,纬度 直接在指定地点出生
+	var slon := start_lon
+	var slat := start_lat
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--at="):
+			var parts := a.substr(5).split(",")
+			if parts.size() == 2:
+				slon = float(parts[0])
+				slat = float(parts[1])
+	var center := GeoSphere.lonlat_to_dir(slon, slat)
 	# 流式模式下启动只建 1 块（约 0.7s），其余边跑边补；否则一次性建满
 	var start_n := 1 if stream_radius > 0 else tiles_x
 	map.build(center, start_n, start_n if stream_radius > 0 else tiles_z, generate_scatter)

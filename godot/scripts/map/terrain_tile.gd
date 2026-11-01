@@ -646,5 +646,6 @@ func _make_tinted_material() -> Material:
 	if ground_material is ShaderMaterial:
 		var m := (ground_material as ShaderMaterial).duplicate() as ShaderMaterial
 		m.set_shader_parameter("biome_tint", biome_color)
+		m.set_shader_parameter("biome_tint_strength", 0.92)
 		return m
 	return ground_material
