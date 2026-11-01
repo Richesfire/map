@@ -253,8 +253,13 @@ func clear_target() -> void:
 
 
 ## 鼠标是否落在准星上（半径 34 像素）
+## 抓取半径要小：准星贴在球面上，半径太大会把想转地球的点击也吃掉，
+## 表现就是我只想转地球，结果准星跟着跑了。16 像素大约是准星的视觉大小。
+const PIN_GRAB_R := 16.0
+
+
 func _near_pin(p: Vector2) -> bool:
-	return p.distance_to(reticle_pos()) <= 34.0
+	return p.distance_to(reticle_pos()) <= PIN_GRAB_R
 
 
 ## 准星当前画在哪：定了目标就跟着球走，没定就停在鼠标松手的位置
