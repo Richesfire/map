@@ -39,6 +39,20 @@ func _draw() -> void:
 					-1, 14, Color(1, 0.75, 0.6, 0.95))
 
 
+## 准星指向的经纬度和海陆
+func _loc_text() -> String:
+	if dialog._target_dir == Vector3.ZERO:
+		return ""
+	var ll := GeoSphere.dir_to_lonlat(dialog._target_dir)
+	var ns := "N" if ll.y >= 0.0 else "S"
+	var ew := "E" if ll.x >= 0.0 else "W"
+	var kind := "陆地"
+	if dialog.world != null and dialog.world.biome != null:
+		if not dialog.world.biome.is_land(dialog._target_dir):
+			kind = "海洋"
+	return "%.1f°%s  %.1f°%s  %s" % [absf(ll.x), ew, absf(ll.y), ns, kind]
+
+
 func _draw_reticle(pp: Vector2) -> void:
 	draw_circle(pp, 15.0, Color(0.06, 0.05, 0.03, 0.55))
 	draw_arc(pp, 15.0, 0.0, TAU, 32, Color(0.98, 0.82, 0.32, 0.95), 2.5)
@@ -46,3 +60,9 @@ func _draw_reticle(pp: Vector2) -> void:
 	draw_line(pp + Vector2(8, 0), pp + Vector2(22, 0), Color(0.98, 0.82, 0.32), 2.0)
 	draw_line(pp + Vector2(0, -22), pp + Vector2(0, -8), Color(0.98, 0.82, 0.32), 2.0)
 	draw_line(pp + Vector2(0, 8), pp + Vector2(0, 22), Color(0.98, 0.82, 0.32), 2.0)
+	var txt := _loc_text()
+	if txt != "":
+		var f := ThemeDB.fallback_font
+		if f != null:
+			draw_string(f, pp + Vector2(26, 6), txt, HORIZONTAL_ALIGNMENT_LEFT,
+					-1, 16, Color(1, 0.92, 0.55, 0.98))
