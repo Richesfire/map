@@ -330,12 +330,18 @@ func _toggle_soul() -> void:
 	_apply_player_active(not (_soul or _map_open))
 
 	if _soul:
-		# 从当前身体位置上方起飞
-		var base := Vector3.ZERO
-		if player != null:
-			base = player.global_position
-		_soul_cam.global_position = base + Vector3(0.0, 25.0, 30.0)
-		_soul_cam.rotation_degrees = Vector3(-20.0, 0.0, 0.0)
+		# 从"当前看到的东西"接管：位置和朝向都照搬玩家相机，
+		# 然后再往上抬一点、往后退一点，避免一进去就看到自己后脑勺。
+		if _player_cam != null:
+			_soul_cam.global_transform = _player_cam.global_transform
+			_soul_cam.global_position += _player_cam.global_transform.basis.z * 6.0 \
+					+ Vector3.UP * 4.0
+		else:
+			var base := Vector3.ZERO
+			if player != null:
+				base = player.global_position
+			_soul_cam.global_position = base + Vector3(0.0, 25.0, 30.0)
+			_soul_cam.rotation_degrees = Vector3(-20.0, 0.0, 0.0)
 		_soul_cam.current = true
 	else:
 		if _player_cam != null:

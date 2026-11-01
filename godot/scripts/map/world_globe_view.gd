@@ -39,8 +39,7 @@ var _loading: Label
 var _zoom := 1.0             # 滚轮缩放 0.6~2.6
 const STATE_PATH := "user://globe_view.cfg"
 var _spin := 0.0             # 绕地轴自转（弧度）
-var _orbit_yaw := 0.0        # 相机环绕（水平）
-var _orbit_pitch := 0.0      # 相机环绕（俯仰）
+var _orbit_q := Quaternion.IDENTITY   # 相机环绕（四元数，任意角度都不会卡死）
 var _save_timer := 0.0
 var _tilt := 0.0             # 前后倾（弧度，限幅）
 var _pivot_base_tilt := deg_to_rad(23.4)   # 真地球仪的地轴倾角，底座和环都跟着倾
@@ -289,9 +288,11 @@ func get_camera_z() -> float:
 
 ## 空白处拖动：绕着球转相机（球不动，等于换个角度看）
 func orbit_by(rel: Vector2) -> void:
-	_orbit_yaw -= rel.x * 0.005
-	_orbit_pitch = clampf(_orbit_pitch - rel.y * 0.004,
-			deg_to_rad(-70.0), deg_to_rad(70.0))
+	# 用四元数累乘，而不是 yaw/pitch 两个欧拉角：
+	# 欧拉角一到 ±90° 就会万向锁（转到极点就翻不动了），四元数没有这个问题。
+	var qy := Quaternion(Vector3.UP, -rel.x * 0.005)
+	var qx := Quaternion(Vector3.RIGHT, -rel.y * 0.005)
+	_orbit_q = (qy * qx * _orbit_q).normalized()
 	_apply_orbit()
 	_save_state_later()
 
@@ -301,19 +302,19 @@ func _apply_orbit() -> void:
 		return
 	var dist := 4.55 / _zoom
 	var pivot := Vector3(0.0, 0.05, 0.0)
-	var pos := Vector3(0.0, 0.0, dist)
-	pos = pos.rotated(Vector3.RIGHT, _orbit_pitch)
-	pos = pos.rotated(Vector3.UP, _orbit_yaw)
+	var pos: Vector3 = _orbit_q * Vector3(0.0, 0.0, dist)
 	_cam.position = pivot + pos
-	_cam.look_at(pivot, Vector3.UP)
+	# up 也要跟着转，否则 look_at 在极点会退化
+	var up: Vector3 = _orbit_q * Vector3.UP
+	if absf(up.dot(-pos.normalized())) > 0.999:
+		up = _orbit_q * Vector3.FORWARD
+	_cam.look_at(pivot, up)
 
 
-## 视角状态存盘，下次打开地图还是这个角度
 func save_state() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("globe", "spin", _spin)
-	cfg.set_value("globe", "orbit_yaw", _orbit_yaw)
-	cfg.set_value("globe", "orbit_pitch", _orbit_pitch)
+	cfg.set_value("globe", "orbit_q", [_orbit_q.x, _orbit_q.y, _orbit_q.z, _orbit_q.w])
 	cfg.set_value("globe", "zoom", _zoom)
 	cfg.save(STATE_PATH)
 
@@ -323,8 +324,9 @@ func load_state() -> void:
 	if cfg.load(STATE_PATH) != OK:
 		return
 	_spin = float(cfg.get_value("globe", "spin", _spin))
-	_orbit_yaw = float(cfg.get_value("globe", "orbit_yaw", _orbit_yaw))
-	_orbit_pitch = float(cfg.get_value("globe", "orbit_pitch", _orbit_pitch))
+	var qv: Array = cfg.get_value("globe", "orbit_q", [])
+	if qv.size() == 4:
+		_orbit_q = Quaternion(qv[0], qv[1], qv[2], qv[3]).normalized()
 	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 2.6)
 	_apply_rotation()
 	_apply_orbit()
