@@ -12,16 +12,16 @@ config_version=5
 
 compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
-[autoload]
-
-Wake="*res://scripts/ui/wake_transition.gd"
-
 [application]
 
 config/name="IASv1.0"
 run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
+
+[autoload]
+
+Wake="*res://scripts/ui/wake_transition.gd"
 
 [input]
 

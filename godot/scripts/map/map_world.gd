@@ -46,6 +46,8 @@ var _ground_material: ShaderMaterial
 var _prop_material: StandardMaterial3D
 var _prop_meshes: Dictionary = {}
 var _built := false
+var biome: BiomeMap
+var _biome_parts: Dictionary = {}
 var _tiles_x := 0
 var _tiles_z := 0
 var _half_x := 0.0
@@ -271,7 +273,13 @@ func _spawn_tile(i: int, j: int, do_scatter: bool, deferred: bool = false) -> Te
 	var dir := GeoSphere.tangent_to_dir(region_frame, uc, vc)
 	var sid := GeoSphere.dir_to_tile(dir)
 
+	var bid := "plain"
+	if biome != null:
+		bid = biome.biome_at(dir)
+
 	var tile := TerrainTile.new()
+	tile.biome_id = bid
+	tile.biome_parts = _biome_parts.get(bid, {})
 	tile.ground_material = _ground_material
 	tile.prop_material = _prop_material
 	tile.prop_meshes = _prop_meshes
@@ -466,6 +474,7 @@ func _local_from_dir(dir: Vector3, h: float) -> Vector3:
 
 # ================================================================ 内部
 func _build_materials() -> void:
+	_load_biomes()
 	_ground_material = ShaderMaterial.new()
 	var shader := load("res://shaders/terrain_splat.gdshader") as Shader
 	if shader != null:
@@ -549,3 +558,29 @@ func _clear_children(n: Node) -> void:
 	for c in n.get_children():
 		n.remove_child(c)
 		c.queue_free()
+
+
+## 读地形表 + 海陆掩膜，建生物群系判定器
+func _load_biomes() -> void:
+	var mask: Image = null
+	var mt := load("res://data/earth_land_mask.png") as Texture2D
+	if mt != null:
+		mask = mt.get_image()
+	biome = BiomeMap.new()
+	biome.setup(gen, mask)
+
+	var path := "res://data/terrain_types.json"
+	if not FileAccess.file_exists(path):
+		return
+	var txt := FileAccess.get_file_as_string(path)
+	var data: Variant = JSON.parse_string(txt)
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	for t in data.get("terrain_types", []):
+		var v: Dictionary = t.get("vegetation", {})
+		_biome_parts[t.get("id", "")] = {
+			"tree": v.get("trees", []),
+			"rock": v.get("rocks", []),
+			"low": v.get("low", []),
+		}
+	print("[Map] 生物群系表载入：%d 类" % _biome_parts.size())

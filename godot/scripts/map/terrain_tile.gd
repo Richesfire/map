@@ -46,6 +46,8 @@ var v0 := 0.0
 var u_center := 0.0
 var v_center := 0.0
 var build_scatter := true
+var biome_id := "plain"
+var biome_parts: Dictionary = {}      # kind -> [零件编号]
 
 ## 本格的球面地址 (face, x, y)
 var sphere_tile := Vector3i.ZERO
@@ -380,6 +382,46 @@ func _kind_step(kind: String) -> float:
 			return cfg.low_veg_step_m
 	return 0.0
 
+## .glb 零件缓存：同一个编号整个进程只加载一次
+static var _glb_cache: Dictionary = {}
+
+
+func _glb_mesh(pid: String) -> Mesh:
+	if _glb_cache.has(pid):
+		return _glb_cache[pid]
+	var path := "res://assets/parts/%s.glb" % pid
+	var m: Mesh = null
+	if ResourceLoader.exists(path):
+		var ps := load(path) as PackedScene
+		if ps != null:
+			var inst := ps.instantiate()
+			m = _find_mesh(inst)
+			inst.queue_free()
+	_glb_cache[pid] = m
+	return m
+
+
+func _find_mesh(n: Node) -> Mesh:
+	if n is MeshInstance3D:
+		return (n as MeshInstance3D).mesh
+	for c in n.get_children():
+		var m := _find_mesh(c)
+		if m != null:
+			return m
+	return null
+
+
+## 这一类零件该用哪个模型：有生物群系就给 glb，没有就退回程序化占位
+func _mesh_for_kind(kind: String) -> Mesh:
+	var ids: Array = biome_parts.get(kind, [])
+	if not ids.is_empty():
+		var idx := absi(hash(str(grid_pos) + kind)) % ids.size()
+		var m := _glb_mesh(str(ids[idx]))
+		if m != null:
+			return m
+	return prop_meshes.get(kind)
+
+
 func _build_scatter() -> void:
 	_build_density_fields()
 	_add_layer("tree", _collect("tree", cfg.tree_step_m), true)
@@ -440,7 +482,7 @@ func _density_fast(kind: String, uu: float, vv: float) -> float:
 func _add_layer(kind: String, xforms: Array, cast_shadow: bool) -> void:
 	if xforms.is_empty():
 		return
-	var mesh: Mesh = prop_meshes.get(kind)
+	var mesh: Mesh = _mesh_for_kind(kind)
 	if mesh == null:
 		return
 
@@ -456,7 +498,7 @@ func _add_layer(kind: String, xforms: Array, cast_shadow: bool) -> void:
 	mmi.multimesh = mm
 	# 只有用程序化占位几何时才套共享材质（靠顶点色上色）。
 	# 用 Blender 导出的真模型时 prop_material 应该是 null，让模型自带材质生效。
-	if prop_material != null:
+	if prop_material != null and biome_parts.get(kind, []).is_empty():
 		mmi.material_override = prop_material
 	if cast_shadow:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON

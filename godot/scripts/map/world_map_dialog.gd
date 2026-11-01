@@ -61,11 +61,13 @@ func _ensure_built() -> void:
 	add_child(_overlay)
 	# ---- 左侧工具栏：独立于 3D 视口，缩放不会改变它的大小
 	_bar = ColorRect.new()
-	_bar.color = Color(0.08, 0.09, 0.11, 0.92)
+	_bar.color = Color(0.08, 0.09, 0.11, 0.55)
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bar)
 
-	_pin = Panel.new()
+	_pin = null
+	if false:
+		_pin = Panel.new()
 	_pin.name = "TravelPin"
 	_pin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sb := StyleBoxFlat.new()
@@ -159,7 +161,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
-			if mb.pressed and _pin_rect().has_point(mb.position):
+			if false:
 				_pin_dragging = true
 				_pin.position = mb.position - Vector2(32, 32)
 				get_viewport().set_input_as_handled()
@@ -186,6 +188,13 @@ func _input(event: InputEvent) -> void:
 			_globe.zoom_by(-1.0)
 			_overlay.queue_redraw()
 			get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion:
+		var mmv := event as InputEventMouseMotion
+		var hv := _globe.pick(mmv.position)
+		var changed := hv != _target_dir
+		_target_dir = hv
+		if changed:
+			_overlay.queue_redraw()
 	elif event is InputEventMouseMotion and _pin_dragging:
 		var mm2 := event as InputEventMouseMotion
 		_pin.position = mm2.position - Vector2(32, 32)

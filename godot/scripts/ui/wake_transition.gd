@@ -21,6 +21,9 @@ var _lid_top: ColorRect
 var _lid_bottom: ColorRect
 
 var _tween: Tween
+var _caption: Label
+var _dots := 0
+var _dot_timer: Timer
 
 
 func _ready() -> void:
@@ -43,6 +46,20 @@ func _ready() -> void:
 	_lid_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_lid_bottom)
 
+	_caption = Label.new()
+	_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_caption.add_theme_font_size_override("font_size", 22)
+	_caption.add_theme_color_override("font_color", Color(0.86, 0.84, 0.78))
+	_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_caption.visible = false
+	add_child(_caption)
+
+	_dot_timer = Timer.new()
+	_dot_timer.wait_time = 0.35
+	_dot_timer.autostart = true
+	_dot_timer.timeout.connect(_tick_dots)
+	add_child(_dot_timer)
+
 	get_viewport().size_changed.connect(_resize)
 	_resize()
 	# 开局就是闭着的，由新场景自己决定什么时候睁眼
@@ -57,6 +74,9 @@ func _resize() -> void:
 	_lid_top.size = Vector2(vp.x, vp.y * 0.5)
 	_lid_bottom.size = Vector2(vp.x, vp.y * 0.5)
 	_lid_bottom.position = Vector2(0.0, vp.y * 0.5)
+	if _caption != null:
+		_caption.size = Vector2(vp.x, 40)
+		_caption.position = Vector2(0.0, vp.y * 0.5 - 20.0)
 
 
 ## 眼睛睁开多少：0 = 全黑，1 = 全开
@@ -117,3 +137,20 @@ func _current_openness() -> float:
 	if vp.y <= 0.0:
 		return 0.0
 	return clampf(1.0 - (_lid_top.size.y * 2.0) / vp.y, 0.0, 1.0)
+
+
+## 闭眼期间显示的提示（例如「正在生成地形…」）。传空字符串隐藏。
+func set_caption(text: String) -> void:
+	if _caption == null:
+		return
+	_caption.text = text
+	_caption.visible = text != ""
+	_dots = 0
+
+
+func _tick_dots() -> void:
+	if _caption == null or not _caption.visible:
+		return
+	var base := _caption.text.rstrip("。")
+	_dots = (_dots + 1) % 4
+	_caption.text = base + "。".repeat(maxi(_dots, 1))

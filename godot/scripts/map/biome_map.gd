@@ -66,9 +66,9 @@ func wet_at(dir: Vector3) -> float:
 	# 纬度干旱带：南北纬 15~35 度是副热带高压带，全球的沙漠都在这里
 	var lat: float = absf(GeoSphere.dir_to_lonlat(dir).y)
 	var aridity := 0.0
-	if lat > 12.0 and lat < 38.0:
-		var t := (lat - 12.0) / 26.0            # 0..1
-		aridity = sin(t * PI) * 0.45             # 顶点在 25 度左右
+	if lat > 14.0 and lat < 34.0:
+		var t := (lat - 14.0) / 20.0            # 0..1
+		aridity = sin(t * PI) * 0.28             # 顶点在 24 度左右（副热带高压带）
 	return clampf(raw - aridity, 0.0, 1.0)
 
 

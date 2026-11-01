@@ -68,6 +68,9 @@ func _ready() -> void:
 	map.build(center, start_n, start_n if stream_radius > 0 else tiles_z, generate_scatter)
 	if stream_radius > 0:
 		map.enable_streaming(stream_radius)
+	if map.biome != null:
+		var b := map.biome.biome_at(center)
+		print("[World] 出生点生物群系 = %s（%s）" % [b, map.biome.name_of(b)])
 	print("[World] 地形生成完成：%d ms" % (Time.get_ticks_msec() - t0))
 
 	await get_tree().process_frame
