@@ -25,8 +25,8 @@
       "index": 1,
       "name_cn": "平原",
       "is_integrated": true,
-      "terrain_model": "地形_01",
-      "texture_set": "纹理_01",
+      "terrain_model": "terrain_01",
+      "texture_set": "texture_01",
       "textures": [
         "绿草",
         "泥土",
@@ -34,15 +34,15 @@
       ],
       "vegetation": {
         "trees": [
-          "树_02",
-          "树_03"
+          "tree_02",
+          "tree_03"
         ],
         "rocks": [
-          "石头_01",
-          "石头_02"
+          "rock_01",
+          "rock_02"
         ],
         "low": [
-          "草_01"
+          "grass_01"
         ]
       },
       "shape": {
@@ -68,8 +68,8 @@
       "index": 2,
       "name_cn": "森林",
       "is_integrated": false,
-      "terrain_model": "地形_02",
-      "texture_set": "纹理_02",
+      "terrain_model": "terrain_02",
+      "texture_set": "texture_02",
       "textures": [
         "林下苔草",
         "腐叶土",
@@ -77,15 +77,15 @@
       ],
       "vegetation": {
         "trees": [
-          "树_01",
-          "树_04",
-          "树_05"
+          "tree_01",
+          "tree_04",
+          "tree_05"
         ],
         "rocks": [
-          "石头_03"
+          "rock_03"
         ],
         "low": [
-          "草_02"
+          "grass_02"
         ]
       },
       "shape": {
@@ -111,8 +111,8 @@
       "index": 3,
       "name_cn": "沙漠",
       "is_integrated": false,
-      "terrain_model": "地形_03",
-      "texture_set": "纹理_03",
+      "terrain_model": "terrain_03",
+      "texture_set": "texture_03",
       "textures": [
         "细沙",
         "砾石",
@@ -120,14 +120,14 @@
       ],
       "vegetation": {
         "trees": [
-          "树_06"
+          "tree_06"
         ],
         "rocks": [
-          "石头_04",
-          "石头_05"
+          "rock_04",
+          "rock_05"
         ],
         "low": [
-          "草_03"
+          "grass_03"
         ]
       },
       "shape": {
@@ -152,8 +152,8 @@
       "index": 4,
       "name_cn": "草原·干草原",
       "is_integrated": false,
-      "terrain_model": "地形_04",
-      "texture_set": "纹理_04",
+      "terrain_model": "terrain_04",
+      "texture_set": "texture_04",
       "textures": [
         "黄草",
         "黑土",
@@ -161,13 +161,13 @@
       ],
       "vegetation": {
         "trees": [
-          "树_07"
+          "tree_07"
         ],
         "rocks": [
-          "石头_06"
+          "rock_06"
         ],
         "low": [
-          "草_04"
+          "grass_04"
         ]
       },
       "shape": {
@@ -192,8 +192,8 @@
       "index": 5,
       "name_cn": "丘陵",
       "is_integrated": false,
-      "terrain_model": "地形_05",
-      "texture_set": "纹理_05",
+      "terrain_model": "terrain_05",
+      "texture_set": "texture_05",
       "textures": [
         "草",
         "泥土",
@@ -201,14 +201,14 @@
       ],
       "vegetation": {
         "trees": [
-          "树_08"
+          "tree_08"
         ],
         "rocks": [
-          "石头_07",
-          "石头_08"
+          "rock_07",
+          "rock_08"
         ],
         "low": [
-          "草_05"
+          "grass_05"
         ]
       },
       "shape": {
@@ -231,8 +231,8 @@
       "index": 6,
       "name_cn": "山地",
       "is_integrated": false,
-      "terrain_model": "地形_06",
-      "texture_set": "纹理_06",
+      "terrain_model": "terrain_06",
+      "texture_set": "texture_06",
       "textures": [
         "岩坡",
         "碎石坡",
@@ -240,14 +240,14 @@
       ],
       "vegetation": {
         "trees": [
-          "树_09"
+          "tree_09"
         ],
         "rocks": [
-          "石头_09",
-          "石头_10"
+          "rock_09",
+          "rock_10"
         ],
         "low": [
-          "草_06"
+          "grass_06"
         ]
       },
       "shape": {
@@ -272,8 +272,8 @@
       "index": 7,
       "name_cn": "高山·雪线",
       "is_integrated": false,
-      "terrain_model": "地形_07",
-      "texture_set": "纹理_07",
+      "terrain_model": "terrain_07",
+      "texture_set": "texture_07",
       "textures": [
         "裸岩",
         "积雪",
@@ -281,14 +281,14 @@
       ],
       "vegetation": {
         "trees": [
-          "树_10"
+          "tree_10"
         ],
         "rocks": [
-          "石头_11",
-          "石头_12"
+          "rock_11",
+          "rock_12"
         ],
         "low": [
-          "草_07"
+          "grass_07"
         ]
       },
       "shape": {
@@ -312,8 +312,8 @@
       "index": 8,
       "name_cn": "苔原",
       "is_integrated": false,
-      "terrain_model": "地形_08",
-      "texture_set": "纹理_08",
+      "terrain_model": "terrain_08",
+      "texture_set": "texture_08",
       "textures": [
         "苔藓",
         "冻土",
@@ -321,13 +321,13 @@
       ],
       "vegetation": {
         "trees": [
-          "树_11"
+          "tree_11"
         ],
         "rocks": [
-          "石头_13"
+          "rock_13"
         ],
         "low": [
-          "草_08"
+          "grass_08"
         ]
       },
       "shape": {
@@ -350,8 +350,8 @@
       "index": 9,
       "name_cn": "冰盖",
       "is_integrated": false,
-      "terrain_model": "地形_09",
-      "texture_set": "纹理_09",
+      "terrain_model": "terrain_09",
+      "texture_set": "texture_09",
       "textures": [
         "雪",
         "蓝冰",
@@ -360,7 +360,7 @@
       "vegetation": {
         "trees": [],
         "rocks": [
-          "石头_14"
+          "rock_14"
         ],
         "low": []
       },
@@ -383,8 +383,8 @@
       "index": 10,
       "name_cn": "热带雨林",
       "is_integrated": false,
-      "terrain_model": "地形_10",
-      "texture_set": "纹理_10",
+      "terrain_model": "terrain_10",
+      "texture_set": "texture_10",
       "textures": [
         "落叶层",
         "湿土",
@@ -392,14 +392,14 @@
       ],
       "vegetation": {
         "trees": [
-          "树_12",
-          "树_13"
+          "tree_12",
+          "tree_13"
         ],
         "rocks": [
-          "石头_15"
+          "rock_15"
         ],
         "low": [
-          "草_09"
+          "grass_09"
         ]
       },
       "shape": {
@@ -423,21 +423,21 @@
       "index": 11,
       "name_cn": "稀树草原",
       "is_integrated": false,
-      "terrain_model": "地形_11",
-      "texture_set": "纹理_11",
+      "terrain_model": "terrain_11",
+      "texture_set": "texture_11",
       "textures": [
         "干草",
         "红土"
       ],
       "vegetation": {
         "trees": [
-          "树_14"
+          "tree_14"
         ],
         "rocks": [
-          "石头_16"
+          "rock_16"
         ],
         "low": [
-          "草_10"
+          "grass_10"
         ]
       },
       "shape": {
@@ -461,8 +461,8 @@
       "index": 12,
       "name_cn": "沼泽·湿地",
       "is_integrated": false,
-      "terrain_model": "地形_12",
-      "texture_set": "纹理_12",
+      "terrain_model": "terrain_12",
+      "texture_set": "texture_12",
       "textures": [
         "淤泥",
         "水藻",
@@ -470,13 +470,13 @@
       ],
       "vegetation": {
         "trees": [
-          "树_15"
+          "tree_15"
         ],
         "rocks": [
-          "石头_17"
+          "rock_17"
         ],
         "low": [
-          "草_11"
+          "grass_11"
         ]
       },
       "shape": {
@@ -500,8 +500,8 @@
       "index": 13,
       "name_cn": "河湖",
       "is_integrated": false,
-      "terrain_model": "地形_13",
-      "texture_set": "纹理_13",
+      "terrain_model": "terrain_13",
+      "texture_set": "texture_13",
       "textures": [
         "浅水",
         "深水",
@@ -511,7 +511,7 @@
         "trees": [],
         "rocks": [],
         "low": [
-          "草_12"
+          "grass_12"
         ]
       },
       "shape": {
@@ -532,8 +532,8 @@
       "index": 14,
       "name_cn": "海洋",
       "is_integrated": false,
-      "terrain_model": "地形_14",
-      "texture_set": "纹理_14",
+      "terrain_model": "terrain_14",
+      "texture_set": "texture_14",
       "textures": [
         "浅海",
         "深海",
@@ -562,8 +562,8 @@
       "index": 15,
       "name_cn": "盐碱·戈壁",
       "is_integrated": false,
-      "terrain_model": "地形_15",
-      "texture_set": "纹理_15",
+      "terrain_model": "terrain_15",
+      "texture_set": "texture_15",
       "textures": [
         "盐壳",
         "砾漠",
@@ -572,10 +572,10 @@
       "vegetation": {
         "trees": [],
         "rocks": [
-          "石头_18"
+          "rock_18"
         ],
         "low": [
-          "草_13"
+          "grass_13"
         ]
       },
       "shape": {

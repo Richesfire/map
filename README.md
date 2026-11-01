@@ -23,7 +23,7 @@
 
 - `godot/.godot/` 是 Godot 的导入缓存，已排除。首次打开工程会自动重建（约 30 秒）。
 - `assets/零件/海洋/` 目前只有说明：海洋按策划要求不要植被，且代码侧还没有海平面与海陆掩膜。
-- 详细接入说明见 `godot/地图接入说明.md`，模块契约见 `godot/docs/MAP_API.md`。
+- 详细接入说明见 `godot/INTEGRATION.md`，模块契约见 `godot/docs/MAP_API.md`。
 
 ## 数据表（Excel -> JSON）
 
