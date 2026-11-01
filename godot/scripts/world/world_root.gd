@@ -268,7 +268,7 @@ func _build_soul_camera() -> void:
 func _build_minimap() -> void:
 	var layer := CanvasLayer.new()
 	layer.name = "MapLayer"
-	layer.layer = 1
+	layer.layer = 20    # 提到所有 HUD 之上，否则「F · 上马」会穿透地图
 
 	_minimap = MapMinimap.new()
 	_minimap.name = "Minimap"
