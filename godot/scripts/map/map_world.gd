@@ -601,6 +601,7 @@ func _load_biomes() -> void:
 		_biome_parts[t.get("id", "")] = {
 			"tree": v.get("trees", []),
 			"rock": v.get("rocks", []),
-			"low": v.get("low", []),
+			# 内部 kind 叫 low_veg，JSON 字段叫 low，这里统一成 low_veg
+			"low_veg": v.get("low", []),
 		}
 	print("[Map] 生物群系表载入：%d 类" % _biome_parts.size())

@@ -392,7 +392,6 @@ func _glb_mesh(pid: String) -> Mesh:
 		return _glb_cache[pid]
 	var path := "res://assets/parts/%s.glb" % pid
 	var m: Mesh = null
-	print("[GLBTRY] exists(%s)=%s" % [path, str(ResourceLoader.exists(path))])
 	if ResourceLoader.exists(path):
 		var ps := load(path) as PackedScene
 		if ps != null:
@@ -400,7 +399,6 @@ func _glb_mesh(pid: String) -> Mesh:
 			m = _find_mesh(inst)
 			inst.queue_free()
 	_glb_cache[pid] = m
-	print("[GLBTRY] %s -> %s" % [path, str(m != null)])
 	return m
 
 
@@ -495,7 +493,6 @@ func _add_layer(kind: String, xforms: Array, cast_shadow: bool) -> void:
 	if mesh == null:
 		return
 
-	print("[LAYER] 群系=%s 类型=%s 数量=%d" % [biome_id, kind, xforms.size()])
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh

@@ -537,13 +537,28 @@ func _on_travel(target_dir: Vector3) -> void:
 func _test_travelto() -> void:
 	var c0 := map.region_center_dir
 	print("[TravelTest] 出发: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c0).x, GeoSphere.dir_to_lonlat(c0).y, map.biome.biome_at(c0)])
-	var target := GeoSphere.lonlat_to_dir(0.0, -88.0)
-	print("[TravelTest] 目标: %.2f,%.2f  群系=%s" % [0.0, -88.0, map.biome.biome_at(target)])
+	var target := GeoSphere.lonlat_to_dir(-60.0, -5.0)
+	print("[TravelTest] 目标: %.2f,%.2f  群系=%s" % [-60.0, -5.0, map.biome.biome_at(target)])
 	map.travel_to(target, 1)
 	await get_tree().process_frame
 	var c1 := map.region_center_dir
 	print("[TravelTest] 抵达: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c1).x, GeoSphere.dir_to_lonlat(c1).y, map.biome.biome_at(c1)])
+	for i in 200:
+		await get_tree().process_frame
+		if map.get_tiles().size() >= 3:
+			break
+	_snap_to_ground()   # 测试里也要贴地
+	for i in 120:
+		await get_tree().process_frame
 	print("[TravelTest] 地块数=%d  玩家pos=%s" % [map.get_tiles().size(), str(player.position)])
+	for i in 30:
+		await get_tree().process_frame
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--out="):
+			var f := a.substr(6)
+			get_viewport().get_texture().get_image().save_png(f)
+			print("[TravelShot] " + f)
+			get_tree().quit()
 
 
 ## 合成真实操作：拖准星到球上 -> 按回车，验证 UI 这条链路
