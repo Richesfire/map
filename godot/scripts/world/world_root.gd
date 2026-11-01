@@ -304,8 +304,8 @@ func _build_hint() -> void:
 	_compass.anchor_right = 0.5
 	_compass.offset_left = -310.0
 	_compass.offset_right = 310.0
-	_compass.offset_top = 8.0
-	_compass.offset_bottom = 66.0
+	_compass.offset_top = 6.0
+	_compass.offset_bottom = 74.0
 	layer.add_child(_compass)
 
 	add_child(layer)

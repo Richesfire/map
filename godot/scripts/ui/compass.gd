@@ -32,7 +32,7 @@ func setup(p: Node3D, cam: Camera3D, m: MapWorld, ann: Array) -> void:
 	map = m
 	annotations = ann
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	size = Vector2(STRIP_W, STRIP_H + 16.0)
+	size = Vector2(STRIP_W, STRIP_H + 34.0)
 
 
 func _process(_delta: float) -> void:
@@ -65,7 +65,7 @@ func _delta(a: float, b: float) -> float:
 func _draw() -> void:
 	var facing := _facing()
 	var cx := size.x * 0.5
-	var cy := 22.0
+	var cy := 20.0
 	var half := SPAN_DEG * 0.5
 
 	# ---- 底条（边缘柔化）
@@ -91,10 +91,10 @@ func _draw() -> void:
 		if major and font != null:
 			var label: String = _names.get(float(deg), "")
 			var w := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
-			draw_string_outline(font, Vector2(x - w * 0.5, cy + 20.0), label,
+			draw_string_outline(font, Vector2(x - w * 0.5, cy + 30.0), label,
 					HORIZONTAL_ALIGNMENT_LEFT, -1, 17, 4,
 					Color(0, 0, 0, 0.8 * fade))
-			draw_string(font, Vector2(x - w * 0.5, cy + 20.0), label,
+			draw_string(font, Vector2(x - w * 0.5, cy + 30.0), label,
 					HORIZONTAL_ALIGNMENT_LEFT, -1, 17,
 					Color(1.0, 0.96, 0.82, fade))
 
@@ -114,14 +114,18 @@ func _draw() -> void:
 			var x := cx + (d / half) * (size.x * 0.5)
 			var fade := 0.55 + 0.45 * (1.0 - pow(absf(d) / half, 3.0))
 			var km := dist / 1000.0
-			var py := cy - 16.0
+			# 点贴着刻度带顶部，黄字放在带子中间，不再被屏幕顶边裁掉
+			var py := cy - 15.0
 			draw_circle(Vector2(x, py), 3.0, Color(1.0, 0.84, 0.36, fade))
 			if font != null:
 				var txt := "%s %.0fkm" % [a.label, km] if km >= 1.0 else a.label
 				var w := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
-				draw_string(font, Vector2(x - w * 0.5, py - 6.0), txt,
-						HORIZONTAL_ALIGNMENT_LEFT, -1, 12,
-						Color(1.0, 0.9, 0.6, fade))
+				draw_string_outline(font, Vector2(x - w * 0.5, cy + 4.0), txt,
+						HORIZONTAL_ALIGNMENT_LEFT, -1, 13, 4,
+						Color(0, 0, 0, 0.85 * fade))
+				draw_string(font, Vector2(x - w * 0.5, cy + 4.0), txt,
+						HORIZONTAL_ALIGNMENT_LEFT, -1, 13,
+						Color(1.0, 0.88, 0.42, fade))
 
 	# ---- 中央指示
 	draw_colored_polygon(PackedVector2Array([
