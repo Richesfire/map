@@ -162,8 +162,9 @@ func build(center_dir: Vector3, tiles_x: int, tiles_z: int, do_scatter: bool = t
 ## 只按玩家 1.2km 的移动重建一次（约 70ms）。
 const FAR_EXTENT := 9000.0
 const FAR_RES := 96
-## 中间挖空：精细地块覆盖 ±1500m，壳的洞设 1600m，让壳的内边缘藏在瓦片底下 100m
-const FAR_HOLE := 1600.0
+## 中间挖空：精细地块覆盖 ±1500m。洞必须**比地块小**（1250m），
+## 让壳的内边缘藏到瓦片底下 250m —— 否则 1500~1600 这一圈既没有瓦片也没有壳，就是那道缺口。
+const FAR_HOLE := 1250.0
 
 var _far_shell: MeshInstance3D
 var _far_center := Vector3(1e9, 0.0, 0.0)

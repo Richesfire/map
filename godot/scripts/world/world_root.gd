@@ -17,7 +17,7 @@ extends Node3D
 ## ==============================================================
 
 ## 每次改完都改这个，用来确认你运行的到底是不是最新代码
-const BUILD_TAG := "2026-11-01 19:55 配色重做+撤掉每帧抢鼠标"
+const BUILD_TAG := "2026-11-01 20:05 修块间缺口"
 
 @export_group("地图")
 @export var start_lon := 108.71
@@ -113,6 +113,11 @@ func _process(_delta: float) -> void:
 	# 外部程序（QQ 截图、输入法、录屏）会把鼠标从游戏手里抢走，
 	# 还回来时 Godot 不会自动重捕 —— 表现就是鼠标撞边、视角不能无限转。
 	# 所以每帧核对一次：该捕获却没收回来，就重新捕获。
+	# 鼠标状态跟「窗口是不是前台」这个事实对齐：
+	# 只要不是前台就一定是可见光标，避免游戏退出捕获后 Windows 那边还留着隐藏的光标。
+	if not DisplayServer.window_is_focused() and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
 	# 不再每帧重捕：那会和 QQ 截图等外部工具抢鼠标，导致它们退不出去。
 	# 恢复捕获放在「获得焦点」和「在窗口内按下鼠标」这两处（见 _notification / _input）。
 
