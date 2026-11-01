@@ -30,7 +30,6 @@ var world: MapWorld
 var _viewport: SubViewport
 var _container: SubViewportContainer
 var _cam: Camera3D
-var _tilt_node: Node3D       # 前后倾（绕世界 X，不受自转影响）
 var _pivot: Node3D           # 自转（绕自身 Y）
 var _sphere: MeshInstance3D
 var _tex: ImageTexture
@@ -44,8 +43,6 @@ const PITCH_LIMIT := deg_to_rad(78.0)
 var _orbit_yaw := 0.0        # 相机环绕：水平，无限
 var _orbit_pitch := 0.0      # 相机环绕：俯仰，±78° 限位（否则会从球底下倒着看，南北颠倒是假的颠倒）
 var _save_timer := 0.0
-var _tilt := 0.0             # 前后倾（弧度，限幅）
-var _pivot_base_tilt := 0.0   # 不要地球仪造型了：球自由滚动，没有固定轴
 
 
 func _ready() -> void:
@@ -110,19 +107,10 @@ func _build_scene() -> void:
 	_cam.position = Vector3(0.0, 0.05, 4.55)   # 默认朝 -Z，正好对着原点
 	root.add_child(_cam)
 
-	# ---- 底座 + 子午环（静止，不跟球转）
-	# _build_stand(root)   # 不要地球仪造型了，架子和环会穿帮
-
-	# ---- 可转的球
-	_tilt_node = Node3D.new()
-	_tilt_node.name = "GlobeTilt"
-	root.add_child(_tilt_node)
-
-	_tilt_node.rotation = Vector3(0.0, 0.0, _pivot_base_tilt)
-
+	# ---- 可转的球（没有底座、没有子午环、没有地轴倾角）
 	_pivot = Node3D.new()
 	_pivot.name = "GlobePivot"
-	_tilt_node.add_child(_pivot)
+	root.add_child(_pivot)
 
 	var mesh := SphereMesh.new()
 	mesh.radius = 1.0
@@ -153,57 +141,6 @@ func _build_scene() -> void:
 
 
 ## 底座：一个立起来的子午环 + 立柱 + 底盘。全部静止。
-func _build_stand(root: Node3D) -> void:
-	var stand := Node3D.new()
-	stand.name = "Stand"
-	stand.rotation.z = _pivot_base_tilt
-	root.add_child(stand)
-
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.16, 0.13, 0.10)
-	mat.metallic = 0.75
-	mat.roughness = 0.35
-
-	# 子午环（竖着套住球的圆环）
-	var torus := TorusMesh.new()
-	torus.inner_radius = 1.10
-	torus.outer_radius = 1.16
-	torus.rings = 64
-	torus.ring_segments = 12
-	var ring := MeshInstance3D.new()
-	ring.name = "MeridianRing"
-	ring.mesh = torus
-	ring.rotation_degrees = Vector3(90.0, 0.0, 0.0)
-	ring.material_override = mat
-	stand.add_child(ring)
-
-	# 立柱
-	var stem_mesh := CylinderMesh.new()
-	stem_mesh.top_radius = 0.05
-	stem_mesh.bottom_radius = 0.07
-	stem_mesh.height = 0.42
-	stem_mesh.radial_segments = 16
-	var stem := MeshInstance3D.new()
-	stem.name = "Stem"
-	stem.mesh = stem_mesh
-	stem.position = Vector3(0.0, -1.30, 0.0)
-	stem.material_override = mat
-	stand.add_child(stem)
-
-	# 底盘
-	var base_mesh := CylinderMesh.new()
-	base_mesh.top_radius = 0.34
-	base_mesh.bottom_radius = 0.40
-	base_mesh.height = 0.07
-	base_mesh.radial_segments = 40
-	var base := MeshInstance3D.new()
-	base.name = "Base"
-	base.mesh = base_mesh
-	base.position = Vector3(0.0, -1.54, 0.0)
-	base.material_override = mat
-	stand.add_child(base)
-
-
 func _placeholder_texture() -> ImageTexture:
 	var img := Image.create(8, 4, false, Image.FORMAT_RGB8)
 	img.fill(Color(0.20, 0.30, 0.18))
@@ -366,7 +303,7 @@ func _process(delta: float) -> void:
 
 
 func _apply_rotation() -> void:
-	if _pivot == null or _tilt_node == null:
+	if _pivot == null:
 		return
 	# 分成两级：倾角绕世界 X，自转绕自身 Y，两者不互相污染
 	# 先绕竖轴转，再绕世界 X 前后翻 —— 顺序固定，俯仰受限，所以极轴永远不会倒过来
