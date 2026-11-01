@@ -530,6 +530,8 @@ func _maybe_capture() -> void:
 		if a2 == "--mapshot":
 			toggle_world_map()
 			break
+	if _minimap.get_dialog() != null:
+		_minimap.get_dialog().probe()
 	for i in 80:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()

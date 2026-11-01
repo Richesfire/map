@@ -148,7 +148,7 @@ func _input(event: InputEvent) -> void:
 			if not mb.pressed and _pin_dragging:
 				_pin_dragging = false
 				var hit := _globe.pick(mb.position)
-				if hit == Vector3.ZERO:
+				if hit == Vector3.ZERO or _globe.project(hit).x < 0.0:
 					_target_dir = Vector3.ZERO
 					_pin_pos = Vector2(56, 240)
 				else:
@@ -188,8 +188,10 @@ func _input(event: InputEvent) -> void:
 		var mmv := event as InputEventMouseMotion
 		_pin_pos = mmv.position
 		var hv := _globe.pick(mmv.position)
-		if hv != Vector3.ZERO:
-			_target_dir = hv      # 拖到球面上：准星直接贴上去，跟着球走
+		# 只接受**可见半球**上的点。否则目标跑到球背面，
+		# 投影会失败，准星就被迫回退到鼠标位置，看起来准星在这儿、坐标却在别处。
+		if hv != Vector3.ZERO and _globe.project(hv).x >= 0.0:
+			_target_dir = hv
 		_overlay.queue_redraw()
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _pin_dragging:
@@ -290,3 +292,15 @@ func show_notice(text: String) -> void:
 		_notice = ""
 		if _overlay != null:
 			_overlay.queue_redraw())
+
+
+## 诊断：把一批已知经纬度投影到屏幕上，用来核对贴图是否对位
+func probe() -> void:
+	var pts := [
+		[0.0, 0.0], [90.0, 0.0], [180.0, 0.0], [-90.0, 0.0],
+		[20.0, 0.0], [-60.0, 0.0], [108.7, 34.3],
+	]
+	for p in pts:
+		var d := GeoSphere.lonlat_to_dir(float(p[0]), float(p[1]))
+		var sp := project(d)
+		print("[PROBE] lon=%7.1f lat=%5.1f -> screen %s" % [p[0], p[1], str(sp)])
