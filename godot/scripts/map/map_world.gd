@@ -206,7 +206,7 @@ func _update_far_shell(pos: Vector3) -> void:
 			var z := pos.z - FAR_EXTENT + float(j) * step
 			var dir := GeoSphere.tangent_to_dir(region_frame, x, -z)
 			var p := render_position(dir)
-			verts[j * n + i] = Vector3(p.x, p.y - 4.0, p.z)
+			verts[j * n + i] = Vector3(p.x, p.y - 2.0, p.z)
 
 	var idx := PackedInt32Array()
 	var k := 0
@@ -227,9 +227,18 @@ func _update_far_shell(pos: Vector3) -> void:
 			idx.append(b); idx.append(d); idx.append(c)
 
 
+	# 法线必须算：全朝上会让远景壳的光照和精细地块明显不同，交界处出现色差线
 	var normals := PackedVector3Array()
 	normals.resize(n * n)
-	normals.fill(Vector3.UP)
+	for j in n:
+		for i in n:
+			var il := maxi(i - 1, 0)
+			var ir := mini(i + 1, n - 1)
+			var jd := maxi(j - 1, 0)
+			var ju := mini(j + 1, n - 1)
+			var dx := verts[j * n + ir] - verts[j * n + il]
+			var dz := verts[ju * n + i] - verts[jd * n + i]
+			normals[j * n + i] = dz.cross(dx).normalized()
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
