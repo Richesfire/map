@@ -169,8 +169,10 @@ func _apply_size() -> void:
 ## 只转球体本身：水平拖 = 绕极轴自转，竖直拖 = 前后倾（限幅）
 func rotate_by(rel: Vector2) -> void:
 	# 左右不限；上下夹在 ±78°，可以翻到接近极点，但不会把南北极翻过来
-	_spin_yaw -= rel.x * 0.006
-	_spin_pitch = clampf(_spin_pitch - rel.y * 0.006, -PITCH_LIMIT, PITCH_LIMIT)
+	# 符号必须是**加**：右拖要看到球面跟着往右走。
+	# （相机环绕用的是减号 —— 相机往右移 ↔ 球往左转，两者方向相反，别抄反了。）
+	_spin_yaw += rel.x * 0.006
+	_spin_pitch = clampf(_spin_pitch + rel.y * 0.006, -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_rotation()
 	_save_state_later()
 
