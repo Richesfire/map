@@ -228,17 +228,17 @@ func edge_point(dir: Vector3) -> Vector2:
 ## 当前缩放层级 0~3（0=全球，3=本地）
 ## 阈值按 _zoom（0.6~2.6）划分，滚动时逐级解锁更细的地名。
 func zoom_level() -> int:
-	if _zoom < 1.15:
+	if _zoom < 1.6:
 		return 0
-	if _zoom < 1.65:
+	if _zoom < 3.0:
 		return 1
-	if _zoom < 2.15:
+	if _zoom < 5.5:
 		return 2
 	return 3
 
 
 func zoom_by(steps: float) -> void:
-	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 2.6)
+	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 12.0)
 	# 只改 FOV，不碰相机位置。
 	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
 	#   又会把环绕角度冲掉，等于缩放一下视角就归位了。）
@@ -276,7 +276,7 @@ func _apply_orbit() -> void:
 	_cam.position = pivot + pos
 	_cam.look_at(pivot, Vector3.UP)
 	if _cam != null:
-		_cam.fov = clampf(40.0 / _zoom, 8.0, 70.0)
+		_cam.fov = clampf(40.0 / _zoom, 3.2, 70.0)
 
 
 func save_state() -> void:
@@ -299,7 +299,7 @@ func load_state() -> void:
 	_orbit_yaw = float(cfg.get_value("globe", "orbit_yaw", _orbit_yaw))
 	_orbit_pitch = clampf(float(cfg.get_value("globe", "orbit_pitch", _orbit_pitch)),
 			-PITCH_LIMIT, PITCH_LIMIT)
-	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 2.6)
+	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 12.0)
 	_apply_rotation()
 	_apply_orbit()
 
@@ -315,6 +315,19 @@ func _process(delta: float) -> void:
 		_save_timer -= delta
 		if _save_timer <= 0.0:
 			save_state()
+
+
+## 把球面上的某个方向转到正前方。
+## 缩放前调用，就等于"朝鼠标所指的地方放大"（导航软件的行为）。
+func focus_on(dir: Vector3) -> void:
+	var v := dir.normalized()
+	var r := sqrt(v.x * v.x + v.z * v.z)
+	if r < 0.0001:
+		return                      # 正对极点时水平方向没有意义，跳过
+	_spin_yaw = atan2(-v.x, v.z)
+	_spin_pitch = clampf(atan2(v.y, r), -PITCH_LIMIT, PITCH_LIMIT)
+	_apply_rotation()
+	_save_state_later()
 
 
 func _apply_rotation() -> void:

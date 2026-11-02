@@ -189,11 +189,11 @@ func _input(event: InputEvent) -> void:
 				_dragging = false
 			get_viewport().set_input_as_handled()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_globe.zoom_by(1.0)
+			_zoom_at(mb.position, 1.0)
 			_overlay.queue_redraw()
 			get_viewport().set_input_as_handled()
 		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_globe.zoom_by(-1.0)
+			_zoom_at(mb.position, -1.0)
 			_overlay.queue_redraw()
 			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _pin_dragging:
@@ -356,3 +356,14 @@ func _inside_bar(p: Vector2) -> bool:
 	if _bar == null:
 		return false
 	return Rect2(_bar.position, _bar.size).has_point(p)
+
+
+## 朝鼠标所指的位置缩放：先把该点转到正前方，再改 FOV。
+## 这样连续滚动就会一直往目标点钻进去，和高德那种手感一致。
+func _zoom_at(p: Vector2, steps: float) -> void:
+	if _globe == null:
+		return
+	var hit := _globe.pick(p)
+	if hit != Vector3.ZERO and steps > 0.0:
+		_globe.focus_on(hit)
+	_globe.zoom_by(steps)
