@@ -84,10 +84,14 @@ func biome_at(dir: Vector3) -> String:
 	var d := dir.normalized()
 	var ll := GeoSphere.dir_to_lonlat(d)
 	var lat := absf(ll.y)
-	var h := gen.height_at(d)
 
+	# 先判海陆、再算高度：海洋占地球表面 71%，原先每格都白算一次高度噪声。
+	# 调换这一处，烘焙全球图、地块生成、撒点全都跟着变快。
 	if not is_land(d):
 		return "ocean"
+
+	var h := gen.height_at(d)
+
 	if lat >= ice_lat:
 		return "ice"
 	if h >= h_alpine:
