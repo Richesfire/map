@@ -319,6 +319,24 @@ func _process(delta: float) -> void:
 
 ## 把球面上的某个方向转到正前方。
 ## 缩放前调用，就等于"朝鼠标所指的地方放大"（导航软件的行为）。
+## 放大时把光标所指的点往中心挪一小部分，而不是一把拽到正中间。
+## ratio = 1 - 1/放大倍数：放大 20% 就只挪 17%，光标下的位置基本不动。
+func focus_toward(dir: Vector3, ratio: float) -> void:
+	var v := dir.normalized()
+	var r := sqrt(v.x * v.x + v.z * v.z)
+	if r < 0.0001:
+		return
+	var ty := atan2(-v.x, v.z)
+	var tp := clampf(atan2(v.y, r), -PITCH_LIMIT, PITCH_LIMIT)
+	# 取最短方向（角度差折回 -PI..PI）
+	var dy := wrapf(ty - _spin_yaw, -PI, PI)
+	var dp := tp - _spin_pitch
+	_spin_yaw += dy * ratio
+	_spin_pitch = clampf(_spin_pitch + dp * ratio, -PITCH_LIMIT, PITCH_LIMIT)
+	_apply_rotation()
+	_save_state_later()
+
+
 func focus_on(dir: Vector3) -> void:
 	var v := dir.normalized()
 	var r := sqrt(v.x * v.x + v.z * v.z)
