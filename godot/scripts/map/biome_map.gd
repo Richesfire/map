@@ -54,6 +54,15 @@ func setup(noise_gen: TerrainNoise, land_mask: Image = null) -> void:
 
 
 ## 海陆掩膜：有掩膜就按掩膜，没有就当全是陆地
+## 已知经纬度时用这个：省掉一次 dir -> lonlat 的三角函数
+func is_land_ll(lon: float, lat: float) -> bool:
+	if _mask == null:
+		return true
+	var x := clampi(int((lon + 180.0) / 360.0 * float(_mask_w)), 0, _mask_w - 1)
+	var y := clampi(int((90.0 - lat) / 180.0 * float(_mask_h)), 0, _mask_h - 1)
+	return _mask.get_pixel(x, y).r > 0.5
+
+
 func is_land(dir: Vector3) -> bool:
 	if _mask == null:
 		return true
@@ -164,3 +173,44 @@ func _load_rules() -> void:
 	if r.has("arid_hi"): arid_hi = float(r["arid_hi"])
 	if r.has("arid_peak"): arid_peak = float(r["arid_peak"])
 	print("[Biome] 已载入 %d 条群系规则" % r.size())
+
+
+## 烘焙专用：调用方已经知道 lon/lat，直接传进来，省掉重复换算。
+## 逻辑必须和 biome_at 保持一致，改一处要同步另一处。
+func biome_at_ll(dir: Vector3, lon: float, lat_in: float) -> String:
+	if gen == null:
+		return "plain"
+	var d := dir.normalized()
+	var lat := absf(lat_in)
+	if not is_land_ll(lon, lat_in):
+		return "ocean"
+	var h: float = gen.height_at(d)
+	if lat >= ice_lat:
+		return "ice"
+	if h >= h_alpine:
+		return "alpine"
+	if lat >= tundra_lat:
+		return "tundra"
+	if h >= h_mountain:
+		return "mountain"
+	if h >= h_hills:
+		return "hills"
+	var raw: float = gen.wet_at(d)
+	var aridity := 0.0
+	if lat > arid_lo and lat < arid_hi:
+		var t := (lat - arid_lo) / maxf(arid_hi - arid_lo, 1.0)
+		aridity = sin(t * PI) * 0.28
+	var w := clampf(raw - aridity, 0.0, 1.0)
+	if lat <= jungle_lat:
+		if w >= wet_jungle:
+			return "jungle"
+		if w >= wet_steppe:
+			return "savanna"
+		return "desert"
+	if w >= wet_forest:
+		return "forest"
+	if w >= wet_steppe:
+		return "steppe"
+	if lat <= desert_lat:
+		return "desert"
+	return "plain"

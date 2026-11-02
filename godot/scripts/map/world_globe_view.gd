@@ -472,10 +472,11 @@ static func make_world_image(world: MapWorld, w: int, h: int) -> Image:
 
 	for y in h:
 		var lat := 90.0 - (float(y) + 0.5) / float(h) * 180.0
+		var lat_line := _near_multiple(lat, 30.0, 0.9)
 		for x in w:
 			var lon := _lon_of_x_at(x, w)
 			var dir := GeoSphere.lonlat_to_dir(lon, lat)
-			var bid := bm.biome_at(dir)
+			var bid := bm.biome_at_ll(dir, lon, lat)
 			counts[bid] = counts.get(bid, 0) + 1
 
 			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
@@ -483,19 +484,12 @@ static func make_world_image(world: MapWorld, w: int, h: int) -> Image:
 				var hh := world.get_height_dir(dir)
 				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
 				c = Color(c.r * shade, c.g * shade, c.b * shade)
-			img.set_pixel(x, y, c)
 
-	# 经纬网
-	for y in h:
-		var lat2 := 90.0 - (float(y) + 0.5) / float(h) * 180.0
-		if _near_multiple(lat2, 30.0, 0.9):
-			for x in w:
-				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.9, 0.93, 0.97), 0.22))
-	for x in w:
-		var lon2 := _lon_of_x_at(x, w)
-		if _near_multiple(lon2, 30.0, 0.9):
-			for y in h:
-				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.9, 0.93, 0.97), 0.22))
+			# 经纬网直接在这里叠，省掉后面两遍全图遍历
+			if lat_line or _near_multiple(lon, 30.0, 0.9):
+				c = c.lerp(Color(0.9, 0.93, 0.97), 0.22)
+
+			img.set_pixel(x, y, c)
 
 	# 分布统计
 	var total := float(w * h)
