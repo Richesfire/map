@@ -365,6 +365,7 @@ func _inside_bar(p: Vector2) -> bool:
 ## 朝鼠标所指的位置缩放：先把该点转到正前方，再改 FOV。
 ## 这样连续滚动就会一直往目标点钻进去，和高德那种手感一致。
 func _zoom_at(p: Vector2, steps: float) -> void:
+	print("[WHEEL] steps=%.1f zoom前=%.2f" % [steps, _globe.get_zoom() if _globe != null else -1.0])
 	if _globe == null:
 		return
 	var hit := _globe.pick(p)
@@ -376,6 +377,8 @@ func _zoom_at(p: Vector2, steps: float) -> void:
 	# 等区域高清贴图做好、探索数据稳定之后，再在这里恢复限制。
 
 	# 纯变焦，不做任何自动转动。
-	# 之前试过“缩放时朝光标方向微调”，结果球会自己动，手感很怪。
-	# 想放大别处，先把球拖到中间再滚轮，这样最可预测。
 	_globe.zoom_by(steps)
+
+	# 把当前倍数写在地图左上角，方便确认滚轮到底有没有生效
+	if _globe._loading != null:
+		_globe._loading.text = "缩放 %.1f×   ·   拖动旋转 · Esc / M 关闭" % _globe.get_zoom()
