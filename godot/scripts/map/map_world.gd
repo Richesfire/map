@@ -167,7 +167,7 @@ const FAR_RES := 96
 ## 所以 1250~1500 这一段壳藏在瓦片底下，瓦片边缘之外立刻接上壳 —— 无缝、无台阶。
 ## 下压要足够大：远景壳 190m 一格，粗网在坡地上会顶穿精细地形（看起来像两层地面重叠）。
 ## 挖洞省不到 2% 的三角形，却会留下缺口和 z-fighting 风险，得不偿失。
-const FAR_HOLE := 900.0
+const FAR_HOLE := 1250.0
 
 var _far_shell: MeshInstance3D
 var _far_center := Vector3(1e9, 0.0, 0.0)
@@ -201,11 +201,6 @@ func _update_far_shell(pos: Vector3) -> void:
 	var step := FAR_EXTENT * 2.0 / float(FAR_RES)
 	var verts := PackedVector3Array()
 	verts.resize(n * n)
-	# 逐顶点群系色：shader 现在优先用顶点色，不写就会是白的
-	var fcols := PackedColorArray()
-	fcols.resize(n * n)
-	var neutral: Color = BIOME_TINTS.get("plain", Color(0.55, 0.72, 0.40))
-
 	for j in n:
 		for i in n:
 			var x := pos.x - FAR_EXTENT + float(i) * step
@@ -213,13 +208,7 @@ func _update_far_shell(pos: Vector3) -> void:
 			var dir := GeoSphere.tangent_to_dir(region_frame, x, -z)
 			var p := render_position(dir)
 
-			# 曾经试过按距离渐变下沉，但壳是 190m 一格，下沉量逐点变化会形成
-			# 一圈圈台阶（屏幕上就是波浪状条纹）。改回恒定下压，靠瓦片盖住。
 			verts[j * n + i] = Vector3(p.x, p.y - 2.0, p.z)
-			if biome != null:
-				fcols[j * n + i] = BIOME_TINTS.get(biome.biome_at(dir), neutral)
-			else:
-				fcols[j * n + i] = neutral
 
 	var idx := PackedInt32Array()
 	var k := 0
@@ -256,7 +245,6 @@ func _update_far_shell(pos: Vector3) -> void:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_COLOR] = fcols
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = idx
 
@@ -334,7 +322,6 @@ func _spawn_tile(i: int, j: int, do_scatter: bool, deferred: bool = false) -> Te
 	tile.biome_id = bid
 	tile.biome_parts = _biome_parts.get(bid, {})
 	tile.biome_color = BIOME_TINTS.get(bid, Color.WHITE)
-	tile.biome_map = biome
 	tile.ground_material = _ground_material
 	tile.prop_material = _prop_material
 	tile.prop_meshes = _prop_meshes

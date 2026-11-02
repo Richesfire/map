@@ -48,7 +48,6 @@ var v_center := 0.0
 var build_scatter := true
 var biome_id := "plain"
 var biome_color := Color.WHITE
-var biome_map: BiomeMap = null      # 逐顶点取群系颜色用
 var biome_parts: Dictionary = {}      # kind -> [零件编号]
 
 ## 本格的球面地址 (face, x, y)
@@ -173,11 +172,7 @@ func _commit_mesh() -> void:
 	verts.resize(count)
 	var norms := PackedVector3Array()
 	norms.resize(count)
-	var cols := PackedColorArray()
-	cols.resize(count)
 	var origin := Vector3(u_center, 0.0, -v_center)
-	const COL_STRIDE := 2   # 每 2 格采一次群系颜色，GPU 插值补中间
-	var last_col := biome_color
 
 	for j in res:
 		for i in res:
@@ -190,16 +185,6 @@ func _commit_mesh() -> void:
 
 			verts[k] = _local_at(uu, vv, _h[row + pi]) - origin
 
-			if biome_map != null and i % COL_STRIDE == 0 and j % COL_STRIDE == 0:
-				# 群系分界本来是阈值判定出的几何直线，一眼就看出来。
-				# 采样点按平滑噪波抖动 ±60 米，分界就变成参差的自然过渡带。
-				var jx := sin(uu * 0.0031 + 1.7) * cos(vv * 0.0027) * 60.0
-				var jz := cos(uu * 0.0029) * sin(vv * 0.0033 + 0.9) * 60.0
-				last_col = MapWorld.BIOME_TINTS.get(
-						biome_map.biome_at(
-								GeoSphere.tangent_to_dir(frame, uu + jx, vv + jz)),
-						biome_color)
-			cols[k] = last_col
 
 			var hl := _h[row + pi - 1]
 			var hr := _h[row + pi + 1]
@@ -234,53 +219,7 @@ func _commit_mesh() -> void:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_INDEX] = indices
-	arrays[Mesh.ARRAY_COLOR] = cols
 
-	# ---- 裙边：四面各垂下一圈竖墙。
-	# 远景壳就藏在墙后面，从任何角度都不会从瓦片边缘露出来。
-	# 这是 LOD 地形的标准做法，比"让壳下沉"可靠（壳 190m 一格，撑不起斜面）。
-	const SKIRT_DEPTH := 30.0
-	var down := Vector3(0.0, -SKIRT_DEPTH, 0.0)
-	var edges: Array = []
-	for i in res - 1:
-		edges.append([i, i + 1])                                   # 北边 j=0
-		edges.append([(res - 1) * res + i + 1, (res - 1) * res + i])  # 南边 j=res-1
-	for j in res - 1:
-		edges.append([(j + 1) * res, j * res])                     # 西边 i=0
-		edges.append([j * res + res - 1, (j + 1) * res + res - 1]) # 东边 i=res-1
-
-	var extra_v := PackedVector3Array()
-	var extra_i := PackedInt32Array()
-	var extra_c := PackedColorArray()
-	var base_i := count
-	for pair in edges:
-		var ia: int = pair[0]
-		var ib: int = pair[1]
-		var ca := cols[ia]
-		var cb := cols[ib]
-		# 下沿两个点
-		extra_v.append(verts[ia] + down); extra_c.append(ca)
-		extra_v.append(verts[ib] + down); extra_c.append(cb)
-		var a := base_i + extra_v.size() - 2
-		var b := a + 1
-		# 双面：正反各一遍，免得绕序写反导致整圈墙不可见
-		extra_i.append_array([ia, a, b,  ia, b, ib])
-		extra_i.append_array([ia, b, a,  ia, ib, b])
-
-	if extra_v.size() > 0:
-		var v2 := PackedVector3Array(verts)
-		v2.append_array(extra_v)
-		var c2 := PackedColorArray(cols)
-		c2.append_array(extra_c)
-		var n2 := PackedVector3Array(norms)
-		for q in extra_v.size():
-			n2.append(Vector3.UP)
-		var i2 := PackedInt32Array(indices)
-		i2.append_array(extra_i)
-		arrays[Mesh.ARRAY_VERTEX] = v2
-		arrays[Mesh.ARRAY_NORMAL] = n2
-		arrays[Mesh.ARRAY_COLOR] = c2
-		arrays[Mesh.ARRAY_INDEX] = i2
 
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
