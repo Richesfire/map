@@ -649,7 +649,7 @@ func _update_detail_new() -> void:
 	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
-	var half_deg := rad_to_deg(3.31 / _zoom) * 0.6      # 覆盖半宽（度）
+	var half_deg := rad_to_deg(3.31 / _zoom) * 0.42     # 覆盖半宽（度），越小越细
 
 	if not _job.is_empty():
 		_step_job_new()

@@ -347,9 +347,12 @@ func _zoom_at(p: Vector2, steps: float) -> void:
 
 	# 没探索过的地方不能放大到细节级：既符合"没去过就不知道"，
 	# 也免去为全世界烘焙高清贴图。
-	# 缩放限制暂时关闭：迷雾只做视觉，不拦缩放。
-	# （之前按"视野中心"判断，坐标系没对齐时会误判成未探索，导致完全放不大。）
-	# 等区域高清贴图做好、探索数据稳定之后，再在这里恢复限制。
+	# 没去过的地方不能放大到细节级
+	var center_hit := _globe.pick(_globe.center_screen())
+	if steps > 0.0 and center_hit != Vector3.ZERO and explored_gate != null:
+		if not explored_gate.is_explored_dir(center_hit) and _globe.get_zoom() >= 6.0:
+			show_notice("未探索区域 · 先把它拖到中间再去看看")
+			return
 
 	# 纯变焦，不做任何自动转动。
 	_globe.zoom_by(steps)
