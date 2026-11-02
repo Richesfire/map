@@ -167,7 +167,7 @@ const FAR_RES := 96
 ## 所以 1250~1500 这一段壳藏在瓦片底下，瓦片边缘之外立刻接上壳 —— 无缝、无台阶。
 ## 下压要足够大：远景壳 190m 一格，粗网在坡地上会顶穿精细地形（看起来像两层地面重叠）。
 ## 挖洞省不到 2% 的三角形，却会留下缺口和 z-fighting 风险，得不偿失。
-const FAR_HOLE := 1250.0
+const FAR_HOLE := 900.0
 
 var _far_shell: MeshInstance3D
 var _far_center := Vector3(1e9, 0.0, 0.0)
@@ -321,6 +321,7 @@ func _spawn_tile(i: int, j: int, do_scatter: bool, deferred: bool = false) -> Te
 	tile.biome_id = bid
 	tile.biome_parts = _biome_parts.get(bid, {})
 	tile.biome_color = BIOME_TINTS.get(bid, Color.WHITE)
+	tile.biome_map = biome
 	tile.ground_material = _ground_material
 	tile.prop_material = _prop_material
 	tile.prop_meshes = _prop_meshes

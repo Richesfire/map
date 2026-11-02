@@ -48,6 +48,7 @@ var v_center := 0.0
 var build_scatter := true
 var biome_id := "plain"
 var biome_color := Color.WHITE
+var biome_map: BiomeMap = null      # 逐顶点取群系颜色用
 var biome_parts: Dictionary = {}      # kind -> [零件编号]
 
 ## 本格的球面地址 (face, x, y)
@@ -172,7 +173,11 @@ func _commit_mesh() -> void:
 	verts.resize(count)
 	var norms := PackedVector3Array()
 	norms.resize(count)
+	var cols := PackedColorArray()
+	cols.resize(count)
 	var origin := Vector3(u_center, 0.0, -v_center)
+	const COL_STRIDE := 2   # 每 2 格采一次群系颜色，GPU 插值补中间
+	var last_col := biome_color
 
 	for j in res:
 		for i in res:
@@ -184,6 +189,12 @@ func _commit_mesh() -> void:
 			var vv := v0 + float(j) * step
 
 			verts[k] = _local_at(uu, vv, _h[row + pi]) - origin
+
+			if biome_map != null and i % COL_STRIDE == 0 and j % COL_STRIDE == 0:
+				last_col = MapWorld.BIOME_TINTS.get(
+						biome_map.biome_at(GeoSphere.tangent_to_dir(frame, uu, vv)),
+						biome_color)
+			cols[k] = last_col
 
 			var hl := _h[row + pi - 1]
 			var hr := _h[row + pi + 1]
@@ -218,6 +229,7 @@ func _commit_mesh() -> void:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = norms
 	arrays[Mesh.ARRAY_INDEX] = indices
+	arrays[Mesh.ARRAY_COLOR] = cols
 
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
