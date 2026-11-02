@@ -22,6 +22,7 @@ var _lid_bottom: ColorRect
 
 var _tween: Tween
 var _caption: Label
+var _bar: ProgressBar
 var _dots := 0
 var _dot_timer: Timer
 
@@ -53,6 +54,16 @@ func _ready() -> void:
 	_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_caption.visible = false
 	add_child(_caption)
+
+	# 加载进度条：开局的黑屏过渡期间显示，让玩家知道在算什么
+	_bar = ProgressBar.new()
+	_bar.min_value = 0.0
+	_bar.max_value = 1.0
+	_bar.value = 0.0
+	_bar.show_percentage = true
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bar.visible = false
+	add_child(_bar)
 
 	_dot_timer = Timer.new()
 	_dot_timer.wait_time = 0.35
@@ -154,3 +165,14 @@ func _tick_dots() -> void:
 	var base := _caption.text.rstrip("。")
 	_dots = (_dots + 1) % 4
 	_caption.text = base + "。".repeat(maxi(_dots, 1))
+
+
+## 设置加载进度（0~1）。传负数则隐藏进度条。
+func set_progress(v: float) -> void:
+	if _bar == null:
+		return
+	if v < 0.0:
+		_bar.visible = false
+		return
+	_bar.visible = true
+	_bar.value = clampf(v, 0.0, 1.0)
