@@ -20,6 +20,7 @@ extends Control
 ##   现在是真的球 + 真的光，转的是球体本身，底座纹丝不动。
 ## ==============================================================
 
+const TEX_BAKED := "res://data/globe_tex.png"
 const TEX_W := 512          # 等距圆柱贴图分辨率（一次性生成，约 2 秒）
 const TEX_H := 256
 
@@ -32,7 +33,7 @@ var _container: SubViewportContainer
 var _cam: Camera3D
 var _pivot: Node3D           # 自转（绕自身 Y）
 var _sphere: MeshInstance3D
-var _tex: ImageTexture
+var _tex: Texture2D   # 烘焙读进来的是 CompressedTexture2D，现算兜底的是 ImageTexture
 var _loading: Label
 
 var _zoom := 1.0             # 滚轮缩放 0.6~2.6
@@ -116,7 +117,7 @@ func _build_scene() -> void:
 	mesh.radius = 1.0
 	mesh.height = 2.0
 	mesh.radial_segments = 96
-	mesh.rings = 48
+	mesh.rings = 96
 	_sphere = MeshInstance3D.new()
 	_sphere.name = "Earth"
 	_sphere.mesh = mesh
@@ -374,6 +375,45 @@ func build_world_texture() -> void:
 		return
 	var t0 := Time.get_ticks_msec()
 
+	# 优先读预烘焙的贴图：启动 0 等待，画质由烘焙分辨率决定
+	if ResourceLoader.exists(TEX_BAKED):
+		var tex := load(TEX_BAKED) as Texture2D
+		if tex != null:
+			_tex = tex
+			if _sphere != null and _sphere.material_override is StandardMaterial3D:
+				(_sphere.material_override as StandardMaterial3D).albedo_texture = _tex
+			if _loading != null:
+				_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
+			print("[Globe] 使用预烘焙贴图 %s（%d ms）" % [TEX_BAKED, Time.get_ticks_msec() - t0])
+			texture_ready.emit()
+			return
+
+	# 兜底：没有烘焙文件就现算低清版（保证功能可用，但会糊）
+	var img := make_world_image(world, TEX_W, TEX_H)
+	img.generate_mipmaps()
+	_tex = ImageTexture.create_from_image(img)
+	if _sphere != null and _sphere.material_override is StandardMaterial3D:
+		(_sphere.material_override as StandardMaterial3D).albedo_texture = _tex
+	if _loading != null:
+		_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
+	print("[Globe] 现算贴图 %dx%d：%d ms（建议跑 --bake-globe 烘焙高清版）"
+			% [TEX_W, TEX_H, Time.get_ticks_msec() - t0])
+	texture_ready.emit()
+
+
+## 烘焙：把高清贴图写到 path。改过群系参数后跑一次即可。
+func bake_to(path: String, w: int, h: int) -> void:
+	if world == null or world.gen == null:
+		push_error("[Globe] world 还没准备好，无法烘焙")
+		return
+	var t0 := Time.get_ticks_msec()
+	var img := make_world_image(world, w, h)
+	var err := img.save_png(path)
+	print("[Globe] 烘焙 %dx%d -> %s（%d ms，err=%d）" % [w, h, path, Time.get_ticks_msec() - t0, err])
+
+
+## 把整个地球采成等距圆柱贴图（纯函数，烘焙和运行时共用）
+static func make_world_image(world: MapWorld, w: int, h: int) -> Image:
 	var mask: Image = null
 	var mask_tex := load(MASK_PATH) as Texture2D
 	if mask_tex != null:
@@ -384,57 +424,56 @@ func build_world_texture() -> void:
 	var bm := BiomeMap.new()
 	bm.setup(world.gen, mask)
 
-	var img := Image.create(TEX_W, TEX_H, false, Image.FORMAT_RGB8)
+	var img := Image.create(w, h, false, Image.FORMAT_RGB8)
 	var counts := {}
 
-	for y in TEX_H:
-		var lat := 90.0 - (float(y) + 0.5) / float(TEX_H) * 180.0
-		for x in TEX_W:
-			var lon := _lon_of_x(x)
+	for y in h:
+		var lat := 90.0 - (float(y) + 0.5) / float(h) * 180.0
+		for x in w:
+			var lon := _lon_of_x_at(x, w)
 			var dir := GeoSphere.lonlat_to_dir(lon, lat)
 			var bid := bm.biome_at(dir)
 			counts[bid] = counts.get(bid, 0) + 1
 
 			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
-			# 高度带来的明暗，让球面不至于死板
 			if bid != "ocean":
-				var h := world.get_height_dir(dir)
-				var shade := clampf(0.82 + h / 600.0, 0.82, 1.12)
+				var hh := world.get_height_dir(dir)
+				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
 				c = Color(c.r * shade, c.g * shade, c.b * shade)
 			img.set_pixel(x, y, c)
 
 	# 经纬网
-	for y in TEX_H:
-		var lat2 := 90.0 - (float(y) + 0.5) / float(TEX_H) * 180.0
+	for y in h:
+		var lat2 := 90.0 - (float(y) + 0.5) / float(h) * 180.0
 		if _near_multiple(lat2, 30.0, 0.9):
-			for x in TEX_W:
+			for x in w:
 				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.9, 0.93, 0.97), 0.22))
-	for x in TEX_W:
-		var lon2 := _lon_of_x(x)
+	for x in w:
+		var lon2 := _lon_of_x_at(x, w)
 		if _near_multiple(lon2, 30.0, 0.9):
-			for y in TEX_H:
+			for y in h:
 				img.set_pixel(x, y, img.get_pixel(x, y).lerp(Color(0.9, 0.93, 0.97), 0.22))
 
-	img.generate_mipmaps()
-	_tex = ImageTexture.create_from_image(img)
-	if _sphere != null and _sphere.material_override is StandardMaterial3D:
-		(_sphere.material_override as StandardMaterial3D).albedo_texture = _tex
-	if _loading != null:
-		_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
-	print("[Globe] 地形分布贴图 %dx%d 生成完成：%d ms" % [TEX_W, TEX_H, Time.get_ticks_msec() - t0])
-
-	# 分布统计：海洋占比、各类地形占比（这是设计评审要看的数字）
-	var total := float(TEX_W * TEX_H)
+	# 分布统计
+	var total := float(w * h)
 	var keys := counts.keys()
 	keys.sort_custom(func(a, b): return counts[a] > counts[b])
 	for k in keys:
 		print("  %-6s %-5s %5.2f%%" % [k, bm.name_of(k), float(counts[k]) / total * 100.0])
-	texture_ready.emit()
+	return img
 
 ## 贴图第 x 列应该填哪个经度。
 ## Godot 的 SphereMesh：uv.x = 1 - atan2(x, z) / 2π，
 ## 而我们的经纬约定是 x=cos(lat)cos(lon), z=-cos(lat)sin(lon)，代入得 atan2 = lon + 90°，
 ## 所以 uv.x = 1 - (lon + 90)/360，反解即可。
+## 任意宽度版本（烘焙用 2048，运行时兜底用 512）
+static func _lon_of_x_at(x: int, w: int) -> float:
+	# Godot SphereMesh：x = sin(u·2π)·w, z = cos(u·2π)·w, uv = (u, v)
+	# u = (lon + 90) / 360
+	var u := (float(x) + 0.5) / float(w)
+	return u * 360.0 - 90.0
+
+
 static func _lon_of_x(x: int) -> float:
 	# Godot SphereMesh：x = sin(u·2π)·w, z = cos(u·2π)·w, uv = (u, v)
 	# 我们的经纬约定 x = cos(lat)cos(lon), z = -cos(lat)sin(lon)

@@ -440,6 +440,9 @@ func _cli() -> void:
 				_test_drag()
 			"--test-travelui":
 				_test_travelui()
+			"--bake-globe":
+				_bake_globe()
+				return
 			"--test-mask":
 				_test_mask()
 			"--test-travelto":
@@ -763,3 +766,12 @@ func _freeze_mount(freeze: bool) -> void:
 	else:
 		h.set_physics_process(true)
 		h.set_process(true)
+
+
+## 烘焙地球贴图：改了群系参数后跑一次，之后游戏直接读文件
+func _bake_globe() -> void:
+	var v := WorldGlobeView.new()
+	v.world = map
+	v.bake_to("res://data/globe_tex.png", 2048, 1024)
+	v.free()
+	get_tree().quit()
