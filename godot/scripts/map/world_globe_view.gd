@@ -263,6 +263,7 @@ const FOG_H := 4096
 const DETAIL_MIN_ZOOM := 30.0
 const DETAIL_PX := 512
 const DETAIL_CACHE := "user://region_cache"
+const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
 var _job := {}
 var _detail_bar: ProgressBar
@@ -649,7 +650,7 @@ func _update_detail_new() -> void:
 	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
-	var half_deg := rad_to_deg(3.31 / _zoom) * 0.42     # 覆盖半宽（度），越小越细
+	var half_deg := rad_to_deg(3.31 / _zoom) * 0.70     # 必须大于视野，否则四周露出底层糊图
 
 	if not _job.is_empty():
 		_step_job_new()
@@ -657,17 +658,39 @@ func _update_detail_new() -> void:
 			return
 
 	# 已经覆盖住这个位置就不用重算
-	# 位置没动、跨度也没大变，就不用重算
-	var same_pos := _job_done_lonlat != Vector2.INF and Vector2(ll.x, ll.y).distance_to(_job_done_lonlat) < half_deg * 0.4
-	var same_span := _job_done_half > 0.0 and absf(half_deg / _job_done_half - 1.0) < 0.25
+	# 跨度先对齐到档位（和生成时用的保持一致），再判断要不要重算
+	var span_deg := half_deg * 2.0
+	for step in DETAIL_LADDER:
+		if span_deg <= step:
+			span_deg = step
+			break
+	var span_half := span_deg * 0.5
+
+	var same_pos := _job_done_lonlat != Vector2.INF and Vector2(ll.x, ll.y).distance_to(_job_done_lonlat) < span_half * 0.6
+	var same_span := _job_done_half > 0.0 and absf(span_half / _job_done_half - 1.0) < 0.01
 	if same_pos and same_span:
 		return
+
+	var lon0 := ll.x - span_half
+	var lon1 := ll.x + span_half
+	var lat0 := maxf(ll.y - span_half, -89.0)
+	var lat1 := minf(ll.y + span_half, 89.0)
+
+	var key := "%d_%d_%d" % [int(round(lon0 * 10.0)), int(round(lat0 * 10.0)), int(round(span_deg * 100.0))]
+	var path := "%s/%s.png" % [DETAIL_CACHE, key]
+	if FileAccess.file_exists(path):
+		var cached: Image = Image.load_from_file(path)
+		if cached != null:
+			_apply_detail(cached, lon0, lon1, lat0, lat1)
+			_job_done_lonlat = Vector2(ll.x, ll.y)
+			_job_done_half = span_half
+			return
 
 	_job = {
 		"img": Image.create(DETAIL_PX, DETAIL_PX, false, Image.FORMAT_RGB8),
 		"row": 0,
-		"lon0": ll.x - half_deg, "lon1": ll.x + half_deg,
-		"lat0": maxf(ll.y - half_deg, -89.0), "lat1": minf(ll.y + half_deg, 89.0),
+		"lon0": lon0, "lon1": lon1, "lat0": lat0, "lat1": lat1,
+		"path": path,
 	}
 	_show_progress(0.0)
 
@@ -705,6 +728,10 @@ func _step_job_new() -> void:
 		_apply_detail(img, lon0, lon1, lat0, lat1)
 		_job_done_lonlat = Vector2((lon0 + lon1) * 0.5, (lat0 + lat1) * 0.5)
 		_job_done_half = (lon1 - lon0) * 0.5
+		DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
+		var cp: String = _job.get("path", "")
+		if cp != "":
+			img.save_png(cp)
 		_job = {}
 		_hide_progress()
 
