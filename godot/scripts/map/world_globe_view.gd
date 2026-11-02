@@ -318,8 +318,10 @@ func get_camera_z() -> float:
 func orbit_by(rel: Vector2) -> void:
 	# 和球体一样：水平无限，俯仰限位。相机永远不会钻到球的正下方，
 	# 所以"南北极颠倒"这件事不可能发生。
-	_orbit_yaw -= rel.x * 0.005
-	_orbit_pitch = clampf(_orbit_pitch - rel.y * 0.004, -PITCH_LIMIT, PITCH_LIMIT)
+	# 和球体拖动用同一套系数与缩放补偿，手感才一致
+	var k := 1.0 / clampf(_zoom, 1.0, 40.0)
+	_orbit_yaw -= rel.x * 0.006 * k
+	_orbit_pitch = clampf(_orbit_pitch - rel.y * 0.006 * k, -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_orbit()
 	_save_state_later()
 
@@ -581,3 +583,11 @@ static func _lon_of_x(x: int) -> float:
 static func _near_multiple(v: float, step: float, tol: float) -> bool:
 	var m := fmod(absf(v), step)
 	return m < tol or m > step - tol
+
+
+## 诊断：连滚 40 格，打印每次的 zoom 与 fov
+func zoom_probe2() -> void:
+	for i in 40:
+		zoom_by(1.0)
+		if i % 5 == 0 or i == 39:
+			print("[ZP] step=%d zoom=%.2f fov=%.3f" % [i, _zoom, _cam.fov])
