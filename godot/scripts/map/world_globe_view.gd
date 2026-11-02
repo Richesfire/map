@@ -147,6 +147,23 @@ func _build_scene() -> void:
 
 	load_state()
 
+	# 区域图生成进度条（只在生成时出现）
+	_detail_bar = ProgressBar.new()
+	_detail_bar.min_value = 0.0
+	_detail_bar.max_value = 1.0
+	_detail_bar.value = 0.0
+	_detail_bar.show_percentage = false
+	_detail_bar.custom_minimum_size = Vector2(360, 20)
+	_detail_bar.size = Vector2(360, 20)
+	_detail_bar.position = Vector2(60, 60)
+	_detail_bar.visible = false
+	add_child(_detail_bar)
+
+	_detail_lbl = Label.new()
+	_detail_lbl.position = Vector2(60, 36)
+	_detail_lbl.visible = false
+	add_child(_detail_lbl)
+
 	_loading = Label.new()
 	_loading.text = "生成地球纹理…"
 	_loading.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
@@ -258,12 +275,14 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 30.0
-const DETAIL_PX := 1024
+const DETAIL_PX := 512
 const DETAIL_CACHE := "user://region_cache"
 var _detail: MeshInstance3D
 var _detail_tex: ImageTexture
 var _detail_center := Vector3.INF
 var _job := {}
+var _detail_bar: ProgressBar
+var _detail_lbl: Label
 var _verify_red := false   # 验证用：把区域图换成纯红，只看几何对不对
 
 var _fog_img: Image
@@ -447,6 +466,7 @@ func _update_detail() -> void:
 	if _zoom < DETAIL_MIN_ZOOM:
 		_detail.visible = false
 		_job = {}
+		_hide_progress()
 		return
 
 	var center := -_cam.global_transform.basis.z
@@ -470,8 +490,7 @@ func _update_detail() -> void:
 		"row": 0, "center": center, "span": span,
 		"east": _tangent_east(center),
 	}
-	if _loading != null:
-		_loading.text = "生成区域地图…"
+	_show_progress(0.0)
 	_show_old_detail(center, span)
 
 
@@ -489,7 +508,7 @@ func _step_detail_job() -> void:
 
 	var px := DETAIL_PX
 	var y0: int = _job["row"]
-	var y1 := mini(y0 + 48, px)
+	var y1 := mini(y0 + 32, px)
 	for j in range(y0, y1):
 		var ty := (0.5 - (float(j) + 0.5) / float(px)) * span
 		for i in px:
@@ -504,12 +523,12 @@ func _step_detail_job() -> void:
 			img.set_pixel(i, j, c)
 
 	_job["row"] = y1
+	_show_progress(float(y1) / float(px))
 	if y1 >= px:
 		_detail_tex = ImageTexture.create_from_image(img)
 		_detail_center = center
 		_job = {}
-		if _loading != null:
-			_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
+		_hide_progress()
 		_place_detail(center, span)
 
 
@@ -723,3 +742,18 @@ static func _near_multiple(v: float, step: float, tol: float) -> bool:
 	return m < tol or m > step - tol
 
 
+## 生成进度：让玩家看到在算什么，而不是莫名卡一下
+func _show_progress(t: float) -> void:
+	if _detail_bar == null or _detail_lbl == null:
+		return
+	_detail_bar.visible = true
+	_detail_lbl.visible = true
+	_detail_bar.value = t
+	_detail_lbl.text = "生成区域地图… %d%%" % int(t * 100.0)
+
+
+func _hide_progress() -> void:
+	if _detail_bar != null:
+		_detail_bar.visible = false
+	if _detail_lbl != null:
+		_detail_lbl.visible = false
