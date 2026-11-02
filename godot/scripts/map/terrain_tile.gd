@@ -191,8 +191,13 @@ func _commit_mesh() -> void:
 			verts[k] = _local_at(uu, vv, _h[row + pi]) - origin
 
 			if biome_map != null and i % COL_STRIDE == 0 and j % COL_STRIDE == 0:
+				# 群系分界本来是阈值判定出的几何直线，一眼就看出来。
+				# 采样点按平滑噪波抖动 ±60 米，分界就变成参差的自然过渡带。
+				var jx := sin(uu * 0.0031 + 1.7) * cos(vv * 0.0027) * 60.0
+				var jz := cos(uu * 0.0029) * sin(vv * 0.0033 + 0.9) * 60.0
 				last_col = MapWorld.BIOME_TINTS.get(
-						biome_map.biome_at(GeoSphere.tangent_to_dir(frame, uu, vv)),
+						biome_map.biome_at(
+								GeoSphere.tangent_to_dir(frame, uu + jx, vv + jz)),
 						biome_color)
 			cols[k] = last_col
 
