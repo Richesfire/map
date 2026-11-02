@@ -49,6 +49,7 @@ var _save_timer := 0.0
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_verify_red = "--red-detail" in OS.get_cmdline_user_args()
 	_build_viewport()
 	_build_scene()
 
@@ -138,6 +139,7 @@ func _build_scene() -> void:
 	var dmat := StandardMaterial3D.new()
 	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	dmat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	dmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_detail.material_override = dmat
 	_detail.visible = false
 	_detail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -262,6 +264,7 @@ var _detail: MeshInstance3D
 var _detail_tex: ImageTexture
 var _detail_center := Vector3.INF
 var _job := {}
+var _verify_red := false   # 验证用：把区域图换成纯红，只看几何对不对
 
 var _fog_img: Image
 var _fog_tex: ImageTexture
@@ -528,14 +531,20 @@ func _place_detail(center: Vector3, span: float) -> void:
 		return
 	_detail.visible = true
 	(_detail.mesh as PlaneMesh).size = Vector2(span * 1.15, span * 1.15)
-	var pos: Vector3 = center * 1.001
-	_detail.position = pos
-	# 让平面法线朝外（沿着 center）
-	var up := Vector3.UP if absf(center.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
-	_detail.look_at(pos * 2.0, up)
-	_detail.rotate_object_local(Vector3.RIGHT, PI * 0.5)
-	if _detail.material_override is StandardMaterial3D:
-		(_detail.material_override as StandardMaterial3D).albedo_texture = _detail_tex
+	# 显式给基向量，不靠 look_at 猜：
+	# PlaneMesh 在 XZ 平面上、法线 +Y，所以让 Y 轴对准"球心往外"即可
+	var up_ref := Vector3.UP if absf(center.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+	var x_axis := up_ref.cross(center).normalized()
+	var z_axis := center.cross(x_axis).normalized()
+	_detail.transform = Transform3D(Basis(x_axis, center, z_axis), center * 1.001)
+	var m := _detail.material_override as StandardMaterial3D
+	if m != null:
+		if _verify_red:
+			m.albedo_texture = null
+			m.albedo_color = Color(1, 0.1, 0.1)
+		else:
+			m.albedo_texture = _detail_tex
+			m.albedo_color = Color.WHITE
 
 
 func _apply_rotation() -> void:

@@ -465,6 +465,9 @@ func _cli() -> void:
 				_test_travelui()
 			"--seed-explore":
 				_seed_explore()
+			"--red-detail":
+				if _minimap.get_dialog() != null and _minimap.get_dialog()._globe != null:
+					_minimap.get_dialog()._globe._verify_red = true
 			"--test-zoom-ui":
 				await _test_zoom_ui()
 			"--probe-pixel":
@@ -856,7 +859,7 @@ func _test_zoom_ui() -> void:
 	print("[ZOOMUI] 25 格之后 zoom=%.2f fov=%.2f" % [g.get_zoom(), g._cam.fov])
 	# 等绘制完成再取图，否则拿到的是黑帧
 	await RenderingServer.frame_post_draw
-	await get_tree().create_timer(0.3).timeout
+	await get_tree().create_timer(3.0).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("res://_截图/95_合成滚轮.png")
