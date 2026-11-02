@@ -42,6 +42,8 @@ var _map_open := false
 var _warn_cd := 0
 var _traveling := false
 var _last_tiles_ready := -1
+var exploration := Exploration.new()
+var _exp_timer := 0.0
 var _minimap: MapMinimap
 var _compass: Compass
 var _hint: Label
@@ -56,6 +58,7 @@ func _ready() -> void:
 	var t0 := Time.get_ticks_msec()
 
 	var cfg := MapConfig.new()
+	exploration.load_saved()
 	map = MapWorld.new()
 	map.name = "MapWorld"
 	add_child(map)
@@ -116,6 +119,17 @@ func _process(_delta: float) -> void:
 	if player == null or map == null or not map.is_built():
 		return
 	map.stream_update(player.position)
+
+	# 记足迹：每 0.5 秒把玩家周围 1 公里记为已探索
+	if player != null and not _traveling:
+		_exp_timer += _delta
+		if _exp_timer >= 0.5:
+			_exp_timer = 0.0
+			var ll := GeoSphere.dir_to_lonlat(
+					GeoSphere.tangent_to_dir(map.region_frame,
+							player.position.x, -player.position.z))
+			if exploration.mark_lonlat(ll.x, ll.y):
+				exploration.save()
 
 	# 新地块建成后重新贴地一次：
 	# 粗版地形比精细版低（山丘上能差 2~3m），如果人物是在粗版期间落地的，
@@ -570,7 +584,9 @@ func _maybe_capture() -> void:
 		if a2 == "--mapshot":
 			toggle_world_map()
 			break
+	# 把探索记录交给地图，用于限制缩放
 	if _minimap.get_dialog() != null:
+		_minimap.get_dialog().explored_gate = exploration
 		_minimap.get_dialog().probe()
 		_minimap.get_dialog().edge_test()
 	for i in 80:

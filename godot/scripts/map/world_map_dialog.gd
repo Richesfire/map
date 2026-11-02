@@ -29,6 +29,7 @@ var _built := false
 var _target_dir := Vector3.ZERO
 var _pin_dragging := false
 var _orbiting := false
+var explored_gate: Exploration = null
 var _notice := ""          # 屏幕提示（例如海洋「敬请期待」）
 var _pin_pos := Vector2(56, 240)
 var _pin: Panel
@@ -364,6 +365,14 @@ func _zoom_at(p: Vector2, steps: float) -> void:
 	if _globe == null:
 		return
 	var hit := _globe.pick(p)
+
+	# 没探索过的地方不能放大到细节级：既符合"没去过就不知道"，
+	# 也免去为全世界烘焙高清贴图。
+	if steps > 0.0 and hit != Vector3.ZERO and explored_gate != null:
+		if not explored_gate.is_explored_dir(hit) and _globe.get_zoom() >= 3.0:
+			show_notice("未探索区域 · 先去那里看看")
+			return
+
 	if hit != Vector3.ZERO and steps > 0.0:
 		# 只挪该挪的那一部分：放大 12% 就朝光标挪 11%，
 		# 光标底下的地方始终停在原位，球不会自己乱转。
