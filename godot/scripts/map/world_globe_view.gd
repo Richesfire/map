@@ -261,7 +261,7 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 30.0
-const DETAIL_PX := 1024
+const DETAIL_PX := 512
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
@@ -650,45 +650,54 @@ func _update_detail_new() -> void:
 	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
-	var half_deg := rad_to_deg(3.31 / _zoom) * 2.2      # 远大于视野：纬度矩形和切平面形状不同，留足余量
 
+	# 有未完成的任务就继续算（之前这段调用被误删，任务建了却从不执行）
 	if not _job.is_empty():
 		_step_job_new()
 		if not _job.is_empty():
 			return
 
-	# 已经覆盖住这个位置就不用重算
-	# 跨度先对齐到档位（和生成时用的保持一致），再判断要不要重算
-	var span_deg := half_deg * 2.0
-	for step in DETAIL_LADDER:
-		if span_deg <= step:
-			span_deg = step
-			break
-	var span_half := span_deg * 0.5
 
-	var same_pos := _job_done_lonlat != Vector2.INF and Vector2(ll.x, ll.y).distance_to(_job_done_lonlat) < span_half * 0.6
-	var same_span := _job_done_half > 0.0 and absf(span_half / _job_done_half - 1.0) < 0.01
-	if same_pos and same_span:
+	# ---- 谷歌地球式的网格对齐瓦片 ----
+	# 不再"按视野随便画一块"，而是对齐到固定的经纬度网格：
+	#   Ln 级瓦片边长 = 360 / 2^n 度
+	# 每次取 2×2 格（远大于视野），且边界严格落在网格上，
+	# 所以相邻视野复用同一张图，拼接处天然一致。
+	var view_deg := rad_to_deg(3.31 / _zoom) * 2.2
+	# 视野越小级别越高：Ln 的瓦片边长 = 360/2^n 度
+	var lvl: int = clampi(int(ceil(log(360.0 / view_deg) / log(2.0))), 3, 12)
+	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
+	var x0: float = floor(ll.x / tile_deg) * tile_deg
+	var y0: float = floor(ll.y / tile_deg) * tile_deg
+	var span_deg: float = tile_deg * 2.0
+
+	var span_half: float = span_deg * 0.5
+	var lon0: float = x0
+	var lon1: float = x0 + span_deg
+	var lat0: float = maxf(y0, -89.0)
+	var lat1: float = minf(y0 + span_deg, 89.0)
+
+	# 位置没动、级别没变就不用重算
+	if _job_done_lonlat != Vector2.INF and absf(_job_done_lonlat.x - lon0) < 1e-6 \
+			and absf(_job_done_lonlat.y - lat0) < 1e-6 and _job_done_half > 0.0 \
+			and absf(_job_done_half - span_half) < 1e-6:
 		return
 
-	var lon0 := ll.x - span_half
-	var lon1 := ll.x + span_half
-	var lat0 := maxf(ll.y - span_half, -89.0)
-	var lat1 := minf(ll.y + span_half, 89.0)
-
-	var key := "%d_%d_%d" % [int(round(lon0 * 10.0)), int(round(lat0 * 10.0)), int(round(span_deg * 100.0))]
+	# 谷歌风格的 z/x/y 命名
+	var key := "z%02d_x%d_y%d" % [lvl, int(round(lon0 / tile_deg)), int(round(lat0 / tile_deg))]
 	var path := "%s/%s.png" % [DETAIL_CACHE, key]
 	if FileAccess.file_exists(path):
 		var cached: Image = Image.load_from_file(path)
 		if cached != null:
 			_apply_detail(cached, lon0, lon1, lat0, lat1)
-			_job_done_lonlat = Vector2(ll.x, ll.y)
+			_job_done_lonlat = Vector2(lon0, lat0)
 			_job_done_half = span_half
 			return
 
 	_job = {
 		"h": _new_height_buffer(DETAIL_PX * DETAIL_PX),
 		"row": 0,
+		"phase": 0,
 		"lon0": lon0, "lon1": lon1, "lat0": lat0, "lat1": lat1,
 		"path": path,
 		"span_m": absf(lon1 - lon0) * 111000.0,
@@ -720,29 +729,30 @@ func _step_job_new() -> void:
 	var y0: int = _job["row"]
 	var y1 := mini(y0 + 64, px)
 
-	for j in range(y0, y1):
-		var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
-		for i in px:
-			var lon := lerpf(lon0, lon1, float(i) / float(px - 1))
-			var d := GeoSphere.lonlat_to_dir(lon, lat)
-			hs[j * px + i] = world.get_height_dir(d) if world != null else 0.0
+	if _job.get("phase", 0) == 0:
+		# 阶段一：采高程
+		for j in range(y0, y1):
+			var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
+			for i2 in px:
+				var lon := lerpf(lon0, lon1, float(i2) / float(px - 1))
+				var d := GeoSphere.lonlat_to_dir(lon, lat)
+				hs[j * px + i2] = world.get_height_dir(d) if world != null else 0.0
+		_job["row"] = y1
+		_show_progress(0.55 * float(y1) / float(px))
+		if y1 >= px:
+			_job["phase"] = 1
+			_job["row"] = 0
+			_job["img"] = Image.create(px, px, false, Image.FORMAT_RGB8)
+		return
 
-	_job["row"] = y1
-	_show_progress(0.85 * float(y1) / float(px))
-	if y1 >= px:
-		_shade_job(hs, lon0, lon1, lat0, lat1)
-
-
-func _shade_job(hs: PackedFloat32Array, lon0: float, lon1: float,
-		lat0: float, lat1: float) -> void:
-	var px := DETAIL_PX
-	var img := Image.create(px, px, false, Image.FORMAT_RGB8)
+	# 阶段二：高程配色 + 山体阴影（同样分批，避免一次性卡住）
+	var img: Image = _job["img"]
 	var light := Vector3(-0.55, 0.62, 0.56).normalized()
+	var spacing_m := _job_span_m / float(px)
 
-	for j in px:
-		for i in px:
-			var h := hs[j * px + i]
-			# 高程分层配色（海平面以上）
+	for j in range(y0, y1):
+		for i2 in px:
+			var h := hs[j * px + i2]
 			var c: Color
 			if h < 0.0:
 				c = Color(0.10, 0.22, 0.38)
@@ -763,31 +773,30 @@ func _shade_job(hs: PackedFloat32Array, lon0: float, lon1: float,
 			else:
 				c = Color(0.86, 0.86, 0.84)
 
-			# 山体阴影：用左右上下邻点求坡度
 			if h >= 0.0:
-				var il := maxi(i - 1, 0)
-				var ir := mini(i + 1, px - 1)
+				var il := maxi(i2 - 1, 0)
+				var ir := mini(i2 + 1, px - 1)
 				var jd := maxi(j - 1, 0)
 				var ju := mini(j + 1, px - 1)
-				# 真实坡度：高差 / 像素间距（米），再夸张 8 倍——
-				# 平原每像素只差一两米，不夸张的话完全看不出起伏
-				var spacing_m := _job_span_m / float(px)
 				var dx := (hs[j * px + ir] - hs[j * px + il]) / (2.0 * spacing_m) * 8.0
-				var dz := (hs[ju * px + i] - hs[jd * px + i]) / (2.0 * spacing_m) * 8.0
+				var dz := (hs[ju * px + i2] - hs[jd * px + i2]) / (2.0 * spacing_m) * 8.0
 				var n := Vector3(-dx, 1.0, -dz).normalized()
 				var lit := clampf(n.dot(light) * 1.4, 0.45, 1.35)
 				c = Color(c.r * lit, c.g * lit, c.b * lit)
-			img.set_pixel(i, j, c)
+			img.set_pixel(i2, j, c)
 
-	_apply_detail(img, lon0, lon1, lat0, lat1)
-	_job_done_lonlat = Vector2((lon0 + lon1) * 0.5, (lat0 + lat1) * 0.5)
-	_job_done_half = (lon1 - lon0) * 0.5
-	DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
-	var cp: String = _job.get("path", "")
-	if cp != "":
-		img.save_png(cp)
-	_job = {}
-	_hide_progress()
+	_job["row"] = y1
+	_show_progress(0.55 + 0.45 * float(y1) / float(px))
+	if y1 >= px:
+		_apply_detail(img, lon0, lon1, lat0, lat1)
+		_job_done_lonlat = Vector2(lon0, lat0)
+		_job_done_half = (lon1 - lon0) * 0.5
+		DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
+		var cp: String = _job.get("path", "")
+		if cp != "":
+			img.save_png(cp)
+		_job = {}
+		_hide_progress()
 
 
 func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: float) -> void:
