@@ -213,12 +213,9 @@ func _update_far_shell(pos: Vector3) -> void:
 			var dir := GeoSphere.tangent_to_dir(region_frame, x, -z)
 			var p := render_position(dir)
 
-			# 离玩家越近，沉得越深；到瓦片边缘（1500m）下沉量归零，
-			# 这样壳和瓦片在交界处严丝合缝，往里则彻底藏到瓦片底下。
-			var dxz := Vector2(x - pos.x, z - pos.z).length()
-			var sink := clampf((1500.0 - dxz) / 600.0, 0.0, 1.0) * 25.0
-
-			verts[j * n + i] = Vector3(p.x, p.y - 2.0 - sink, p.z)
+			# 曾经试过按距离渐变下沉，但壳是 190m 一格，下沉量逐点变化会形成
+			# 一圈圈台阶（屏幕上就是波浪状条纹）。改回恒定下压，靠瓦片盖住。
+			verts[j * n + i] = Vector3(p.x, p.y - 2.0, p.z)
 			if biome != null:
 				fcols[j * n + i] = BIOME_TINTS.get(biome.biome_at(dir), neutral)
 			else:
