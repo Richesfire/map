@@ -465,6 +465,8 @@ func _cli() -> void:
 				_test_travelui()
 			"--seed-explore":
 				_seed_explore()
+			"--test-zoom-ui":
+				await _test_zoom_ui()
 			"--probe-pixel":
 				_probe_pixel()
 				return
@@ -831,3 +833,33 @@ func _seed_explore() -> void:
 			exploration.cells["%d_%d" % [i, j]] = true
 	exploration.save()
 	print("[SEED] 足迹 %d 个" % exploration.count())
+
+
+## 合成滚轮事件，验证放大到底有没有生效
+func _test_zoom_ui() -> void:
+	await get_tree().process_frame
+	while _minimap.get_dialog() == null or not _minimap.get_dialog().is_ready_for_map():
+		await get_tree().process_frame
+	toggle_world_map()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var dlg := _minimap.get_dialog()
+	if dlg == null or dlg._globe == null:
+		print("[ZOOMUI] 地图没打开")
+		return
+	var g := dlg._globe
+	var center := g.center_screen()
+	print("[ZOOMUI] 起始 zoom=%.2f fov=%.2f" % [g.get_zoom(), g._cam.fov])
+	for i in 25:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_WHEEL_UP
+		ev.pressed = true
+		ev.position = center
+		Input.parse_input_event(ev)
+		await get_tree().process_frame
+	print("[ZOOMUI] 25 格之后 zoom=%.2f fov=%.2f" % [g.get_zoom(), g._cam.fov])
+	await get_tree().process_frame
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("res://_截图/95_合成滚轮.png")
+	print("[ZOOMUI] 已截图")
+	get_tree().quit()
