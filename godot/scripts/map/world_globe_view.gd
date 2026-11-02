@@ -261,7 +261,7 @@ const DETAIL_CACHE := "user://region_cache"
 var _detail: MeshInstance3D
 var _detail_tex: ImageTexture
 var _detail_center := Vector3.INF
-var _detail_busy := false
+var _job := {}
 
 var _fog_img: Image
 var _fog_tex: ImageTexture
@@ -436,35 +436,91 @@ func focus_on(dir: Vector3) -> void:
 	_save_state_later()
 
 
-## 看清当前球心所指的区域：放大够深就铺一块高清切平面
+## 看清当前球心所指的区域：放大够深就铺一块高清切平面。
+## 生成是**分帧**做的：每帧只算 48 行，避免卡住（一张图约 20 帧完成）。
 func _update_detail() -> void:
 	if _detail == null or _cam == null:
 		return
 	if _zoom < DETAIL_MIN_ZOOM:
-		if _detail.visible:
-			_detail.visible = false
+		_detail.visible = false
+		_job = {}
 		return
 
-	# 球心方向（相机看向原点）
 	var center := -_cam.global_transform.basis.z
-	center = _pivot.global_transform.basis.inverse() * center
-	center = center.normalized()
-
-	# 覆盖范围：正交相机的可见高度
+	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var span := 3.31 / _zoom
-	# 移动超过半屏就重新生成
-	if _detail_tex != null and _detail_center.distance_to(center) * 1.0 < span * 0.5:
+
+	# 有正在生成的任务：继续算一部分
+	if not _job.is_empty():
+		_step_detail_job()
+		if not _job.is_empty():
+			return
+
+	# 已有的贴图还够用（没移动超过半屏）就不重算
+	if _detail_tex != null and _detail_center.distance_to(center) < span * 0.5:
 		_place_detail(center, span)
 		return
-	if _detail_busy:
-		return
 
-	_detail_busy = true
-	var img := _make_region_image(center, span, DETAIL_PX)
-	_detail_tex = ImageTexture.create_from_image(img)
-	_detail_center = center
-	_detail_busy = false
-	_place_detail(center, span)
+	# 开新任务
+	_job = {
+		"img": Image.create(DETAIL_PX, DETAIL_PX, false, Image.FORMAT_RGB8),
+		"row": 0, "center": center, "span": span,
+		"east": _tangent_east(center),
+	}
+	if _loading != null:
+		_loading.text = "生成区域地图…"
+	_show_old_detail(center, span)
+
+
+func _step_detail_job() -> void:
+	var img: Image = _job["img"]
+	var center: Vector3 = _job["center"]
+	var span: float = _job["span"]
+	var east: Vector3 = _job["east"]
+	var north := center.cross(east).normalized()
+
+	var bm: BiomeMap = null
+	if world != null:
+		bm = BiomeMap.new()
+		bm.setup(world.gen, null)
+
+	var px := DETAIL_PX
+	var y0: int = _job["row"]
+	var y1 := mini(y0 + 48, px)
+	for j in range(y0, y1):
+		var ty := (0.5 - (float(j) + 0.5) / float(px)) * span
+		for i in px:
+			var tx := ((float(i) + 0.5) / float(px) - 0.5) * span
+			var d: Vector3 = (center + east * tx + north * ty).normalized()
+			var bid := bm.biome_at(d) if bm != null else "plain"
+			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
+			if bid != "ocean" and world != null:
+				var hh := world.get_height_dir(d)
+				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
+				c = Color(c.r * shade, c.g * shade, c.b * shade)
+			img.set_pixel(i, j, c)
+
+	_job["row"] = y1
+	if y1 >= px:
+		_detail_tex = ImageTexture.create_from_image(img)
+		_detail_center = center
+		_job = {}
+		if _loading != null:
+			_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
+		_place_detail(center, span)
+
+
+func _tangent_east(center: Vector3) -> Vector3:
+	var e := Vector3.UP.cross(center)
+	if e.length() < 0.1:
+		e = Vector3.RIGHT
+	return e.normalized()
+
+
+## 新图还没好时，先用旧图（或干脆不显示，露出球面）
+func _show_old_detail(center: Vector3, span: float) -> void:
+	if _detail_tex != null:
+		_place_detail(center, span)
 
 
 func _place_detail(center: Vector3, span: float) -> void:
@@ -480,38 +536,6 @@ func _place_detail(center: Vector3, span: float) -> void:
 	_detail.rotate_object_local(Vector3.RIGHT, PI * 0.5)
 	if _detail.material_override is StandardMaterial3D:
 		(_detail.material_override as StandardMaterial3D).albedo_texture = _detail_tex
-
-
-## 生成切平面区域图：以 center 为中心、span（世界单位，约等于弧度）见方
-func _make_region_image(center: Vector3, span: float, px: int) -> Image:
-	var ll := GeoSphere.dir_to_lonlat(center)
-	var img := Image.create(px, px, false, Image.FORMAT_RGB8)
-	# 切平面基向量：east / north
-	var east := Vector3.UP.cross(center).normalized()
-	if east.length() < 0.1:
-		east = Vector3.RIGHT
-	var north := center.cross(east).normalized()
-	var world: MapWorld = world
-	var bm: BiomeMap = null
-	if world != null:
-		bm = BiomeMap.new()
-		bm.setup(world.gen, null)
-
-	for j in px:
-		var ty := (0.5 - (float(j) + 0.5) / float(px)) * span
-		for i in px:
-			var tx := ((float(i) + 0.5) / float(px) - 0.5) * span
-			var d: Vector3 = (center + east * tx + north * ty).normalized()
-			var bid := bm.biome_at(d) if bm != null else "plain"
-			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
-			if bid != "ocean" and world != null:
-				var hh := world.get_height_dir(d)
-				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
-				c = Color(c.r * shade, c.g * shade, c.b * shade)
-			img.set_pixel(i, j, c)
-	print("[Detail] 区域图 %d×%d，中心 %.1f,%.1f 跨度 %.3f（约 %.0f km）" % [
-			px, px, ll.x, ll.y, span, span * 6371.0])
-	return img
 
 
 func _apply_rotation() -> void:
