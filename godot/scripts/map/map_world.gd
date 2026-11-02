@@ -201,13 +201,28 @@ func _update_far_shell(pos: Vector3) -> void:
 	var step := FAR_EXTENT * 2.0 / float(FAR_RES)
 	var verts := PackedVector3Array()
 	verts.resize(n * n)
+	# 逐顶点群系色：shader 现在优先用顶点色，不写就会是白的
+	var fcols := PackedColorArray()
+	fcols.resize(n * n)
+	var neutral: Color = BIOME_TINTS.get("plain", Color(0.55, 0.72, 0.40))
+
 	for j in n:
 		for i in n:
 			var x := pos.x - FAR_EXTENT + float(i) * step
 			var z := pos.z - FAR_EXTENT + float(j) * step
 			var dir := GeoSphere.tangent_to_dir(region_frame, x, -z)
 			var p := render_position(dir)
-			verts[j * n + i] = Vector3(p.x, p.y - 2.0, p.z)
+
+			# 离玩家越近，沉得越深；到瓦片边缘（1500m）下沉量归零，
+			# 这样壳和瓦片在交界处严丝合缝，往里则彻底藏到瓦片底下。
+			var dxz := Vector2(x - pos.x, z - pos.z).length()
+			var sink := clampf((1500.0 - dxz) / 600.0, 0.0, 1.0) * 25.0
+
+			verts[j * n + i] = Vector3(p.x, p.y - 2.0 - sink, p.z)
+			if biome != null:
+				fcols[j * n + i] = BIOME_TINTS.get(biome.biome_at(dir), neutral)
+			else:
+				fcols[j * n + i] = neutral
 
 	var idx := PackedInt32Array()
 	var k := 0
@@ -244,6 +259,7 @@ func _update_far_shell(pos: Vector3) -> void:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_COLOR] = fcols
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_INDEX] = idx
 

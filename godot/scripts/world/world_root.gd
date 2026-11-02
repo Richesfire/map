@@ -379,7 +379,8 @@ func _apply_player_active(active: bool) -> void:
 		player.set_process(active)
 		player.set_process_input(active)
 		player.set_process_unhandled_input(active)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if (active and not _soul) else Input.MOUSE_MODE_VISIBLE
+	# 灵魂状态下也锁定鼠标（否则要按住右键才能转视角）；只有开地图时才释放
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if (active or _soul) else Input.MOUSE_MODE_VISIBLE
 
 
 func _current_cam_name() -> String:
