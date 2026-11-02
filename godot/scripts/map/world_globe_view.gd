@@ -225,6 +225,18 @@ func edge_point(dir: Vector3) -> Vector2:
 
 
 ## 滚轮缩放：滚轮上 = 放大
+## 当前缩放层级 0~3（0=全球，3=本地）
+## 阈值按 _zoom（0.6~2.6）划分，滚动时逐级解锁更细的地名。
+func zoom_level() -> int:
+	if _zoom < 1.15:
+		return 0
+	if _zoom < 1.65:
+		return 1
+	if _zoom < 2.15:
+		return 2
+	return 3
+
+
 func zoom_by(steps: float) -> void:
 	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 2.6)
 	# 只改 FOV，不碰相机位置。

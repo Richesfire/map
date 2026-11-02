@@ -38,3 +38,15 @@ static func from_lonlat(ann_id: String, ann_label: String, lon: float, lat: floa
 
 func tile() -> Vector3i:
 	return GeoSphere.dir_to_tile(dir)
+
+
+## 重要性：数字越小越重要，低缩放级别只显示重要的
+##  0 都城  1 郡城  2 关隘/山川  3 县城  4 村庄
+func importance() -> int:
+	match kind:
+		"capital": return 0
+		"city": return 1
+		"poi": return 2
+		"town": return 3
+		"village": return 4
+	return 2

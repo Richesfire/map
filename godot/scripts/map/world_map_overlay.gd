@@ -12,10 +12,14 @@ func _draw() -> void:
 		return
 	var font := ThemeDB.fallback_font
 
-	# ---- 标注
+	# ---- 标注（按缩放层级显示：拉近才出现更小的地名）
+	var lvl: int = dialog._globe.zoom_level() if dialog._globe != null else 0
 	for entry in dialog.annotations:
 		var a := entry as MapAnnotation
 		if a == null:
+			continue
+		# L0 只显示都城，L1 加郡城，L2 加关隘/县城，L3 显示村庄
+		if a.importance() > lvl + 1:
 			continue
 		var p := dialog.project(a.dir)
 		if p.x < 0.0:
