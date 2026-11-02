@@ -229,7 +229,10 @@ func edge_point(dir: Vector3) -> Vector2:
 ## 阈值按 _zoom（0.6~2.6）划分，滚动时逐级解锁更细的地名。
 ## 球心在屏幕上的位置（缩放限制按"视野中心"判断，而不是光标）
 func center_screen() -> Vector2:
-	return global_position + size * 0.5
+	# 用视口中心，而不是控件坐标：
+	# 相机永远看向球心，所以球心就投影在视口正中。用控件坐标会因为
+	# 控件偏移而算错位置，导致"明明去过却提示未探索、放不大"。
+	return get_viewport().get_visible_rect().size * 0.5
 
 
 ## 迷雾贴图（2048x1024，约 10km 一个像素）。1 = 已探索
