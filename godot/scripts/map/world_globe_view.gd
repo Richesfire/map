@@ -171,7 +171,7 @@ func rotate_by(rel: Vector2) -> void:
 	# （相机环绕用的是减号 —— 相机往右移 ↔ 球往左转，两者方向相反，别抄反了。）
 	# 灵敏度跟着视野走：放大后视野窄，同样的鼠标位移对应的角度要同比缩小，
 	# 否则"轻轻一拖就飞出去"。
-	var k := 1.0 / maxf(_zoom, 1.0)
+	var k := 1.0 / clampf(_zoom, 1.0, 40.0)
 	_spin_yaw += rel.x * 0.006 * k
 	_spin_pitch = clampf(_spin_pitch + rel.y * 0.006 * k, -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_rotation()
@@ -286,15 +286,15 @@ func get_zoom() -> float:
 func zoom_level() -> int:
 	if _zoom < 1.6:
 		return 0
-	if _zoom < 4.0:
+	if _zoom < 6.0:
 		return 1
-	if _zoom < 10.0:
+	if _zoom < 25.0:
 		return 2
 	return 3
 
 
 func zoom_by(steps: float) -> void:
-	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 60.0)
+	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 400.0)
 	# 只改 FOV，不碰相机位置。
 	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
 	#   又会把环绕角度冲掉，等于缩放一下视角就归位了。）
@@ -332,7 +332,7 @@ func _apply_orbit() -> void:
 	_cam.position = pivot + pos
 	_cam.look_at(pivot, Vector3.UP)
 	if _cam != null:
-		_cam.fov = clampf(40.0 / _zoom, 0.65, 70.0)
+		_cam.fov = clampf(40.0 / _zoom, 0.1, 70.0)
 
 
 func save_state() -> void:
@@ -355,7 +355,7 @@ func load_state() -> void:
 	_orbit_yaw = float(cfg.get_value("globe", "orbit_yaw", _orbit_yaw))
 	_orbit_pitch = clampf(float(cfg.get_value("globe", "orbit_pitch", _orbit_pitch)),
 			-PITCH_LIMIT, PITCH_LIMIT)
-	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 60.0)
+	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 400.0)
 	_apply_rotation()
 	_apply_orbit()
 
