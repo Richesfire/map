@@ -691,12 +691,14 @@ func _update_detail_new() -> void:
 		"row": 0,
 		"lon0": lon0, "lon1": lon1, "lat0": lat0, "lat1": lat1,
 		"path": path,
+		"span_m": absf(lon1 - lon0) * 111000.0,
 	}
 	_show_progress(0.0)
 
 
 var _job_done_lonlat := Vector2.INF
 var _job_done_half := 0.0
+var _job_span_m := 1.0
 
 
 func _new_height_buffer(n: int) -> PackedFloat32Array:
@@ -714,6 +716,7 @@ func _step_job_new() -> void:
 	var lat0: float = _job["lat0"]
 	var lat1: float = _job["lat1"]
 	var hs: PackedFloat32Array = _job["h"]
+	_job_span_m = _job.get("span_m", 1.0)
 	var y0: int = _job["row"]
 	var y1 := mini(y0 + 48, px)
 
@@ -743,10 +746,14 @@ func _shade_job(hs: PackedFloat32Array, lon0: float, lon1: float,
 			var c: Color
 			if h < 0.0:
 				c = Color(0.10, 0.22, 0.38)
-			elif h < 60.0:
-				c = Color(0.28, 0.44, 0.26)
-			elif h < 160.0:
-				c = Color(0.40, 0.50, 0.28)
+			elif h < 30.0:
+				c = Color(0.26, 0.42, 0.28)
+			elif h < 70.0:
+				c = Color(0.32, 0.46, 0.27)
+			elif h < 120.0:
+				c = Color(0.38, 0.49, 0.27)
+			elif h < 200.0:
+				c = Color(0.46, 0.51, 0.29)
 			elif h < 320.0:
 				c = Color(0.55, 0.54, 0.34)
 			elif h < 600.0:
@@ -762,10 +769,13 @@ func _shade_job(hs: PackedFloat32Array, lon0: float, lon1: float,
 				var ir := mini(i + 1, px - 1)
 				var jd := maxi(j - 1, 0)
 				var ju := mini(j + 1, px - 1)
-				var dx := hs[j * px + ir] - hs[j * px + il]
-				var dz := hs[ju * px + i] - hs[jd * px + i]
-				var n := Vector3(-dx, 2.0, -dz).normalized()
-				var lit := clampf(n.dot(light), 0.35, 1.25)
+				# 真实坡度：高差 / 像素间距（米），再夸张 8 倍——
+				# 平原每像素只差一两米，不夸张的话完全看不出起伏
+				var spacing_m := _job_span_m / float(px)
+				var dx := (hs[j * px + ir] - hs[j * px + il]) / (2.0 * spacing_m) * 8.0
+				var dz := (hs[ju * px + i] - hs[jd * px + i]) / (2.0 * spacing_m) * 8.0
+				var n := Vector3(-dx, 1.0, -dz).normalized()
+				var lit := clampf(n.dot(light) * 1.4, 0.45, 1.35)
 				c = Color(c.r * lit, c.g * lit, c.b * lit)
 			img.set_pixel(i, j, c)
 
