@@ -261,7 +261,7 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 30.0
-const DETAIL_PX := 512
+const DETAIL_PX := 1024
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
@@ -650,7 +650,7 @@ func _update_detail_new() -> void:
 	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
-	var half_deg := rad_to_deg(3.31 / _zoom) * 1.05     # 按屏幕宽度算，保证左右也盖住
+	var half_deg := rad_to_deg(3.31 / _zoom) * 2.2      # 远大于视野：纬度矩形和切平面形状不同，留足余量
 
 	if not _job.is_empty():
 		_step_job_new()
@@ -718,7 +718,7 @@ func _step_job_new() -> void:
 	var hs: PackedFloat32Array = _job["h"]
 	_job_span_m = _job.get("span_m", 1.0)
 	var y0: int = _job["row"]
-	var y1 := mini(y0 + 48, px)
+	var y1 := mini(y0 + 64, px)
 
 	for j in range(y0, y1):
 		var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
