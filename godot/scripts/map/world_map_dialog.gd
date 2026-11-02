@@ -321,36 +321,12 @@ func show_notice(text: String) -> void:
 			_overlay.queue_redraw())
 
 
-## 诊断：把一批已知经纬度投影到屏幕上，用来核对贴图是否对位
-func probe() -> void:
-	var pts := [
-		[0.0, 0.0], [90.0, 0.0], [180.0, 0.0], [-90.0, 0.0],
-		[20.0, 0.0], [-60.0, 0.0], [108.7, 34.3],
-	]
-	for p in pts:
-		var d := GeoSphere.lonlat_to_dir(float(p[0]), float(p[1]))
-		var sp := project(d)
-		print("[PROBE] lon=%7.1f lat=%5.1f -> screen %s" % [p[0], p[1], str(sp)])
-
-
-## 目标是否在球背面（看不见）
 func target_behind() -> bool:
 	if _target_dir == Vector3.ZERO:
 		return false
 	return project(_target_dir).x < 0.0
 
 
-## 诊断：检查背面方向的边缘点是否合理
-func edge_test() -> void:
-	var pts := [[0.0,0.0],[90.0,0.0],[180.0,0.0],[-90.0,0.0],[45.0,30.0],[-135.0,30.0]]
-	for q in pts:
-		var d := GeoSphere.lonlat_to_dir(float(q[0]), float(q[1]))
-		var sp := project(d)
-		var ep := _globe.edge_point(d)
-		print("[EDGETEST] lon=%7.1f lat=%5.1f  proj=%s  edge=(%.0f,%.0f)  behind=%s" % [q[0], q[1], str(sp), ep.x, ep.y, str(sp.x < 0.0)])
-
-
-## 鼠标是不是落在球面上
 func _on_globe(p: Vector2) -> bool:
 	return _globe != null and _globe.pick(p) != Vector3.ZERO
 
@@ -365,7 +341,6 @@ func _inside_bar(p: Vector2) -> bool:
 ## 朝鼠标所指的位置缩放：先把该点转到正前方，再改 FOV。
 ## 这样连续滚动就会一直往目标点钻进去，和高德那种手感一致。
 func _zoom_at(p: Vector2, steps: float) -> void:
-	print("[WHEEL] steps=%.1f zoom前=%.2f" % [steps, _globe.get_zoom() if _globe != null else -1.0])
 	if _globe == null:
 		return
 	var hit := _globe.pick(p)

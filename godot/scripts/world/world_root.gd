@@ -596,8 +596,6 @@ func _maybe_capture() -> void:
 		_minimap.get_dialog().explored_gate = exploration
 		if _minimap.get_dialog()._globe != null:
 			_minimap.get_dialog()._globe.refresh_fog(exploration)
-		_minimap.get_dialog().probe()
-		_minimap.get_dialog().edge_test()
 	for i in 80:
 		await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
@@ -668,7 +666,6 @@ func _test_travelto() -> void:
 	var c0 := map.region_center_dir
 	print("[TravelTest] 出发: %.2f,%.2f  群系=%s" % [GeoSphere.dir_to_lonlat(c0).x, GeoSphere.dir_to_lonlat(c0).y, map.biome.biome_at(c0)])
 	player.position = Vector3(1400.0, player.position.y, 900.0)   # 故意离中心很远
-	print("[FARTEST] 传送前 local=(%.0f, %.0f)" % [player.position.x, player.position.z])
 	var target := GeoSphere.lonlat_to_dir(30.0, 10.0)
 	print("[TravelTest] 目标: %.2f,%.2f  群系=%s" % [-60.0, -5.0, map.biome.biome_at(target)])
 	await _on_travel(target)
@@ -682,7 +679,6 @@ func _test_travelto() -> void:
 	_snap_to_ground()   # 测试里也要贴地
 	var pd := GeoSphere.tangent_to_dir(map.region_frame, player.position.x, -player.position.z)
 	var gh := map.render_position(pd).y
-	print("[SNAPTEST] 贴地后 player.y=%.2f  解析地面=%.2f  差=%.2f" % [player.position.y, gh, player.position.y - gh])
 	for i in 120:
 		await get_tree().process_frame
 	print("[TravelTest] 地块数=%d  玩家pos=%s" % [map.get_tiles().size(), str(player.position)])

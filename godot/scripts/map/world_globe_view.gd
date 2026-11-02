@@ -589,9 +589,3 @@ static func _near_multiple(v: float, step: float, tol: float) -> bool:
 	return m < tol or m > step - tol
 
 
-## 诊断：连滚 40 格，打印每次的 zoom 与 fov
-func zoom_probe2() -> void:
-	for i in 40:
-		zoom_by(1.0)
-		if i % 5 == 0 or i == 39:
-			print("[ZP] step=%d zoom=%.2f fov=%.3f" % [i, _zoom, _cam.fov])
