@@ -373,9 +373,7 @@ func _zoom_at(p: Vector2, steps: float) -> void:
 			show_notice("未探索区域 · 先去那里看看")
 			return
 
-	if hit != Vector3.ZERO and steps > 0.0:
-		# 只挪该挪的那一部分：放大 12% 就朝光标挪 11%，
-		# 光标底下的地方始终停在原位，球不会自己乱转。
-		var k: float = 1.0 + steps * 0.12
-		_globe.focus_toward(hit, 1.0 - 1.0 / k)
+	# 纯变焦，不做任何自动转动。
+	# 之前试过“缩放时朝光标方向微调”，结果球会自己动，手感很怪。
+	# 想放大别处，先把球拖到中间再滚轮，这样最可预测。
 	_globe.zoom_by(steps)
