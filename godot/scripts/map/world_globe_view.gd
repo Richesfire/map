@@ -469,7 +469,9 @@ func _update_detail() -> void:
 		_hide_progress()
 		return
 
-	var center := -_cam.global_transform.basis.z
+	# _cam.basis.z 是"从目标指向相机"的方向，也就是正对着镜头的那一点。
+	# 之前写成 -basis.z，平面被放到了球背面（隔着整个球，永远看不见）。
+	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var span := 3.31 / _zoom
 
