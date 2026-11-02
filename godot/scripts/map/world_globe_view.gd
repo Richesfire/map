@@ -104,7 +104,10 @@ func _build_scene() -> void:
 	# ---- 相机
 	_cam = Camera3D.new()
 	_cam.name = "GlobeCamera"
-	_cam.fov = 40.0
+	# 地球仪用**正交投影**：透视相机 fov 最小 1°，
+	# 换算下来最多只能放大 40 倍就卡死；正交用 size 控制，没有下限。
+	_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	_cam.size = 3.31
 	_cam.position = Vector3(0.0, 0.05, 4.55)   # 默认朝 -Z，正好对着原点
 	root.add_child(_cam)
 
@@ -297,7 +300,7 @@ func zoom_level() -> int:
 
 
 func zoom_by(steps: float) -> void:
-	_zoom = clampf(_zoom * (1.0 + steps * 0.12), 0.6, 400.0)
+	_zoom = clampf(_zoom * (1.0 + steps * 0.35), 0.6, 4000.0)
 	# 只改 FOV，不碰相机位置。
 	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
 	#   又会把环绕角度冲掉，等于缩放一下视角就归位了。）
@@ -338,7 +341,7 @@ func _apply_orbit() -> void:
 	_cam.position = pivot + pos
 	_cam.look_at(pivot, Vector3.UP)
 	if _cam != null:
-		_cam.fov = clampf(40.0 / _zoom, 0.1, 70.0)
+		_cam.size = 3.31 / _zoom
 
 
 func save_state() -> void:
@@ -361,7 +364,7 @@ func load_state() -> void:
 	_orbit_yaw = float(cfg.get_value("globe", "orbit_yaw", _orbit_yaw))
 	_orbit_pitch = clampf(float(cfg.get_value("globe", "orbit_pitch", _orbit_pitch)),
 			-PITCH_LIMIT, PITCH_LIMIT)
-	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 400.0)
+	_zoom = clampf(float(cfg.get_value("globe", "zoom", _zoom)), 0.6, 4000.0)
 	_apply_rotation()
 	_apply_orbit()
 
