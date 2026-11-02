@@ -130,6 +130,19 @@ func _build_scene() -> void:
 	_sphere.material_override = mat
 	_pivot.add_child(_sphere)
 
+	# 详情面板：一块贴在球面上的正方形，放大时盖住糊掉的球面
+	_detail = MeshInstance3D.new()
+	_detail.name = "DetailPatch"
+	_detail.mesh = PlaneMesh.new()
+	(_detail.mesh as PlaneMesh).size = Vector2(1, 1)
+	var dmat := StandardMaterial3D.new()
+	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dmat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
+	_detail.material_override = dmat
+	_detail.visible = false
+	_detail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_pivot.add_child(_detail)
+
 	load_state()
 
 	_loading = Label.new()
@@ -241,6 +254,15 @@ func center_screen() -> Vector2:
 ## 迷雾贴图（2048x1024，约 10km 一个像素）。1 = 已探索
 const FOG_W := 8192
 const FOG_H := 4096
+## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
+const DETAIL_MIN_ZOOM := 30.0
+const DETAIL_PX := 1024
+const DETAIL_CACHE := "user://region_cache"
+var _detail: MeshInstance3D
+var _detail_tex: ImageTexture
+var _detail_center := Vector3.INF
+var _detail_busy := false
+
 var _fog_img: Image
 var _fog_tex: ImageTexture
 
@@ -376,6 +398,7 @@ func _save_state_later() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_detail()
 	if _save_timer > 0.0:
 		_save_timer -= delta
 		if _save_timer <= 0.0:
@@ -411,6 +434,84 @@ func focus_on(dir: Vector3) -> void:
 	_spin_pitch = clampf(atan2(v.y, r), -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_rotation()
 	_save_state_later()
+
+
+## 看清当前球心所指的区域：放大够深就铺一块高清切平面
+func _update_detail() -> void:
+	if _detail == null or _cam == null:
+		return
+	if _zoom < DETAIL_MIN_ZOOM:
+		if _detail.visible:
+			_detail.visible = false
+		return
+
+	# 球心方向（相机看向原点）
+	var center := -_cam.global_transform.basis.z
+	center = _pivot.global_transform.basis.inverse() * center
+	center = center.normalized()
+
+	# 覆盖范围：正交相机的可见高度
+	var span := 3.31 / _zoom
+	# 移动超过半屏就重新生成
+	if _detail_tex != null and _detail_center.distance_to(center) * 1.0 < span * 0.5:
+		_place_detail(center, span)
+		return
+	if _detail_busy:
+		return
+
+	_detail_busy = true
+	var img := _make_region_image(center, span, DETAIL_PX)
+	_detail_tex = ImageTexture.create_from_image(img)
+	_detail_center = center
+	_detail_busy = false
+	_place_detail(center, span)
+
+
+func _place_detail(center: Vector3, span: float) -> void:
+	if _detail == null or _detail_tex == null:
+		return
+	_detail.visible = true
+	(_detail.mesh as PlaneMesh).size = Vector2(span * 1.15, span * 1.15)
+	var pos: Vector3 = center * 1.001
+	_detail.position = pos
+	# 让平面法线朝外（沿着 center）
+	var up := Vector3.UP if absf(center.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
+	_detail.look_at(pos * 2.0, up)
+	_detail.rotate_object_local(Vector3.RIGHT, PI * 0.5)
+	if _detail.material_override is StandardMaterial3D:
+		(_detail.material_override as StandardMaterial3D).albedo_texture = _detail_tex
+
+
+## 生成切平面区域图：以 center 为中心、span（世界单位，约等于弧度）见方
+func _make_region_image(center: Vector3, span: float, px: int) -> Image:
+	var ll := GeoSphere.dir_to_lonlat(center)
+	var img := Image.create(px, px, false, Image.FORMAT_RGB8)
+	# 切平面基向量：east / north
+	var east := Vector3.UP.cross(center).normalized()
+	if east.length() < 0.1:
+		east = Vector3.RIGHT
+	var north := center.cross(east).normalized()
+	var world: MapWorld = world
+	var bm: BiomeMap = null
+	if world != null:
+		bm = BiomeMap.new()
+		bm.setup(world.gen, null)
+
+	for j in px:
+		var ty := (0.5 - (float(j) + 0.5) / float(px)) * span
+		for i in px:
+			var tx := ((float(i) + 0.5) / float(px) - 0.5) * span
+			var d: Vector3 = (center + east * tx + north * ty).normalized()
+			var bid := bm.biome_at(d) if bm != null else "plain"
+			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
+			if bid != "ocean" and world != null:
+				var hh := world.get_height_dir(d)
+				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
+				c = Color(c.r * shade, c.g * shade, c.b * shade)
+			img.set_pixel(i, j, c)
+	print("[Detail] 区域图 %d×%d，中心 %.1f,%.1f 跨度 %.3f（约 %.0f km）" % [
+			px, px, ll.x, ll.y, span, span * 6371.0])
+	return img
 
 
 func _apply_rotation() -> void:

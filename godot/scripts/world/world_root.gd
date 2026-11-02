@@ -854,7 +854,10 @@ func _test_zoom_ui() -> void:
 		Input.parse_input_event(ev)
 		await get_tree().process_frame
 	print("[ZOOMUI] 25 格之后 zoom=%.2f fov=%.2f" % [g.get_zoom(), g._cam.fov])
-	await get_tree().process_frame
+	# 等绘制完成再取图，否则拿到的是黑帧
+	await RenderingServer.frame_post_draw
+	await get_tree().create_timer(0.3).timeout
+	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("res://_截图/95_合成滚轮.png")
 	print("[ZOOMUI] 已截图")
