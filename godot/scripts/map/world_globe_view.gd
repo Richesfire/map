@@ -650,7 +650,7 @@ func _update_detail_new() -> void:
 	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
-	var half_deg := rad_to_deg(3.31 / _zoom) * 0.70     # 必须大于视野，否则四周露出底层糊图
+	var half_deg := rad_to_deg(3.31 / _zoom) * 1.05     # 按屏幕宽度算，保证左右也盖住
 
 	if not _job.is_empty():
 		_step_job_new()
@@ -687,7 +687,7 @@ func _update_detail_new() -> void:
 			return
 
 	_job = {
-		"img": Image.create(DETAIL_PX, DETAIL_PX, false, Image.FORMAT_RGB8),
+		"h": _new_height_buffer(DETAIL_PX * DETAIL_PX),
 		"row": 0,
 		"lon0": lon0, "lon1": lon1, "lat0": lat0, "lat1": lat1,
 		"path": path,
@@ -699,41 +699,85 @@ var _job_done_lonlat := Vector2.INF
 var _job_done_half := 0.0
 
 
+func _new_height_buffer(n: int) -> PackedFloat32Array:
+	var a := PackedFloat32Array()
+	a.resize(n)
+	return a
+
+
+## 区域图：第一遍只存高度，第二遍按高程着色 + 山体阴影。
+## 这样出来的是"地形图"观感（网上那种），而不是生物群系色块。
 func _step_job_new() -> void:
-	var img: Image = _job["img"]
+	var px := DETAIL_PX
 	var lon0: float = _job["lon0"]
 	var lon1: float = _job["lon1"]
 	var lat0: float = _job["lat0"]
 	var lat1: float = _job["lat1"]
-	var px := DETAIL_PX
-	var bm := BiomeMap.new()
-	bm.setup(world.gen, null)
+	var hs: PackedFloat32Array = _job["h"]
 	var y0: int = _job["row"]
-	var y1 := mini(y0 + 32, px)
+	var y1 := mini(y0 + 48, px)
+
 	for j in range(y0, y1):
 		var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
 		for i in px:
 			var lon := lerpf(lon0, lon1, float(i) / float(px - 1))
 			var d := GeoSphere.lonlat_to_dir(lon, lat)
-			var bid: String = bm.biome_at(d) if world != null else "plain"
-			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
-			if bid != "ocean" and world != null:
-				var hh := world.get_height_dir(d)
-				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
-				c = Color(c.r * shade, c.g * shade, c.b * shade)
-			img.set_pixel(i, j, c)
+			hs[j * px + i] = world.get_height_dir(d) if world != null else 0.0
+
 	_job["row"] = y1
-	_show_progress(float(y1) / float(px))
+	_show_progress(0.85 * float(y1) / float(px))
 	if y1 >= px:
-		_apply_detail(img, lon0, lon1, lat0, lat1)
-		_job_done_lonlat = Vector2((lon0 + lon1) * 0.5, (lat0 + lat1) * 0.5)
-		_job_done_half = (lon1 - lon0) * 0.5
-		DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
-		var cp: String = _job.get("path", "")
-		if cp != "":
-			img.save_png(cp)
-		_job = {}
-		_hide_progress()
+		_shade_job(hs, lon0, lon1, lat0, lat1)
+
+
+func _shade_job(hs: PackedFloat32Array, lon0: float, lon1: float,
+		lat0: float, lat1: float) -> void:
+	var px := DETAIL_PX
+	var img := Image.create(px, px, false, Image.FORMAT_RGB8)
+	var light := Vector3(-0.55, 0.62, 0.56).normalized()
+
+	for j in px:
+		for i in px:
+			var h := hs[j * px + i]
+			# 高程分层配色（海平面以上）
+			var c: Color
+			if h < 0.0:
+				c = Color(0.10, 0.22, 0.38)
+			elif h < 60.0:
+				c = Color(0.28, 0.44, 0.26)
+			elif h < 160.0:
+				c = Color(0.40, 0.50, 0.28)
+			elif h < 320.0:
+				c = Color(0.55, 0.54, 0.34)
+			elif h < 600.0:
+				c = Color(0.62, 0.52, 0.38)
+			elif h < 1000.0:
+				c = Color(0.58, 0.50, 0.46)
+			else:
+				c = Color(0.86, 0.86, 0.84)
+
+			# 山体阴影：用左右上下邻点求坡度
+			if h >= 0.0:
+				var il := maxi(i - 1, 0)
+				var ir := mini(i + 1, px - 1)
+				var jd := maxi(j - 1, 0)
+				var ju := mini(j + 1, px - 1)
+				var dx := hs[j * px + ir] - hs[j * px + il]
+				var dz := hs[ju * px + i] - hs[jd * px + i]
+				var n := Vector3(-dx, 2.0, -dz).normalized()
+				var lit := clampf(n.dot(light), 0.35, 1.25)
+				c = Color(c.r * lit, c.g * lit, c.b * lit)
+			img.set_pixel(i, j, c)
+
+	_apply_detail(img, lon0, lon1, lat0, lat1)
+	_job_done_lonlat = Vector2((lon0 + lon1) * 0.5, (lat0 + lat1) * 0.5)
+	_job_done_half = (lon1 - lon0) * 0.5
+	DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
+	var cp: String = _job.get("path", "")
+	if cp != "":
+		img.save_png(cp)
+	_job = {}
+	_hide_progress()
 
 
 func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: float) -> void:
