@@ -14,7 +14,7 @@ extends RefCounted
 ## ==============================================================
 
 const CELL_DEG := 0.01            # 约 1.1 km
-const REVEAL_KM := 1.0            # 玩家周围 1 公里照亮
+const REVEAL_KM := 10.0           # 玩家周围 10 公里照亮
 const SAVE_PATH := "user://explored.dat"
 
 ## 已探索格子：key = "i_j"（i = 经度格号, j = 纬度格号）

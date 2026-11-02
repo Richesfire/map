@@ -463,6 +463,8 @@ func _cli() -> void:
 				_test_drag()
 			"--test-travelui":
 				_test_travelui()
+			"--seed-explore":
+				_seed_explore()
 			"--probe-pixel":
 				_probe_pixel()
 				return
@@ -590,6 +592,8 @@ func _maybe_capture() -> void:
 	# 把探索记录交给地图，用于限制缩放
 	if _minimap.get_dialog() != null:
 		_minimap.get_dialog().explored_gate = exploration
+		if _minimap.get_dialog()._globe != null:
+			_minimap.get_dialog()._globe.refresh_fog(exploration)
 		_minimap.get_dialog().probe()
 		_minimap.get_dialog().edge_test()
 	for i in 80:
@@ -818,3 +822,12 @@ func _probe_pixel() -> void:
 			lon, lat, str(bm.is_land(d)), str(bm.is_land_ll(lon, lat)),
 			bm.biome_at(d), bm.biome_at_ll(d, lon, lat)])
 	get_tree().quit()
+
+
+## 调试用：在关中一带种一片足迹，方便看迷雾效果
+func _seed_explore() -> void:
+	for i in range(10750, 11050, 4):
+		for j in range(3350, 3520, 4):
+			exploration.cells["%d_%d" % [i, j]] = true
+	exploration.save()
+	print("[SEED] 足迹 %d 个" % exploration.count())

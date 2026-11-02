@@ -21,6 +21,9 @@ func _draw() -> void:
 		# L0 只显示都城，L1 加郡城，L2 加关隘/县城，L3 显示村庄
 		if a.importance() > lvl + 1:
 			continue
+		# 没去过的地方，连地名也不该知道
+		if dialog.explored_gate != null and not dialog.explored_gate.is_explored_dir(a.dir):
+			continue
 		var p := dialog.project(a.dir)
 		if p.x < 0.0:
 			continue

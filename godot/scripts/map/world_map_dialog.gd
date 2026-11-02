@@ -92,6 +92,9 @@ func open(map: MapWorld, ann: Array, center_dir: Vector3) -> void:
 
 	_globe.world = world
 	_globe.face_direction(center_dir)
+	# 每次打开都按最新足迹重建迷雾（只遍历格子，几毫秒）
+	if explored_gate != null:
+		_globe.refresh_fog(explored_gate)
 	if _globe._tex == null:
 		await get_tree().process_frame
 		_globe.build_world_texture()

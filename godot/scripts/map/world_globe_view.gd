@@ -121,12 +121,9 @@ func _build_scene() -> void:
 	_sphere = MeshInstance3D.new()
 	_sphere.name = "Earth"
 	_sphere.mesh = mesh
-	var mat := StandardMaterial3D.new()
-	mat.albedo_texture = _placeholder_texture()
-	mat.roughness = 0.88
-	mat.metallic = 0.0
-	mat.metallic_specular = 0.35
-	mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/globe_surface.gdshader")
+	mat.set_shader_parameter("albedo_tex", _placeholder_texture())
 	_sphere.material_override = mat
 	_pivot.add_child(_sphere)
 
@@ -230,6 +227,53 @@ func edge_point(dir: Vector3) -> Vector2:
 ## 球心在屏幕上的位置（缩放限制按"视野中心"判断，而不是光标）
 func center_screen() -> Vector2:
 	return global_position + size * 0.5
+
+
+## 迷雾贴图（2048x1024，约 10km 一个像素）。1 = 已探索
+const FOG_W := 8192
+const FOG_H := 4096
+var _fog_img: Image
+var _fog_tex: ImageTexture
+
+
+## 从探索记录重建迷雾贴图。只遍历格子（几千个），不遍历像素，所以很快。
+func refresh_fog(exp: Exploration) -> void:
+	if exp == null:
+		return
+	if _fog_img == null:
+		_fog_img = Image.create(FOG_W, FOG_H, false, Image.FORMAT_L8)
+		_fog_img.fill(Color(0, 0, 0))
+		_fog_tex = ImageTexture.create_from_image(_fog_img)
+
+	# 每次都要重新绑定：第一次调用时球体可能还没建好，
+	# 若只在创建时设一次，uniform 就永远是空的（采样成黑色 = 全迷雾）。
+	if _sphere != null and _sphere.material_override is ShaderMaterial:
+		(_sphere.material_override as ShaderMaterial).set_shader_parameter("fog_tex", _fog_tex)
+
+	# 先把旧的白点清掉：只清上一帧画过的格子，成本随格子数
+	for k in exp.cells.keys():
+		var parts: PackedStringArray = String(k).split("_")
+		if parts.size() != 2:
+			continue
+		var lon: float = float(int(parts[0])) * Exploration.CELL_DEG
+		var lat: float = float(int(parts[1])) * Exploration.CELL_DEG
+		var u := fposmod(lon + 180.0, 360.0) / 360.0
+		var v := (90.0 - lat) / 180.0
+		var x := clampi(int(u * FOG_W), 0, FOG_W - 1)
+		var y := clampi(int(v * FOG_H), 0, FOG_H - 1)
+		# 迷雾图是 10km 一格，1km 的足迹不到一个像素，
+		# 所以每个格子画成 3x3 的小方块，玩家才看得出"这里去过了"。
+		# 照亮半径 10km，会覆盖成片的格子；每格点一个像素即可，
+		# 放大成 3x3 反而会把范围夸大到 13km。
+		_fog_img.set_pixel(x, y, Color(1, 1, 1))
+
+	_fog_tex.update(_fog_img)
+
+
+
+func set_fog_enabled(on: bool) -> void:
+	if _sphere != null and _sphere.material_override is ShaderMaterial:
+		(_sphere.material_override as ShaderMaterial).set_shader_parameter("fog_enabled", 1.0 if on else 0.0)
 
 
 func get_zoom() -> float:
@@ -444,8 +488,8 @@ func build_world_texture() -> void:
 	var img := make_world_image(world, TEX_W, TEX_H)
 	img.generate_mipmaps()
 	_tex = ImageTexture.create_from_image(img)
-	if _sphere != null and _sphere.material_override is StandardMaterial3D:
-		(_sphere.material_override as StandardMaterial3D).albedo_texture = _tex
+	if _sphere != null and _sphere.material_override is ShaderMaterial:
+		(_sphere.material_override as ShaderMaterial).set_shader_parameter("albedo_tex", _tex)
 	if _loading != null:
 		_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
 	print("[Globe] 现算贴图 %dx%d：%d ms（建议跑 --bake-globe 烘焙高清版）"
