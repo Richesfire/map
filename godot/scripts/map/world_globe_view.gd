@@ -174,7 +174,7 @@ func rotate_by(rel: Vector2) -> void:
 	# （相机环绕用的是减号 —— 相机往右移 ↔ 球往左转，两者方向相反，别抄反了。）
 	# 灵敏度跟着视野走：放大后视野窄，同样的鼠标位移对应的角度要同比缩小，
 	# 否则"轻轻一拖就飞出去"。
-	var k := 1.0 / clampf(_zoom, 1.0, 40.0)
+	var k := 1.0 / maxf(_zoom, 1.0)
 	_spin_yaw += rel.x * 0.005 * k
 	_spin_pitch = clampf(_spin_pitch + rel.y * 0.004 * k, -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_rotation()
@@ -323,7 +323,7 @@ func orbit_by(rel: Vector2) -> void:
 	# 所以"南北极颠倒"这件事不可能发生。
 	# 和球体拖动用同一套系数与缩放补偿，手感才一致
 	# 这是原本"拖球体外拖动"的手感（0.005 / 0.004），球面拖动也统一成这套
-	var k := 1.0 / clampf(_zoom, 1.0, 40.0)
+	var k := 1.0 / maxf(_zoom, 1.0)
 	_orbit_yaw -= rel.x * 0.005 * k
 	_orbit_pitch = clampf(_orbit_pitch - rel.y * 0.004 * k, -PITCH_LIMIT, PITCH_LIMIT)
 	_apply_orbit()
