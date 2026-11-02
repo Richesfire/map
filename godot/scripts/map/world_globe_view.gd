@@ -49,7 +49,6 @@ var _save_timer := 0.0
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_verify_red = "--red-detail" in OS.get_cmdline_user_args()
 	_build_viewport()
 	_build_scene()
 
@@ -131,19 +130,6 @@ func _build_scene() -> void:
 	_sphere.material_override = mat
 	_pivot.add_child(_sphere)
 
-	# 详情面板：一块贴在球面上的正方形，放大时盖住糊掉的球面
-	_detail = MeshInstance3D.new()
-	_detail.name = "DetailPatch"
-	_detail.mesh = PlaneMesh.new()
-	(_detail.mesh as PlaneMesh).size = Vector2(1, 1)
-	var dmat := StandardMaterial3D.new()
-	dmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	dmat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
-	dmat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_detail.material_override = dmat
-	_detail.visible = false
-	_detail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_pivot.add_child(_detail)
 
 	load_state()
 
@@ -277,13 +263,11 @@ const FOG_H := 4096
 const DETAIL_MIN_ZOOM := 30.0
 const DETAIL_PX := 512
 const DETAIL_CACHE := "user://region_cache"
-var _detail: MeshInstance3D
-var _detail_tex: ImageTexture
-var _detail_center := Vector3.INF
+
 var _job := {}
 var _detail_bar: ProgressBar
 var _detail_lbl: Label
-var _verify_red := false   # 验证用：把区域图换成纯红，只看几何对不对
+
 
 var _fog_img: Image
 var _fog_tex: ImageTexture
@@ -420,7 +404,7 @@ func _save_state_later() -> void:
 
 
 func _process(delta: float) -> void:
-	_update_detail()
+	_update_detail_new()
 	if _save_timer > 0.0:
 		_save_timer -= delta
 		if _save_timer <= 0.0:
@@ -460,114 +444,6 @@ func focus_on(dir: Vector3) -> void:
 
 ## 看清当前球心所指的区域：放大够深就铺一块高清切平面。
 ## 生成是**分帧**做的：每帧只算 48 行，避免卡住（一张图约 20 帧完成）。
-func _update_detail() -> void:
-	if _detail == null or _cam == null:
-		return
-	if _zoom < DETAIL_MIN_ZOOM:
-		_detail.visible = false
-		_job = {}
-		_hide_progress()
-		return
-
-	# _cam.basis.z 是"从目标指向相机"的方向，也就是正对着镜头的那一点。
-	# 之前写成 -basis.z，平面被放到了球背面（隔着整个球，永远看不见）。
-	var center := _cam.global_transform.basis.z
-	center = (_pivot.global_transform.basis.inverse() * center).normalized()
-	var span := 3.31 / _zoom
-
-	# 有正在生成的任务：继续算一部分
-	if not _job.is_empty():
-		_step_detail_job()
-		if not _job.is_empty():
-			return
-
-	# 已有的贴图还够用（没移动超过半屏）就不重算
-	if _detail_tex != null and _detail_center.distance_to(center) < span * 0.5:
-		_place_detail(center, span)
-		return
-
-	# 开新任务
-	_job = {
-		"img": Image.create(DETAIL_PX, DETAIL_PX, false, Image.FORMAT_RGB8),
-		"row": 0, "center": center, "span": span,
-		"east": _tangent_east(center),
-	}
-	_show_progress(0.0)
-	_show_old_detail(center, span)
-
-
-func _step_detail_job() -> void:
-	var img: Image = _job["img"]
-	var center: Vector3 = _job["center"]
-	var span: float = _job["span"]
-	var east: Vector3 = _job["east"]
-	var north := center.cross(east).normalized()
-
-	var bm: BiomeMap = null
-	if world != null:
-		bm = BiomeMap.new()
-		bm.setup(world.gen, null)
-
-	var px := DETAIL_PX
-	var y0: int = _job["row"]
-	var y1 := mini(y0 + 32, px)
-	for j in range(y0, y1):
-		var ty := (0.5 - (float(j) + 0.5) / float(px)) * span
-		for i in px:
-			var tx := ((float(i) + 0.5) / float(px) - 0.5) * span
-			var d: Vector3 = (center + east * tx + north * ty).normalized()
-			var bid := bm.biome_at(d) if bm != null else "plain"
-			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
-			if bid != "ocean" and world != null:
-				var hh := world.get_height_dir(d)
-				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
-				c = Color(c.r * shade, c.g * shade, c.b * shade)
-			img.set_pixel(i, j, c)
-
-	_job["row"] = y1
-	_show_progress(float(y1) / float(px))
-	if y1 >= px:
-		_detail_tex = ImageTexture.create_from_image(img)
-		_detail_center = center
-		_job = {}
-		_hide_progress()
-		_place_detail(center, span)
-
-
-func _tangent_east(center: Vector3) -> Vector3:
-	var e := Vector3.UP.cross(center)
-	if e.length() < 0.1:
-		e = Vector3.RIGHT
-	return e.normalized()
-
-
-## 新图还没好时，先用旧图（或干脆不显示，露出球面）
-func _show_old_detail(center: Vector3, span: float) -> void:
-	if _detail_tex != null:
-		_place_detail(center, span)
-
-
-func _place_detail(center: Vector3, span: float) -> void:
-	if _detail == null or _detail_tex == null:
-		return
-	_detail.visible = true
-	(_detail.mesh as PlaneMesh).size = Vector2(span * 1.15, span * 1.15)
-	# 显式给基向量，不靠 look_at 猜：
-	# PlaneMesh 在 XZ 平面上、法线 +Y，所以让 Y 轴对准"球心往外"即可
-	var up_ref := Vector3.UP if absf(center.dot(Vector3.UP)) < 0.95 else Vector3.RIGHT
-	var x_axis := up_ref.cross(center).normalized()
-	var z_axis := center.cross(x_axis).normalized()
-	_detail.transform = Transform3D(Basis(x_axis, center, z_axis), center * 1.001)
-	var m := _detail.material_override as StandardMaterial3D
-	if m != null:
-		if _verify_red:
-			m.albedo_texture = null
-			m.albedo_color = Color(1, 0.1, 0.1)
-		else:
-			m.albedo_texture = _detail_tex
-			m.albedo_color = Color.WHITE
-
-
 func _apply_rotation() -> void:
 	if _pivot == null:
 		return
@@ -759,3 +635,87 @@ func _hide_progress() -> void:
 		_detail_bar.visible = false
 	if _detail_lbl != null:
 		_detail_lbl.visible = false
+
+
+## 区域高清叠加：放大够深时，生成一块覆盖可见范围的图，交给 shader 替换底图。
+## 不走独立物体，直接复用球面渲染，避免"新加的物体不显示"。
+func _update_detail_new() -> void:
+	if _zoom < DETAIL_MIN_ZOOM:
+		if _sphere != null and _sphere.material_override is ShaderMaterial:
+			(_sphere.material_override as ShaderMaterial).set_shader_parameter("detail_enabled", 0.0)
+		_job = {}
+		_hide_progress()
+		return
+	var center := _cam.global_transform.basis.z
+	center = (_pivot.global_transform.basis.inverse() * center).normalized()
+	var ll := GeoSphere.dir_to_lonlat(center)
+	var half_deg := rad_to_deg(3.31 / _zoom) * 0.6      # 覆盖半宽（度）
+
+	if not _job.is_empty():
+		_step_job_new()
+		if not _job.is_empty():
+			return
+
+	# 已经覆盖住这个位置就不用重算
+	# 位置没动、跨度也没大变，就不用重算
+	var same_pos := _job_done_lonlat != Vector2.INF and Vector2(ll.x, ll.y).distance_to(_job_done_lonlat) < half_deg * 0.4
+	var same_span := _job_done_half > 0.0 and absf(half_deg / _job_done_half - 1.0) < 0.25
+	if same_pos and same_span:
+		return
+
+	_job = {
+		"img": Image.create(DETAIL_PX, DETAIL_PX, false, Image.FORMAT_RGB8),
+		"row": 0,
+		"lon0": ll.x - half_deg, "lon1": ll.x + half_deg,
+		"lat0": maxf(ll.y - half_deg, -89.0), "lat1": minf(ll.y + half_deg, 89.0),
+	}
+	_show_progress(0.0)
+
+
+var _job_done_lonlat := Vector2.INF
+var _job_done_half := 0.0
+
+
+func _step_job_new() -> void:
+	var img: Image = _job["img"]
+	var lon0: float = _job["lon0"]
+	var lon1: float = _job["lon1"]
+	var lat0: float = _job["lat0"]
+	var lat1: float = _job["lat1"]
+	var px := DETAIL_PX
+	var bm := BiomeMap.new()
+	bm.setup(world.gen, null)
+	var y0: int = _job["row"]
+	var y1 := mini(y0 + 32, px)
+	for j in range(y0, y1):
+		var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
+		for i in px:
+			var lon := lerpf(lon0, lon1, float(i) / float(px - 1))
+			var d := GeoSphere.lonlat_to_dir(lon, lat)
+			var bid: String = bm.biome_at(d) if world != null else "plain"
+			var c: Color = BIOME_COLORS.get(bid, Color(0.5, 0.5, 0.5))
+			if bid != "ocean" and world != null:
+				var hh := world.get_height_dir(d)
+				var shade := clampf(0.82 + hh / 600.0, 0.82, 1.12)
+				c = Color(c.r * shade, c.g * shade, c.b * shade)
+			img.set_pixel(i, j, c)
+	_job["row"] = y1
+	_show_progress(float(y1) / float(px))
+	if y1 >= px:
+		_apply_detail(img, lon0, lon1, lat0, lat1)
+		_job_done_lonlat = Vector2((lon0 + lon1) * 0.5, (lat0 + lat1) * 0.5)
+		_job_done_half = (lon1 - lon0) * 0.5
+		_job = {}
+		_hide_progress()
+
+
+func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: float) -> void:
+	if _sphere == null or not (_sphere.material_override is ShaderMaterial):
+		return
+	var m := _sphere.material_override as ShaderMaterial
+	m.set_shader_parameter("detail_tex", ImageTexture.create_from_image(img))
+	# UV：u = (lon+90)/360，v = (90-lat)/180
+	m.set_shader_parameter("detail_uv_min", Vector2((lon0 + 90.0) / 360.0, (90.0 - lat1) / 180.0))
+	m.set_shader_parameter("detail_uv_max", Vector2((lon1 + 90.0) / 360.0, (90.0 - lat0) / 180.0))
+	m.set_shader_parameter("detail_enabled", 1.0)
+	print("[Detail] 叠加 %.2f~%.2f°E  %.2f~%.2f°N" % [lon0, lon1, lat0, lat1])
