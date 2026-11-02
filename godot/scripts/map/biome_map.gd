@@ -58,7 +58,10 @@ func setup(noise_gen: TerrainNoise, land_mask: Image = null) -> void:
 func is_land_ll(lon: float, lat: float) -> bool:
 	if _mask == null:
 		return true
-	var x := clampi(int((lon + 180.0) / 360.0 * float(_mask_w)), 0, _mask_w - 1)
+	# 经度必须先绕回 -180..180：烘焙时传进来的是 0..360，
+	# 直接算会超出掩膜宽度被夹到最后一列，读成 180° 那条线上的地形。
+	var uw := fposmod(lon + 180.0, 360.0) / 360.0
+	var x := clampi(int(uw * float(_mask_w)), 0, _mask_w - 1)
 	var y := clampi(int((90.0 - lat) / 180.0 * float(_mask_h)), 0, _mask_h - 1)
 	return _mask.get_pixel(x, y).r > 0.5
 
@@ -67,7 +70,7 @@ func is_land(dir: Vector3) -> bool:
 	if _mask == null:
 		return true
 	var ll := GeoSphere.dir_to_lonlat(dir)
-	var x := clampi(int((ll.x + 180.0) / 360.0 * float(_mask_w)), 0, _mask_w - 1)
+	var x := clampi(int(fposmod(ll.x + 180.0, 360.0) / 360.0 * float(_mask_w)), 0, _mask_w - 1)
 	var y := clampi(int((90.0 - ll.y) / 180.0 * float(_mask_h)), 0, _mask_h - 1)
 	return _mask.get_pixel(x, y).r > 0.5
 

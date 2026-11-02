@@ -368,10 +368,12 @@ func _zoom_at(p: Vector2, steps: float) -> void:
 
 	# 没探索过的地方不能放大到细节级：既符合"没去过就不知道"，
 	# 也免去为全世界烘焙高清贴图。
-	if steps > 0.0 and hit != Vector3.ZERO and explored_gate != null:
-		# 只在最深的几级限制：区域级（3~6 倍）随便看，村庄级（6 倍以上）要求探索过
-		if not explored_gate.is_explored_dir(hit) and _globe.get_zoom() >= 6.0:
-			show_notice("未探索区域 · 先去那里看看")
+	# 按"视野中心"判断，而不是光标：
+	# 想放大某个地方 → 先把它拖到球心 → 再滚轮。这样在球面上瞄准容易得多。
+	var center_hit := _globe.pick(_globe.center_screen())
+	if steps > 0.0 and center_hit != Vector3.ZERO and explored_gate != null:
+		if not explored_gate.is_explored_dir(center_hit) and _globe.get_zoom() >= 6.0:
+			show_notice("未探索区域 · 先把它拖到中间再去看看")
 			return
 
 	# 纯变焦，不做任何自动转动。

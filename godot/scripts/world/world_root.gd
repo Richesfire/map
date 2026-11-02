@@ -463,6 +463,9 @@ func _cli() -> void:
 				_test_drag()
 			"--test-travelui":
 				_test_travelui()
+			"--probe-pixel":
+				_probe_pixel()
+				return
 			"--bake-globe":
 				_bake_globe()
 				return
@@ -799,4 +802,19 @@ func _bake_globe() -> void:
 	v.world = map
 	v.bake_to("res://data/globe_tex.png", 2048, 1024)
 	v.free()
+	get_tree().quit()
+
+
+## 诊断：查某个经纬度在烘焙时会得到什么
+func _probe_pixel() -> void:
+	var bm: BiomeMap = map.biome
+	if bm == null:
+		print("[PROBE] biome 为空")
+		return
+	for lat in [-14.0, -15.5, -16.0, -16.5, -17.0, -18.0]:
+		var lon := -150.0
+		var d := GeoSphere.lonlat_to_dir(lon, lat)
+		print("[PROBE] lon=%.1f lat=%.1f  is_land=%s  is_land_ll=%s  biome=%s  biome_ll=%s" % [
+			lon, lat, str(bm.is_land(d)), str(bm.is_land_ll(lon, lat)),
+			bm.biome_at(d), bm.biome_at_ll(d, lon, lat)])
 	get_tree().quit()

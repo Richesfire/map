@@ -227,6 +227,11 @@ func edge_point(dir: Vector3) -> Vector2:
 ## 滚轮缩放：滚轮上 = 放大
 ## 当前缩放层级 0~3（0=全球，3=本地）
 ## 阈值按 _zoom（0.6~2.6）划分，滚动时逐级解锁更细的地名。
+## 球心在屏幕上的位置（缩放限制按"视野中心"判断，而不是光标）
+func center_screen() -> Vector2:
+	return global_position + size * 0.5
+
+
 func get_zoom() -> float:
 	return _zoom
 
