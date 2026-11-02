@@ -208,7 +208,14 @@ func _update_far_shell(pos: Vector3) -> void:
 			var dir := GeoSphere.tangent_to_dir(region_frame, x, -z)
 			var p := render_position(dir)
 
-			verts[j * n + i] = Vector3(p.x, p.y - 2.0, p.z)
+			# 远景壳越靠近地块沉得越低：
+			#   1500m 处（地块边缘）沉 30m —— 完全藏在精细地形下面
+			#   4000m 之外回到真实高度 —— 远处看不出异常
+			# 斜坡拉长到 2.5km（约 13 个顶点），避免 190m 一格的台阶感
+			var dxz := Vector2(x - pos.x, z - pos.z).length()
+			var t := clampf((4000.0 - dxz) / 2500.0, 0.0, 1.0)
+			var sink := smoothstep(0.0, 1.0, t) * 30.0
+			verts[j * n + i] = Vector3(p.x, p.y - 2.0 - sink, p.z)
 
 	var idx := PackedInt32Array()
 	var k := 0

@@ -433,6 +433,10 @@ func _cli() -> void:
 		match a:
 			"--soul":
 				_toggle_soul()
+			"--high":
+				if _soul_cam != null:
+					_soul_cam.global_position += Vector3(0.0, 260.0, 0.0)
+					_soul_cam.rotation_degrees = Vector3(-32.0, _soul_cam.rotation_degrees.y, 0.0)
 			"--map":
 				toggle_world_map()
 			"--test-soul":
