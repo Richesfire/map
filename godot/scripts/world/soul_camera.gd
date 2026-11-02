@@ -52,3 +52,10 @@ func _process(delta: float) -> void:
 		if Input.is_physical_key_pressed(KEY_SHIFT):
 			speed *= boost_multiplier
 		global_position += dir.normalized() * speed * delta
+
+
+## 被外部强行摆放位置/朝向之后，必须调用一次。
+## 否则内部 _yaw/_pitch 还停在旧值，鼠标一动镜头就"啪"地跳回去。
+func sync_angles() -> void:
+	_yaw = rotation.y
+	_pitch = rotation.x

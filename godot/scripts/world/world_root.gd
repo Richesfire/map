@@ -362,6 +362,10 @@ func _toggle_soul() -> void:
 				back = player.global_transform.basis.z * 3.5
 			_soul_cam.global_position = base + back + Vector3.UP * 1.6
 			_soul_cam.rotation_degrees = Vector3(-8.0, 0.0, 0.0)
+		# 关键：把相机摆好之后，必须让脚本内部的角度跟着更新，
+		# 不然第一下鼠标移动会按旧角度重算朝向，镜头瞬间跳走。
+		if _soul_cam.has_method("sync_angles"):
+			_soul_cam.sync_angles()
 		_soul_cam.current = true
 	else:
 		if _player_cam != null:
