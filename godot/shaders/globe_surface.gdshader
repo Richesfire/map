@@ -33,8 +33,10 @@ void fragment() {
 	}
 	float explored = texture(fog_tex, UV).r;
 
-	// 未探索：羊皮纸底 + 一点点地形起伏（0.18 倍），像手绘旧图
-	vec3 paper = fog_color * (0.86 + 0.14 * base.r);
+	// 未探索：压成泛黄的旧图，但仍然看得清地形轮廓。
+	// （之前只透出 14%，等于什么都看不见；谷歌地图那种是"全世界一直可见"）
+	// 保留 70% 原始对比度，只叠一层黄调——这样大陆、海洋、山地都还认得出
+	vec3 paper = base * 0.70 + fog_color * 0.30;
 	vec3 c = mix(paper, base, smoothstep(0.15, 0.6, explored));
 
 	if (fog_enabled < 0.5) {
