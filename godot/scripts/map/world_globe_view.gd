@@ -269,6 +269,7 @@ const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
 var _provider: MapTextureProvider = ProceduralTextureProvider.new()
+var _tiles: Array = []
 var _generating := false
 var _gen_tile := Vector2.ZERO
 var _gen_deg := 1.0
@@ -658,8 +659,8 @@ func _hide_progress() -> void:
 ## 不走独立物体，直接复用球面渲染，避免"新加的物体不显示"。
 func _update_detail_new() -> void:
 	if _zoom < DETAIL_MIN_ZOOM:
-		if _sphere != null and _sphere.material_override is ShaderMaterial:
-			(_sphere.material_override as ShaderMaterial).set_shader_parameter("detail_enabled", 0.0)
+		_tiles.clear()
+		_push_tiles()
 		_hide_progress()
 		return
 
@@ -667,50 +668,91 @@ func _update_detail_new() -> void:
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
 
-	# ---- 谷歌地球式的网格对齐瓦片 ----
 	var view_deg := rad_to_deg(3.31 / _zoom) * 2.2
 	var lvl: int = clampi(int(ceil(log(360.0 / view_deg) / log(2.0))), 3, 12)
 	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
-	var x0: float = floor(ll.x / tile_deg)
-	var y0: float = floor(ll.y / tile_deg)
-	var span_deg: float = tile_deg * 2.0
+	var gx: float = floor(ll.x / (tile_deg * 2.0))
+	var gy: float = floor(ll.y / (tile_deg * 2.0))
 
-	if _job_done_lonlat == Vector2(x0, y0) and absf(_job_done_half - tile_deg) < 1e-6:
-		return
+	# 目标：以当前格为中心的 2×2 组
+	var want: Array = []
+	for dy in 2:
+		for dx in 2:
+			want.append(Vector3i(lvl, int(gx) * 2 + dx, int(gy) * 2 + dy))
 
-	# 1) 先问资源提供者有没有现成的
-	var cached: Image = _provider.try_cached(lvl, int(x0), int(y0))
-	if cached != null:
-		_apply_detail(cached, x0 * tile_deg, (x0 + 2.0) * tile_deg,
-				y0 * tile_deg, (y0 + 2.0) * tile_deg)
-		_job_done_lonlat = Vector2(x0, y0)
-		_job_done_half = tile_deg
-		return
+	# 移除层级不对的旧瓦片（换层级时才清）
+	if not _tiles.is_empty():
+		var keep: Array = []
+		for t in _tiles:
+			if int(t["lvl"]) == lvl:
+				keep.append(t)
+		if keep.size() != _tiles.size():
+			_tiles = keep
 
-	# 2) 没有就现算（分帧）
-	if not _generating:
-		if not _provider.can_generate():
-			return
-		_provider.begin(world, lvl, int(x0), int(y0), span_deg, DETAIL_PX)
-		_generating = true
-		_gen_tile = Vector2(x0, y0)
-		_gen_deg = tile_deg
-		_gen_lvl = lvl
-		_show_progress(0.0)
-
-	var prog: float = _provider.step(64)
-	_show_progress(prog)
-	if _provider.is_done():
-		var img: Image = _provider.take()
-		_generating = false
+	# 补齐缺的瓦片：先读缓存，没有就排队生成
+	for w in want:
+		var key := "%d_%d_%d" % [w.x, w.y, w.z]
+		var has := false
+		for t in _tiles:
+			if t["key"] == key:
+				has = true
+				break
+		if has:
+			continue
+		if _tiles.size() >= 4:
+			break
+		var img: Image = _provider.try_cached(w.x, w.y, w.z)
 		if img != null:
-			_apply_detail(img, _gen_tile.x * _gen_deg, (_gen_tile.x + 2.0) * _gen_deg,
-					_gen_tile.y * _gen_deg, (_gen_tile.y + 2.0) * _gen_deg)
-			_job_done_lonlat = _gen_tile
-			_job_done_half = _gen_deg
-			if _provider.has_method("save_cache"):
-				_provider.save_cache(_gen_lvl, int(_gen_tile.x), int(_gen_tile.y), img)
-		_hide_progress()
+			_tiles.append(_make_tile(w.x, w.y, w.z, img))
+		elif _provider.can_generate() and not _generating:
+			_provider.begin(world, w.x, w.y, w.z, tile_deg, DETAIL_PX)
+			_generating = true
+			_gen_tile = Vector2(w.y, w.z)
+			_gen_deg = tile_deg
+			_gen_lvl = w.x
+			_show_progress(0.0)
+
+	# 推进正在生成的那一张
+	if _generating:
+		var prog: float = _provider.step(96)
+		_show_progress(prog)
+		if _provider.is_done():
+			var img2: Image = _provider.take()
+			_generating = false
+			_hide_progress()
+			if img2 != null:
+				_tiles.append(_make_tile(_gen_lvl, int(_gen_tile.x), int(_gen_tile.y), img2))
+				if _provider.has_method("save_cache"):
+					_provider.save_cache(_gen_lvl, int(_gen_tile.x), int(_gen_tile.y), img2)
+
+	_push_tiles()
+
+
+func _make_tile(lvl: int, x: int, y: int, img: Image) -> Dictionary:
+	var tile_deg := 360.0 / pow(2.0, float(lvl))
+	return {
+		"key": "%d_%d_%d" % [lvl, x, y],
+		"lvl": lvl,
+		"tex": ImageTexture.create_from_image(img),
+		"lo": Vector2(((x * tile_deg) + 90.0) / 360.0,
+				(90.0 - ((y + 1) * tile_deg)) / 180.0),
+		"hi": Vector2((((x + 1) * tile_deg) + 90.0) / 360.0,
+				(90.0 - (y * tile_deg)) / 180.0),
+	}
+
+
+func _push_tiles() -> void:
+	if _sphere == null or not (_sphere.material_override is ShaderMaterial):
+		return
+	var m := _sphere.material_override as ShaderMaterial
+	m.set_shader_parameter("detail_count", float(min(_tiles.size(), 4)))
+	for i in 4:
+		if i < _tiles.size():
+			var t: Dictionary = _tiles[i]
+			m.set_shader_parameter("d%d" % i, t["tex"])
+			m.set_shader_parameter("d%d_min" % i, t["lo"])
+			m.set_shader_parameter("d%d_max" % i, t["hi"])
+
 
 
 func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: float) -> void:

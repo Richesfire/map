@@ -12,25 +12,39 @@ uniform sampler2D fog_tex : filter_linear, repeat_enable;
 uniform vec3 fog_color : source_color = vec3(0.78, 0.70, 0.52);
 uniform float fog_enabled = 1.0;
 
-// ---- 区域高清叠加：放大到一定程度时，用一张只覆盖可见范围的图替换底图
-uniform sampler2D detail_tex : source_color, filter_linear;
-uniform vec2 detail_uv_min = vec2(0.0);
-uniform vec2 detail_uv_max = vec2(0.0);
-uniform float detail_enabled = 0.0;
+// ---- 区域高清叠加：最多同时叠 4 张瓦片 ----
+// 视野跨过瓦片边界时，新旧两张同时在，拼接处不会露出底层糊图。
+uniform sampler2D d0 : source_color, filter_linear;
+uniform sampler2D d1 : source_color, filter_linear;
+uniform sampler2D d2 : source_color, filter_linear;
+uniform sampler2D d3 : source_color, filter_linear;
+uniform vec2 d0_min = vec2(0.0);
+uniform vec2 d0_max = vec2(0.0);
+uniform vec2 d1_min = vec2(0.0);
+uniform vec2 d1_max = vec2(0.0);
+uniform vec2 d2_min = vec2(0.0);
+uniform vec2 d2_max = vec2(0.0);
+uniform vec2 d3_min = vec2(0.0);
+uniform vec2 d3_max = vec2(0.0);
+uniform float detail_count = 0.0;
+
+// 如果 UV 落在该瓦片的矩形内，就返回瓦片颜色，否则原样返回
+vec3 _tile(vec2 uv, sampler2D tex, vec2 lo, vec2 hi, vec3 fallback) {
+	vec2 span = hi - lo;
+	if (span.x <= 0.0 || span.y <= 0.0) { return fallback; }
+	if (uv.x < lo.x || uv.x > hi.x || uv.y < lo.y || uv.y > hi.y) { return fallback; }
+	return texture(tex, (uv - lo) / span).rgb;
+}
+
 
 void fragment() {
 	vec3 base = texture(albedo_tex, UV).rgb;
 
-	// 区域图覆盖范围内，改用高清图（UV 换算到区域局部坐标）
-	if (detail_enabled > 0.5) {
-		vec2 span = detail_uv_max - detail_uv_min;
-		if (UV.x >= detail_uv_min.x && UV.x <= detail_uv_max.x &&
-				UV.y >= detail_uv_min.y && UV.y <= detail_uv_max.y &&
-				span.x > 0.0 && span.y > 0.0) {
-			vec2 duv = (UV - detail_uv_min) / span;
-			base = texture(detail_tex, duv).rgb;
-		}
-	}
+	// 区域瓦片：按顺序尝试，命中的覆盖底图（后面的瓦片更细，所以后写优先）
+	if (detail_count > 0.5 && d0_max.x > d0_min.x) { base = _tile(UV, d0, d0_min, d0_max, base); }
+	if (detail_count > 1.5 && d1_max.x > d1_min.x) { base = _tile(UV, d1, d1_min, d1_max, base); }
+	if (detail_count > 2.5 && d2_max.x > d2_min.x) { base = _tile(UV, d2, d2_min, d2_max, base); }
+	if (detail_count > 3.5 && d3_max.x > d3_min.x) { base = _tile(UV, d3, d3_min, d3_max, base); }
 	float explored = texture(fog_tex, UV).r;
 
 	// ---- 未探索：古籍铜版画风 ----
