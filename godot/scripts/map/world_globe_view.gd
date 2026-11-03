@@ -671,14 +671,19 @@ func _update_detail_new() -> void:
 	var view_deg := rad_to_deg(3.31 / _zoom) * 2.2
 	var lvl: int = clampi(int(ceil(log(360.0 / view_deg) / log(2.0))), 3, 12)
 	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
-	var gx: float = floor(ll.x / (tile_deg * 2.0))
-	var gy: float = floor(ll.y / (tile_deg * 2.0))
+	# 让"视野中心"落在 2×2 组的正中间：
+	# 取包含中心的那一格，然后按它的小数位置决定组往左还是往右靠。
+	var fx := ll.x / tile_deg
+	var fy := ll.y / tile_deg
+	var cx := int(floor(fx))
+	var cy := int(floor(fy))
+	var gx0 := cx if fposmod(fx, 1.0) < 0.5 else cx - 1
+	var gy0 := cy if fposmod(fy, 1.0) < 0.5 else cy - 1
 
-	# 目标：以当前格为中心的 2×2 组
 	var want: Array = []
 	for dy in 2:
 		for dx in 2:
-			want.append(Vector3i(lvl, int(gx) * 2 + dx, int(gy) * 2 + dy))
+			want.append(Vector3i(lvl, gx0 + dx, gy0 + dy))
 
 	# 移除层级不对的旧瓦片（换层级时才清）
 	if not _tiles.is_empty():
