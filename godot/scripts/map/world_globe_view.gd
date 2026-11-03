@@ -270,6 +270,8 @@ const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
 var _provider: MapTextureProvider = RectTextureProvider.new()
 var _cur_rect_key := ""
+var _prebaked: Array = []      # 离线烘焙好的大块区域 {lon0, lat0, span, tex}
+var _prebaked_loaded := false
 var _gen_key := ""
 var _gen_rect := Vector4.ZERO
 var _zoom_idle := 0.0   # 距离上次滚轮的秒数
@@ -703,6 +705,17 @@ func _update_detail_new() -> void:
 	if prov == null:
 		return
 
+	# 0) 离线烘焙的大块区域优先（覆盖当前视野就直接用，零等待）
+	_load_prebaked()
+	for pb in _prebaked:
+		var pl0: float = pb["lon0"]
+		var pb0: float = pb["lat0"]
+		var ps: float = pb["span"]
+		if lon0 >= pl0 and lon1 <= pl0 + ps and lat0 >= pb0 and lat1 <= pb0 + ps:
+			_apply_detail(pb["tex"], pl0, pl0 + ps, pb0, pb0 + ps)
+			_cur_rect_key = key
+			return
+
 	# 1) 磁盘缓存
 	var cached: Image = prov.try_cached_rect(key)
 	if cached != null:
@@ -869,3 +882,30 @@ func bake_tile_now(level: int, x: int, y: int) -> void:
 			img.set_pixel(i, j, c)
 	DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
 	img.save_png("%s/z%02d_x%d_y%d.png" % [DETAIL_CACHE, level, x, y])
+
+
+## 载入 res://data/prebaked/ 下离线烘焙好的区域图（带 .json 描述矩形）
+func _load_prebaked() -> void:
+	if _prebaked_loaded:
+		return
+	_prebaked_loaded = true
+	const DIR := "res://data/prebaked"
+	if not DirAccess.dir_exists_absolute(DIR):
+		return
+	for f in DirAccess.get_files_at(DIR):
+		if not f.ends_with(".json"):
+			continue
+		var txt := FileAccess.get_file_as_string("%s/%s" % [DIR, f])
+		var m: Variant = JSON.parse_string(txt)
+		if typeof(m) != TYPE_DICTIONARY:
+			continue
+		var png := "%s/%s.png" % [DIR, f.get_basename()]
+		if not ResourceLoader.exists(png):
+			continue
+		_prebaked.append({
+			"lon0": float(m.get("lon0", 0.0)),
+			"lat0": float(m.get("lat0", 0.0)),
+			"span": float(m.get("span", 1.0)),
+			"tex": load(png),
+		})
+		print("[Prebaked] %s  覆盖 %.1f°" % [f.get_basename(), float(m.get("span", 0.0))])

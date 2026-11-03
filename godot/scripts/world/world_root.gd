@@ -491,6 +491,8 @@ func _cli() -> void:
 			"--probe-pixel":
 				_probe_pixel()
 				return
+			"--bake-prebaked":
+				_bake_prebaked()
 			"--bake-globe":
 				_bake_globe()
 				return
@@ -901,4 +903,71 @@ func _test_zoom_ui() -> void:
 	var img := get_viewport().get_texture().get_image()
 	img.save_png("res://_截图/95_合成滚轮.png")
 	print("[ZOOMUI] 已截图")
+	get_tree().quit()
+
+
+## 离线烘焙一大块区域，存成 res://data/prebaked/<名字>.png + .json
+## 参数：--region=lon,lat,span_deg  --px=2048  --name=guanzhong
+func _bake_prebaked() -> void:
+	var lon := 108.8
+	var lat := 34.4
+	var span := 8.0
+	var px := 2048
+	var name := "region"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--region="):
+			var q: PackedStringArray = a.substr(9).split(",")
+			if q.size() >= 3:
+				lon = float(q[0])
+				lat = float(q[1])
+				span = float(q[2])
+		elif a.begins_with("--px="):
+			px = int(a.substr(5))
+		elif a.begins_with("--name="):
+			name = a.substr(7)
+
+	var lon0 := lon - span * 0.5
+	var lat0 := lat - span * 0.5
+	DirAccess.make_dir_recursive_absolute("res://data/prebaked")
+	var t0 := Time.get_ticks_msec()
+	var img := Image.create(px, px, false, Image.FORMAT_RGB8)
+	for j in px:
+		var la := lerpf(lat0 + span, lat0, float(j) / float(px - 1))
+		for i in px:
+			var lo2 := lerpf(lon0, lon0 + span, float(i) / float(px - 1))
+			var d := GeoSphere.lonlat_to_dir(lo2, la)
+			var h := map.get_height_dir(d)
+			var c: Color
+			if h < 0.0: c = Color(0.10, 0.22, 0.38)
+			elif h < 30.0: c = Color(0.26, 0.42, 0.28)
+			elif h < 70.0: c = Color(0.32, 0.46, 0.27)
+			elif h < 120.0: c = Color(0.38, 0.49, 0.27)
+			elif h < 200.0: c = Color(0.46, 0.51, 0.29)
+			elif h < 320.0: c = Color(0.55, 0.54, 0.34)
+			elif h < 600.0: c = Color(0.62, 0.52, 0.38)
+			elif h < 1000.0: c = Color(0.58, 0.50, 0.46)
+			else: c = Color(0.86, 0.86, 0.84)
+			if h >= 0.0:
+				var sp := span * 111000.0 / float(px)
+				var il := maxi(i - 1, 0)
+				var ir := mini(i + 1, px - 1)
+				var jd := maxi(j - 1, 0)
+				var ju := mini(j + 1, px - 1)
+				var dd := GeoSphere.lonlat_to_dir(lo2 + sp / 111000.0, la)
+				var ee := GeoSphere.lonlat_to_dir(lo2, la + sp / 111000.0)
+				var hx := map.get_height_dir(dd) - h
+				var hy := map.get_height_dir(ee) - h
+				var n := Vector3(-hx / sp * 8.0, 1.0, -hy / sp * 8.0).normalized()
+				var lit := clampf(n.dot(Vector3(-0.55, 0.62, 0.56).normalized()) * 1.4, 0.45, 1.35)
+				c = Color(c.r * lit, c.g * lit, c.b * lit)
+			img.set_pixel(i, j, c)
+		if j % 64 == 0:
+			print("  烘焙 %d/%d" % [j, px])
+	var path := "res://data/prebaked/%s.png" % name
+	img.save_png(path)
+	var meta := {"lon0": lon0, "lat0": lat0, "span": span}
+	var f := FileAccess.open("res://data/prebaked/%s.json" % name, FileAccess.WRITE)
+	f.store_string(JSON.stringify(meta))
+	f.close()
+	print("[Bake] %s  %d²  覆盖 %.2f°  用时 %d 秒" % [path, px, span, (Time.get_ticks_msec() - t0) / 1000])
 	get_tree().quit()
