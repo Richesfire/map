@@ -668,17 +668,33 @@ func _update_detail_new() -> void:
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
 
-	var view_deg := rad_to_deg(3.31 / _zoom) * 2.2
-	var lvl: int = clampi(int(ceil(log(360.0 / view_deg) / log(2.0))), 3, 12)
+	# ---- 按相机视野矩形铺瓦片（不再用"中心 + 系数"）----
+	# 屏幕是 16:9，横向视野是纵向的 1.78 倍；之前用一个标量算层级，
+	# 横向永远差一块，所以"任何位置放大都盖不全"。
+	var aspect := 1.78
+	if _viewport != null and _viewport.size.y > 0:
+		aspect = float(_viewport.size.x) / float(_viewport.size.y)
+
+	var half_h := rad_to_deg(3.31 / _zoom) * 0.5 * 1.30      # 纵向半高，留 30% 余量
+	var half_w := half_h * aspect                             # 横向半宽
+	var cos_lat := maxf(cos(deg_to_rad(ll.y)), 0.15)          # 高纬度经度被压缩
+	var lon0v := ll.x - half_w / cos_lat
+	var lon1v := ll.x + half_w / cos_lat
+	var lat0v := ll.y - half_h
+	var lat1v := ll.y + half_h
+
+	# 层级：让 2 张瓦片盖住较长的那一边
+	var need_deg := maxf(absf(lon1v - lon0v), absf(lat1v - lat0v))
+	var lvl: int = clampi(int(ceil(log(360.0 / maxf(need_deg * 0.5, 0.02)) / log(2.0))), 3, 14)
 	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
-	# 让"视野中心"落在 2×2 组的正中间：
-	# 取包含中心的那一格，然后按它的小数位置决定组往左还是往右靠。
-	var fx := ll.x / tile_deg
-	var fy := ll.y / tile_deg
-	var cx := int(floor(fx))
-	var cy := int(floor(fy))
-	var gx0 := cx if fposmod(fx, 1.0) < 0.5 else cx - 1
-	var gy0 := cy if fposmod(fy, 1.0) < 0.5 else cy - 1
+
+	# 组锚定在视野左下角所在格，再保证右上角也在组内
+	var gx0 := int(floor(lon0v / tile_deg))
+	var gy0 := int(floor(lat0v / tile_deg))
+	if int(floor(lon1v / tile_deg)) > gx0 + 1:
+		gx0 = int(floor(lon1v / tile_deg)) - 1
+	if int(floor(lat1v / tile_deg)) > gy0 + 1:
+		gy0 = int(floor(lat1v / tile_deg)) - 1
 
 	var want: Array = []
 	for dy in 2:
