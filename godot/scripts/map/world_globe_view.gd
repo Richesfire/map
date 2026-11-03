@@ -520,8 +520,10 @@ func build_world_texture() -> void:
 		var tex := load(TEX_BAKED) as Texture2D
 		if tex != null:
 			_tex = tex
-			if _sphere != null and _sphere.material_override is StandardMaterial3D:
-				(_sphere.material_override as StandardMaterial3D).albedo_texture = _tex
+			# 材质现在是 ShaderMaterial，必须走 uniform（这里以前只处理
+			# StandardMaterial3D 而且赋值后就 return，导致贴图永远贴不上）
+			if _sphere != null and _sphere.material_override is ShaderMaterial:
+				(_sphere.material_override as ShaderMaterial).set_shader_parameter("albedo_tex", _tex)
 			if _loading != null:
 				_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
 			print("[Globe] 使用预烘焙贴图 %s（%d ms）" % [TEX_BAKED, Time.get_ticks_msec() - t0])
@@ -534,6 +536,10 @@ func build_world_texture() -> void:
 	_tex = ImageTexture.create_from_image(img)
 	if _sphere != null and _sphere.material_override is ShaderMaterial:
 		(_sphere.material_override as ShaderMaterial).set_shader_parameter("albedo_tex", _tex)
+		var got: Variant = (_sphere.material_override as ShaderMaterial).get_shader_parameter("albedo_tex")
+		print("[MATDBG] 赋值后 材质里的尺寸=%s 同一对象=%s" % [
+				str(got.get_width()) + "x" + str(got.get_height()) if got != null else "null",
+				str(got == _tex)])
 	if _loading != null:
 		_loading.text = "拖动旋转 · 滚轮缩放 · Esc / M 关闭"
 	print("[Globe] 现算贴图 %dx%d：%d ms（建议跑 --bake-globe 烘焙高清版）"
