@@ -47,6 +47,9 @@ var _save_timer := 0.0
 
 
 func _ready() -> void:
+	# 资源提供者：默认程序生成；--file-tiles 时改读预制图片
+	if "--file-tiles" in OS.get_cmdline_user_args():
+		_provider = FileTextureProvider.new()
 	set_anchors_preset(Control.PRESET_TOP_LEFT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_viewport()
@@ -265,7 +268,13 @@ const DETAIL_PX := 512
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
-var _job := {}
+var _provider: MapTextureProvider = ProceduralTextureProvider.new()
+var _generating := false
+var _gen_tile := Vector2.ZERO
+var _gen_deg := 1.0
+var _gen_lvl := 0
+var _job_done_lonlat := Vector2(-999, -999)   # 已铺好的瓦片格号
+var _job_done_half := 0.0                       # 该瓦片的跨度
 var _detail_bar: ProgressBar
 var _detail_lbl: Label
 
@@ -650,158 +659,56 @@ func _update_detail_new() -> void:
 	if _zoom < DETAIL_MIN_ZOOM:
 		if _sphere != null and _sphere.material_override is ShaderMaterial:
 			(_sphere.material_override as ShaderMaterial).set_shader_parameter("detail_enabled", 0.0)
-		_job = {}
 		_hide_progress()
 		return
+
 	var center := _cam.global_transform.basis.z
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
 
-	# 有未完成的任务就继续算（之前这段调用被误删，任务建了却从不执行）
-	if not _job.is_empty():
-		_step_job_new()
-		if not _job.is_empty():
-			return
-
-
 	# ---- 谷歌地球式的网格对齐瓦片 ----
-	# 不再"按视野随便画一块"，而是对齐到固定的经纬度网格：
-	#   Ln 级瓦片边长 = 360 / 2^n 度
-	# 每次取 2×2 格（远大于视野），且边界严格落在网格上，
-	# 所以相邻视野复用同一张图，拼接处天然一致。
 	var view_deg := rad_to_deg(3.31 / _zoom) * 2.2
-	# 视野越小级别越高：Ln 的瓦片边长 = 360/2^n 度
 	var lvl: int = clampi(int(ceil(log(360.0 / view_deg) / log(2.0))), 3, 12)
 	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
-	var x0: float = floor(ll.x / tile_deg) * tile_deg
-	var y0: float = floor(ll.y / tile_deg) * tile_deg
+	var x0: float = floor(ll.x / tile_deg)
+	var y0: float = floor(ll.y / tile_deg)
 	var span_deg: float = tile_deg * 2.0
 
-	var span_half: float = span_deg * 0.5
-	var lon0: float = x0
-	var lon1: float = x0 + span_deg
-	var lat0: float = maxf(y0, -89.0)
-	var lat1: float = minf(y0 + span_deg, 89.0)
-
-	# 位置没动、级别没变就不用重算
-	if _job_done_lonlat != Vector2.INF and absf(_job_done_lonlat.x - lon0) < 1e-6 \
-			and absf(_job_done_lonlat.y - lat0) < 1e-6 and _job_done_half > 0.0 \
-			and absf(_job_done_half - span_half) < 1e-6:
+	if _job_done_lonlat == Vector2(x0, y0) and absf(_job_done_half - tile_deg) < 1e-6:
 		return
 
-	# 谷歌风格的 z/x/y 命名
-	var key := "z%02d_x%d_y%d" % [lvl, int(round(lon0 / tile_deg)), int(round(lat0 / tile_deg))]
-	var path := "%s/%s.png" % [DETAIL_CACHE, key]
-	if FileAccess.file_exists(path):
-		var cached: Image = Image.load_from_file(path)
-		if cached != null:
-			_apply_detail(cached, lon0, lon1, lat0, lat1)
-			_job_done_lonlat = Vector2(lon0, lat0)
-			_job_done_half = span_half
+	# 1) 先问资源提供者有没有现成的
+	var cached: Image = _provider.try_cached(lvl, int(x0), int(y0))
+	if cached != null:
+		_apply_detail(cached, x0 * tile_deg, (x0 + 2.0) * tile_deg,
+				y0 * tile_deg, (y0 + 2.0) * tile_deg)
+		_job_done_lonlat = Vector2(x0, y0)
+		_job_done_half = tile_deg
+		return
+
+	# 2) 没有就现算（分帧）
+	if not _generating:
+		if not _provider.can_generate():
 			return
+		_provider.begin(world, lvl, int(x0), int(y0), span_deg, DETAIL_PX)
+		_generating = true
+		_gen_tile = Vector2(x0, y0)
+		_gen_deg = tile_deg
+		_gen_lvl = lvl
+		_show_progress(0.0)
 
-	_job = {
-		"h": _new_height_buffer(DETAIL_PX * DETAIL_PX),
-		"row": 0,
-		"phase": 0,
-		"lon0": lon0, "lon1": lon1, "lat0": lat0, "lat1": lat1,
-		"path": path,
-		"span_m": absf(lon1 - lon0) * 111000.0,
-	}
-	_show_progress(0.0)
-
-
-var _job_done_lonlat := Vector2.INF
-var _job_done_half := 0.0
-var _job_span_m := 1.0
-
-
-func _new_height_buffer(n: int) -> PackedFloat32Array:
-	var a := PackedFloat32Array()
-	a.resize(n)
-	return a
-
-
-## 区域图：第一遍只存高度，第二遍按高程着色 + 山体阴影。
-## 这样出来的是"地形图"观感（网上那种），而不是生物群系色块。
-func _step_job_new() -> void:
-	var px := DETAIL_PX
-	var lon0: float = _job["lon0"]
-	var lon1: float = _job["lon1"]
-	var lat0: float = _job["lat0"]
-	var lat1: float = _job["lat1"]
-	var hs: PackedFloat32Array = _job["h"]
-	_job_span_m = _job.get("span_m", 1.0)
-	var y0: int = _job["row"]
-	var y1 := mini(y0 + 64, px)
-
-	if _job.get("phase", 0) == 0:
-		# 阶段一：采高程
-		for j in range(y0, y1):
-			var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
-			for i2 in px:
-				var lon := lerpf(lon0, lon1, float(i2) / float(px - 1))
-				var d := GeoSphere.lonlat_to_dir(lon, lat)
-				hs[j * px + i2] = world.get_height_dir(d) if world != null else 0.0
-		_job["row"] = y1
-		_show_progress(0.55 * float(y1) / float(px))
-		if y1 >= px:
-			_job["phase"] = 1
-			_job["row"] = 0
-			_job["img"] = Image.create(px, px, false, Image.FORMAT_RGB8)
-		return
-
-	# 阶段二：高程配色 + 山体阴影（同样分批，避免一次性卡住）
-	var img: Image = _job["img"]
-	var light := Vector3(-0.55, 0.62, 0.56).normalized()
-	var spacing_m := _job_span_m / float(px)
-
-	for j in range(y0, y1):
-		for i2 in px:
-			var h := hs[j * px + i2]
-			var c: Color
-			if h < 0.0:
-				c = Color(0.10, 0.22, 0.38)
-			elif h < 30.0:
-				c = Color(0.26, 0.42, 0.28)
-			elif h < 70.0:
-				c = Color(0.32, 0.46, 0.27)
-			elif h < 120.0:
-				c = Color(0.38, 0.49, 0.27)
-			elif h < 200.0:
-				c = Color(0.46, 0.51, 0.29)
-			elif h < 320.0:
-				c = Color(0.55, 0.54, 0.34)
-			elif h < 600.0:
-				c = Color(0.62, 0.52, 0.38)
-			elif h < 1000.0:
-				c = Color(0.58, 0.50, 0.46)
-			else:
-				c = Color(0.86, 0.86, 0.84)
-
-			if h >= 0.0:
-				var il := maxi(i2 - 1, 0)
-				var ir := mini(i2 + 1, px - 1)
-				var jd := maxi(j - 1, 0)
-				var ju := mini(j + 1, px - 1)
-				var dx := (hs[j * px + ir] - hs[j * px + il]) / (2.0 * spacing_m) * 8.0
-				var dz := (hs[ju * px + i2] - hs[jd * px + i2]) / (2.0 * spacing_m) * 8.0
-				var n := Vector3(-dx, 1.0, -dz).normalized()
-				var lit := clampf(n.dot(light) * 1.4, 0.45, 1.35)
-				c = Color(c.r * lit, c.g * lit, c.b * lit)
-			img.set_pixel(i2, j, c)
-
-	_job["row"] = y1
-	_show_progress(0.55 + 0.45 * float(y1) / float(px))
-	if y1 >= px:
-		_apply_detail(img, lon0, lon1, lat0, lat1)
-		_job_done_lonlat = Vector2(lon0, lat0)
-		_job_done_half = (lon1 - lon0) * 0.5
-		DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
-		var cp: String = _job.get("path", "")
-		if cp != "":
-			img.save_png(cp)
-		_job = {}
+	var prog: float = _provider.step(64)
+	_show_progress(prog)
+	if _provider.is_done():
+		var img: Image = _provider.take()
+		_generating = false
+		if img != null:
+			_apply_detail(img, _gen_tile.x * _gen_deg, (_gen_tile.x + 2.0) * _gen_deg,
+					_gen_tile.y * _gen_deg, (_gen_tile.y + 2.0) * _gen_deg)
+			_job_done_lonlat = _gen_tile
+			_job_done_half = _gen_deg
+			if _provider.has_method("save_cache"):
+				_provider.save_cache(_gen_lvl, int(_gen_tile.x), int(_gen_tile.y), img)
 		_hide_progress()
 
 
