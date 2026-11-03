@@ -707,14 +707,22 @@ func _update_detail_new() -> void:
 
 	# 0) 离线烘焙的大块区域优先（覆盖当前视野就直接用，零等待）
 	_load_prebaked()
+	# 在所有能覆盖当前视野的预烘焙块里，挑**跨度最小**的那块（密度最高）
+	var best: Dictionary = {}
 	for pb in _prebaked:
 		var pl0: float = pb["lon0"]
 		var pb0: float = pb["lat0"]
 		var ps: float = pb["span"]
 		if lon0 >= pl0 and lon1 <= pl0 + ps and lat0 >= pb0 and lat1 <= pb0 + ps:
-			_apply_detail(pb["tex"], pl0, pl0 + ps, pb0, pb0 + ps)
-			_cur_rect_key = key
-			return
+			if best.is_empty() or ps < float(best["span"]):
+				best = pb
+	if not best.is_empty():
+		var bl0: float = best["lon0"]
+		var bb0: float = best["lat0"]
+		var bs: float = best["span"]
+		_apply_detail(best["tex"], bl0, bl0 + bs, bb0, bb0 + bs)
+		_cur_rect_key = key
+		return
 
 	# 1) 磁盘缓存
 	var cached: Image = prov.try_cached_rect(key)
