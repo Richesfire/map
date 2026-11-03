@@ -264,7 +264,7 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 7.0   # 降到 7 倍：再大就会看到全球贴图的马赛克
-const DETAIL_PX := 512
+const DETAIL_PX := 256   # 256 覆盖 0.35° 约 150m/像素；生成快 4 倍，才可能全量预生成
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
@@ -773,8 +773,8 @@ func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: floa
 ## 这样在地图上缩放时永远命中缓存，不会出现"边看边算"的卡顿和穿帮。
 ## 只处理已探索区域——没去过的地方按设计本来就不该有细节。
 ## ==============================================================
-const PRELOAD_LEVELS := [10, 11]
-const PRELOAD_CAP := 4   # 每次启动只补最近的几张，避免开局等太久；多跑几次就补齐了            # 一次最多生成多少张，防止开局过久
+const PRELOAD_LEVELS := [8, 9, 10, 11, 12]
+const PRELOAD_CAP := 40  # 层级全，一次补完；每张约 0.9 秒            # 一次最多生成多少张，防止开局过久
 
 
 ## 返回需要处理的瓦片列表，交给调用方逐张推进
