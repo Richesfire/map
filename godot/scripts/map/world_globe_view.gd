@@ -264,17 +264,11 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 7.0   # 降到 7 倍：再大就会看到全球贴图的马赛克
-const DETAIL_PX := 768  # 整块覆盖全屏，像素数必须接近屏幕分辨率，否则必然糊
+const DETAIL_PX := 256   # 256 覆盖 0.35° 约 150m/像素；生成快 4 倍，才可能全量预生成
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
-var _provider: MapTextureProvider = RectTextureProvider.new()
-var _cur_rect_key := ""
-var _prebaked: Array = []      # 离线烘焙好的大块区域 {lon0, lat0, span, tex}
-var _prebaked_loaded := false
-var _gen_key := ""
-var _gen_rect := Vector4.ZERO
-var _zoom_idle := 0.0   # 距离上次滚轮的秒数
+var _provider: MapTextureProvider = ProceduralTextureProvider.new()
 var _tiles: Array = []
 var _generating := false
 var _gen_tile := Vector2.ZERO
@@ -346,7 +340,6 @@ func zoom_level() -> int:
 
 
 func zoom_by(steps: float) -> void:
-	_zoom_idle = 0.0
 	_zoom = clampf(_zoom * (1.0 + steps * 0.35), 0.6, 4000.0)
 	# 只改 FOV，不碰相机位置。
 	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
@@ -423,7 +416,6 @@ func _save_state_later() -> void:
 
 
 func _process(delta: float) -> void:
-	_zoom_idle += delta
 	_update_detail_new()
 	if _save_timer > 0.0:
 		_save_timer -= delta
@@ -667,8 +659,8 @@ func _hide_progress() -> void:
 ## 不走独立物体，直接复用球面渲染，避免"新加的物体不显示"。
 func _update_detail_new() -> void:
 	if _zoom < DETAIL_MIN_ZOOM:
-		if _sphere != null and _sphere.material_override is ShaderMaterial:
-			(_sphere.material_override as ShaderMaterial).set_shader_parameter("detail_count", 0.0)
+		_tiles.clear()
+		_push_tiles()
 		_hide_progress()
 		return
 
@@ -676,80 +668,92 @@ func _update_detail_new() -> void:
 	center = (_pivot.global_transform.basis.inverse() * center).normalized()
 	var ll := GeoSphere.dir_to_lonlat(center)
 
-	# ---- 视野矩形（含余量），整块生成，不切瓦片 ----
+	# ---- 按相机视野矩形铺瓦片（不再用"中心 + 系数"）----
+	# 屏幕是 16:9，横向视野是纵向的 1.78 倍；之前用一个标量算层级，
+	# 横向永远差一块，所以"任何位置放大都盖不全"。
 	var aspect := 1.78
 	if _viewport != null and _viewport.size.y > 0:
 		aspect = float(_viewport.size.x) / float(_viewport.size.y)
-	var half_h := rad_to_deg(3.31 / _zoom) * 0.5 * 1.20     # 20% 余量
-	var half_w := half_h * aspect
-	var cos_lat := maxf(cos(deg_to_rad(ll.y)), 0.15)
 
-	var lon0 := ll.x - half_w / cos_lat
-	var lon1 := ll.x + half_w / cos_lat
-	var lat0 := maxf(ll.y - half_h, -89.0)
-	var lat1 := minf(ll.y + half_h, 89.0)
+	var half_h := rad_to_deg(3.31 / _zoom) * 0.5 * 1.30      # 纵向半高，留 30% 余量
+	var half_w := half_h * aspect                             # 横向半宽
+	var cos_lat := maxf(cos(deg_to_rad(ll.y)), 0.15)          # 高纬度经度被压缩
+	var lon0v := ll.x - half_w / cos_lat
+	var lon1v := ll.x + half_w / cos_lat
+	var lat0v := ll.y - half_h
+	var lat1v := ll.y + half_h
 
-	# 矩形对齐到网格（约 1/8 视野），便于缓存复用
-	var step_deg := maxf(half_h * 2.0 * 0.25, 0.002)
-	lon0 = floor(lon0 / step_deg) * step_deg
-	lon1 = ceil(lon1 / step_deg) * step_deg
-	lat0 = floor(lat0 / step_deg) * step_deg
-	lat1 = ceil(lat1 / step_deg) * step_deg
-	var key := "%d_%d_%d_%d" % [int(lon0 * 1000), int(lat0 * 1000),
-			int((lon1 - lon0) * 1000), int((lat1 - lat0) * 1000)]
+	# 层级：让 2 张瓦片盖住较长的那一边
+	var need_deg := maxf(absf(lon1v - lon0v), absf(lat1v - lat0v))
+		# 用 floor 而不是 ceil：ceil 会让瓦片比需要的**小一半**，
+	# 于是 2 张只盖住中间 50%（之前那一半没覆盖就是这么来的）
+	var lvl: int = clampi(int(floor(log(360.0 / maxf(need_deg * 0.5, 0.02)) / log(2.0))), 3, 14)
+	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
 
-	if key == _cur_rect_key:
-		return
+	# 组锚定在视野左下角所在格，再保证右上角也在组内
+	var gx0 := int(floor(lon0v / tile_deg))
+	var gy0 := int(floor(lat0v / tile_deg))
+	if int(floor(lon1v / tile_deg)) > gx0 + 1:
+		gx0 = int(floor(lon1v / tile_deg)) - 1
+	if int(floor(lat1v / tile_deg)) > gy0 + 1:
+		gy0 = int(floor(lat1v / tile_deg)) - 1
 
-	var prov := _provider as RectTextureProvider
-	if prov == null:
-		return
+	var want: Array = []
+	for dy in 2:
+		for dx in 2:
+			want.append(Vector3i(lvl, gx0 + dx, gy0 + dy))
 
-	# 0) 离线烘焙的大块区域优先（覆盖当前视野就直接用，零等待）
-	_load_prebaked()
-	# 在所有能覆盖当前视野的预烘焙块里，挑**跨度最小**的那块（密度最高）
-	var best: Dictionary = {}
-	for pb in _prebaked:
-		var pl0: float = pb["lon0"]
-		var pb0: float = pb["lat0"]
-		var ps: float = pb["span"]
-		if lon0 >= pl0 and lon1 <= pl0 + ps and lat0 >= pb0 and lat1 <= pb0 + ps:
-			if best.is_empty() or ps < float(best["span"]):
-				best = pb
-	if not best.is_empty():
-		var bl0: float = best["lon0"]
-		var bb0: float = best["lat0"]
-		var bs: float = best["span"]
-		_apply_detail(best["tex"], bl0, bl0 + bs, bb0, bb0 + bs)
-		print("[PBDBG] zoom=%.0f 视野 %.2f°x%.2f° -> 用 %.1f° 的块" % [_zoom, lon1-lon0, lat1-lat0, bs])
-		_cur_rect_key = key
-		return
+	# 注意：**不要**在换层级时立刻清掉旧瓦片。
+	# 新层级的 4 张还没全部就位时，缺的那块会露出底层糊图；
+	# 保留旧层级（更粗）的瓦片垫底，画面始终连续。
 
-	# 1) 磁盘缓存
-	var cached: Image = prov.try_cached_rect(key)
-	if cached != null:
-		_apply_detail(cached, lon0, lon1, lat0, lat1)
-		_cur_rect_key = key
-		return
-
-	# 2) 现算（分帧）；滚动中不触发，停 0.35 秒后才算
-	if not _generating and _zoom_idle >= 0.35:
-		prov.begin_rect(world, lon0, lat0, lon1, lat1, DETAIL_PX, key)
-		_generating = true
-		_gen_key = key
-		_gen_rect = Vector4(lon0, lat0, lon1, lat1)
-		_show_progress(0.0)
-
-	var prog: float = prov.step(24)
-	_show_progress(prog)
-	if prov.is_done():
-		var img: Image = prov.take()
-		_generating = false
-		_hide_progress()
+	# 补齐缺的瓦片：先读缓存，没有就排队生成
+	for w in want:
+		var key := "%d_%d_%d" % [w.x, w.y, w.z]
+		var has := false
+		for t in _tiles:
+			if t["key"] == key:
+				has = true
+				break
+		if has:
+			continue
+		var img: Image = _provider.try_cached(w.x, w.y, w.z)
 		if img != null:
-			prov.save_rect(_gen_key, img)
-			_apply_detail(img, _gen_rect.x, _gen_rect.z, _gen_rect.y, _gen_rect.w)
-			_cur_rect_key = _gen_key
+			# 只有**确实能加进来**时才挤掉旧的。
+			# 之前是在判断之前就删，结果"正在生成"时删了旧的又加不上新的，
+			# 槽位越跑越少，画面就一半没覆盖。
+			if _tiles.size() >= 4:
+				var worst := 0
+				var worst_d := -1
+				for ti in _tiles.size():
+					var d: int = absi(int(_tiles[ti]["lvl"]) - lvl)
+					if d > worst_d:
+						worst_d = d
+						worst = ti
+				_tiles.remove_at(worst)
+			_tiles.append(_make_tile(w.x, w.y, w.z, img))
+		elif _provider.can_generate() and not _generating:
+			_provider.begin(world, w.x, w.y, w.z, tile_deg, DETAIL_PX)
+			_generating = true
+			_gen_tile = Vector2(w.y, w.z)
+			_gen_deg = tile_deg
+			_gen_lvl = w.x
+			_show_progress(0.0)
+
+	# 推进正在生成的那一张
+	if _generating:
+		var prog: float = _provider.step(96)
+		_show_progress(prog)
+		if _provider.is_done():
+			var img2: Image = _provider.take()
+			_generating = false
+			_hide_progress()
+			if img2 != null:
+				_tiles.append(_make_tile(_gen_lvl, int(_gen_tile.x), int(_gen_tile.y), img2))
+				if _provider.has_method("save_cache"):
+					_provider.save_cache(_gen_lvl, int(_gen_tile.x), int(_gen_tile.y), img2)
+
+	_push_tiles()
 
 
 func _make_tile(lvl: int, x: int, y: int, img: Image) -> Dictionary:
@@ -891,30 +895,3 @@ func bake_tile_now(level: int, x: int, y: int) -> void:
 			img.set_pixel(i, j, c)
 	DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
 	img.save_png("%s/z%02d_x%d_y%d.png" % [DETAIL_CACHE, level, x, y])
-
-
-## 载入 res://data/prebaked/ 下离线烘焙好的区域图（带 .json 描述矩形）
-func _load_prebaked() -> void:
-	if _prebaked_loaded:
-		return
-	_prebaked_loaded = true
-	const DIR := "res://data/prebaked"
-	if not DirAccess.dir_exists_absolute(DIR):
-		return
-	for f in DirAccess.get_files_at(DIR):
-		if not f.ends_with(".json"):
-			continue
-		var txt := FileAccess.get_file_as_string("%s/%s" % [DIR, f])
-		var m: Variant = JSON.parse_string(txt)
-		if typeof(m) != TYPE_DICTIONARY:
-			continue
-		var png := "%s/%s.png" % [DIR, f.get_basename()]
-		if not ResourceLoader.exists(png):
-			continue
-		_prebaked.append({
-			"lon0": float(m.get("lon0", 0.0)),
-			"lat0": float(m.get("lat0", 0.0)),
-			"span": float(m.get("span", 1.0)),
-			"tex": load(png),
-		})
-		print("[Prebaked] %s  覆盖 %.1f°" % [f.get_basename(), float(m.get("span", 0.0))])
