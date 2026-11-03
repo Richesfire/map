@@ -264,7 +264,7 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 7.0   # 降到 7 倍：再大就会看到全球贴图的马赛克
-const DETAIL_PX := 256   # 256 覆盖 0.35° 约 150m/像素；生成快 4 倍，才可能全量预生成
+const DETAIL_PX := 768  # 整块覆盖全屏，像素数必须接近屏幕分辨率，否则必然糊
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
@@ -272,6 +272,7 @@ var _provider: MapTextureProvider = RectTextureProvider.new()
 var _cur_rect_key := ""
 var _gen_key := ""
 var _gen_rect := Vector4.ZERO
+var _zoom_idle := 0.0   # 距离上次滚轮的秒数
 var _tiles: Array = []
 var _generating := false
 var _gen_tile := Vector2.ZERO
@@ -343,6 +344,7 @@ func zoom_level() -> int:
 
 
 func zoom_by(steps: float) -> void:
+	_zoom_idle = 0.0
 	_zoom = clampf(_zoom * (1.0 + steps * 0.35), 0.6, 4000.0)
 	# 只改 FOV，不碰相机位置。
 	# （之前这里写着 _cam.position.z = 4.55/_zoom —— 它既把透视改坏，
@@ -419,6 +421,7 @@ func _save_state_later() -> void:
 
 
 func _process(delta: float) -> void:
+	_zoom_idle += delta
 	_update_detail_new()
 	if _save_timer > 0.0:
 		_save_timer -= delta
@@ -675,7 +678,7 @@ func _update_detail_new() -> void:
 	var aspect := 1.78
 	if _viewport != null and _viewport.size.y > 0:
 		aspect = float(_viewport.size.x) / float(_viewport.size.y)
-	var half_h := rad_to_deg(3.31 / _zoom) * 0.5 * 1.6      # 60% 余量，移动时不急着重算
+	var half_h := rad_to_deg(3.31 / _zoom) * 0.5 * 1.20     # 20% 余量
 	var half_w := half_h * aspect
 	var cos_lat := maxf(cos(deg_to_rad(ll.y)), 0.15)
 
@@ -707,15 +710,15 @@ func _update_detail_new() -> void:
 		_cur_rect_key = key
 		return
 
-	# 2) 现算（分帧）；算的过程中**继续显示旧图**，所以不会有缝
-	if not _generating:
+	# 2) 现算（分帧）；滚动中不触发，停 0.35 秒后才算
+	if not _generating and _zoom_idle >= 0.35:
 		prov.begin_rect(world, lon0, lat0, lon1, lat1, DETAIL_PX, key)
 		_generating = true
 		_gen_key = key
 		_gen_rect = Vector4(lon0, lat0, lon1, lat1)
 		_show_progress(0.0)
 
-	var prog: float = prov.step(96)
+	var prog: float = prov.step(24)
 	_show_progress(prog)
 	if prov.is_done():
 		var img: Image = prov.take()
