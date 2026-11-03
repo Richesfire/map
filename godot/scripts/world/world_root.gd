@@ -491,6 +491,8 @@ func _cli() -> void:
 			"--probe-pixel":
 				_probe_pixel()
 				return
+			"--bake-tiles":
+				_bake_tiles()
 			"--bake-prebaked":
 				_bake_prebaked()
 			"--bake-globe":
@@ -970,4 +972,77 @@ func _bake_prebaked() -> void:
 	f.store_string(JSON.stringify(meta))
 	f.close()
 	print("[Bake] %s  %d²  覆盖 %.2f°  用时 %d 秒" % [path, px, span, (Time.get_ticks_msec() - t0) / 1000])
+	get_tree().quit()
+
+
+## 按 z/x/y 烘焙瓦片（和运行时 FileTextureProvider 的命名一致）
+## 参数：--region=lon,lat,span  --levels=8,9,10,11,12  --px=256
+func _bake_tiles() -> void:
+	var lon := 108.8
+	var lat := 34.4
+	var span := 2.0
+	var levels: Array = [10, 11, 12]
+	var px := 256
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--region="):
+			var q: PackedStringArray = a.substr(9).split(",")
+			if q.size() >= 3:
+				lon = float(q[0])
+				lat = float(q[1])
+				span = float(q[2])
+		elif a.begins_with("--levels="):
+			levels.clear()
+			for t in a.substr(9).split(","):
+				levels.append(int(t))
+		elif a.begins_with("--px="):
+			px = int(a.substr(5))
+
+	var lon0 := lon - span * 0.5
+	var lon1 := lon + span * 0.5
+	var lat0 := lat - span * 0.5
+	var lat1 := lat + span * 0.5
+	var t0 := Time.get_ticks_msec()
+	var total := 0
+
+	for lvl in levels:
+		var tile_deg: float = 360.0 / pow(2.0, float(lvl))
+		var x0 := int(floor(lon0 / tile_deg))
+		var x1 := int(floor(lon1 / tile_deg))
+		var y0 := int(floor(lat0 / tile_deg))
+		var y1 := int(floor(lat1 / tile_deg))
+		for ty in range(y0, y1 + 1):
+			for tx in range(x0, x1 + 1):
+				var dir := "res://data/tiles/z%02d/x%d" % [lvl, tx]
+				DirAccess.make_dir_recursive_absolute(dir)
+				var img := Image.create(px, px, false, Image.FORMAT_RGB8)
+				var tlo := tx * tile_deg
+				var tla := ty * tile_deg
+				for j in px:
+					var la := lerpf(tla + tile_deg, tla, float(j) / float(px - 1))
+					for i in px:
+						var lo2 := lerpf(tlo, tlo + tile_deg, float(i) / float(px - 1))
+						var d := GeoSphere.lonlat_to_dir(lo2, la)
+						var h := map.get_height_dir(d)
+						var c: Color
+						if h < 0.0: c = Color(0.10, 0.22, 0.38)
+						elif h < 30.0: c = Color(0.26, 0.42, 0.28)
+						elif h < 70.0: c = Color(0.32, 0.46, 0.27)
+						elif h < 120.0: c = Color(0.38, 0.49, 0.27)
+						elif h < 200.0: c = Color(0.46, 0.51, 0.29)
+						elif h < 320.0: c = Color(0.55, 0.54, 0.34)
+						elif h < 600.0: c = Color(0.62, 0.52, 0.38)
+						elif h < 1000.0: c = Color(0.58, 0.50, 0.46)
+						else: c = Color(0.86, 0.86, 0.84)
+						if h >= 0.0:
+							var sp := tile_deg * 111000.0 / float(px)
+							var hx := map.get_height_dir(GeoSphere.lonlat_to_dir(lo2 + sp / 111000.0, la)) - h
+							var hy := map.get_height_dir(GeoSphere.lonlat_to_dir(lo2, la + sp / 111000.0)) - h
+							var n := Vector3(-hx / sp * 8.0, 1.0, -hy / sp * 8.0).normalized()
+							var lit := clampf(n.dot(Vector3(-0.55, 0.62, 0.56).normalized()) * 1.4, 0.45, 1.35)
+							c = Color(c.r * lit, c.g * lit, c.b * lit)
+						img.set_pixel(i, j, c)
+				img.save_png("%s/y%d.png" % [dir, ty])
+				total += 1
+				print("  烘 z%02d x%d y%d" % [lvl, tx, ty])
+	print("[BakeTiles] %d 张，用时 %d 秒" % [total, (Time.get_ticks_msec() - t0) / 1000])
 	get_tree().quit()
