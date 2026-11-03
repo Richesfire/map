@@ -43,6 +43,7 @@ var _warn_cd := 0
 var _traveling := false
 var _last_tiles_ready := -1
 var exploration := Exploration.new()
+var _t_preload := 0
 var _exp_timer := 0.0
 var _minimap: MapMinimap
 var _compass: Compass
@@ -105,6 +106,23 @@ func _ready() -> void:
 	# 趁黑屏把地球仪贴图先算好，第一次按 M 就不会卡
 	if _minimap != null:
 		await _minimap.prewarm_world_map()
+
+	# 预生成已探索区域的地图瓦片：地图上缩放时永远不会"边看边算"
+	var pre_wake := get_node_or_null("/root/Wake")
+	if _minimap != null and _minimap.get_dialog() != null and _minimap.get_dialog()._globe != null:
+		var g := _minimap.get_dialog()._globe
+		var plan := g.plan_preload(exploration)
+		if not plan.is_empty():
+			print("[Preload] 需要预生成 %d 张瓦片" % plan.size())
+			for i in plan.size():
+				if pre_wake != null:
+					pre_wake.set_caption("正在准备地图")
+					pre_wake.set_progress(float(i) / float(plan.size()))
+				g.bake_tile_now(int(plan[i]["level"]), int(plan[i]["x"]), int(plan[i]["y"]))
+				await get_tree().process_frame
+			if pre_wake != null:
+				pre_wake.set_progress(-1.0)
+			print("[Preload] 完成，用时 %d ms" % (Time.get_ticks_msec() - _t_preload))
 
 	var wake := get_node_or_null("/root/Wake")
 	if wake != null:

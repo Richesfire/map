@@ -722,3 +722,98 @@ func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: floa
 	m.set_shader_parameter("detail_uv_max", Vector2((lon1 + 90.0) / 360.0, (90.0 - lat0) / 180.0))
 	m.set_shader_parameter("detail_enabled", 1.0)
 	print("[Detail] 叠加 %.2f~%.2f°E  %.2f~%.2f°N" % [lon0, lon1, lat0, lat1])
+
+
+## ==============================================================
+## 预加载：开局（黑屏过渡里）把已探索区域各层级的瓦片一次性生成好。
+##
+## 这样在地图上缩放时永远命中缓存，不会出现"边看边算"的卡顿和穿帮。
+## 只处理已探索区域——没去过的地方按设计本来就不该有细节。
+## ==============================================================
+const PRELOAD_LEVELS := [10, 11]
+const PRELOAD_CAP := 8            # 一次最多生成多少张，防止开局过久
+
+
+## 返回需要处理的瓦片列表，交给调用方逐张推进
+func plan_preload(exp: Exploration) -> Array:
+	var plan: Array = []
+	if exp == null or exp.cells.is_empty():
+		return plan
+
+	# 1) 把已探索格子按 z8 粗网格聚类（1.4° 一格）
+	var groups := {}
+	for k in exp.cells.keys():
+		var parts: PackedStringArray = String(k).split("_")
+		if parts.size() != 2:
+			continue
+		var lon: float = float(int(parts[0])) * Exploration.CELL_DEG
+		var lat: float = float(int(parts[1])) * Exploration.CELL_DEG
+		var gx := int(floor(lon / 1.40625))
+		var gy := int(floor(lat / 1.40625))
+		groups[Vector2i(gx, gy)] = true
+
+	# 2) 每个聚类，在各层级上算它覆盖的瓦片
+	for g in groups.keys():
+		var gv := g as Vector2i
+		var lon := gv.x * 1.40625
+		var lat := gv.y * 1.40625
+		for lvl in PRELOAD_LEVELS:
+			var tile_deg := 360.0 / pow(2.0, float(lvl))
+			var x := int(floor(lon / tile_deg))
+			var y := int(floor(lat / tile_deg))
+			var key := "%d_%d_%d" % [lvl, x, y]
+			if plan.has(key):
+				continue
+			var path := "%s/z%02d_x%d_y%d.png" % [DETAIL_CACHE, lvl, x, y]
+			if not FileAccess.file_exists(path):
+				plan.append({"level": lvl, "x": x, "y": y, "key": key})
+			if plan.size() >= PRELOAD_CAP:
+				return plan
+	return plan
+
+
+## 生成一张瓦片（同步、整张）。预加载用，调用方负责显示进度。
+func bake_tile_now(level: int, x: int, y: int) -> void:
+	var tile_deg := 360.0 / pow(2.0, float(level))
+	var img := Image.create(DETAIL_PX, DETAIL_PX, false, Image.FORMAT_RGB8)
+	var px := DETAIL_PX
+	var lon0 := x * tile_deg
+	var lat0 := y * tile_deg
+	var lon1 := lon0 + tile_deg
+	var lat1 := lat0 + tile_deg
+	var hs := PackedFloat32Array()
+	hs.resize(px * px)
+	for j in px:
+		var lat := lerpf(lat1, lat0, float(j) / float(px - 1))
+		for i in px:
+			var lon := lerpf(lon0, lon1, float(i) / float(px - 1))
+			var d := GeoSphere.lonlat_to_dir(lon, lat)
+			hs[j * px + i] = world.get_height_dir(d)
+	var light := Vector3(-0.55, 0.62, 0.56).normalized()
+	var spacing := absf(tile_deg) * 111000.0 / float(px)
+	for j in px:
+		for i in px:
+			var h := hs[j * px + i]
+			var c: Color
+			if h < 0.0: c = Color(0.10, 0.22, 0.38)
+			elif h < 30.0: c = Color(0.26, 0.42, 0.28)
+			elif h < 70.0: c = Color(0.32, 0.46, 0.27)
+			elif h < 120.0: c = Color(0.38, 0.49, 0.27)
+			elif h < 200.0: c = Color(0.46, 0.51, 0.29)
+			elif h < 320.0: c = Color(0.55, 0.54, 0.34)
+			elif h < 600.0: c = Color(0.62, 0.52, 0.38)
+			elif h < 1000.0: c = Color(0.58, 0.50, 0.46)
+			else: c = Color(0.86, 0.86, 0.84)
+			if h >= 0.0:
+				var il := maxi(i - 1, 0)
+				var ir := mini(i + 1, px - 1)
+				var jd := maxi(j - 1, 0)
+				var ju := mini(j + 1, px - 1)
+				var dx := (hs[j * px + ir] - hs[j * px + il]) / (2.0 * spacing) * 8.0
+				var dz := (hs[ju * px + i] - hs[jd * px + i]) / (2.0 * spacing) * 8.0
+				var n := Vector3(-dx, 1.0, -dz).normalized()
+				var lit := clampf(n.dot(light) * 1.4, 0.45, 1.35)
+				c = Color(c.r * lit, c.g * lit, c.b * lit)
+			img.set_pixel(i, j, c)
+	DirAccess.make_dir_recursive_absolute(DETAIL_CACHE)
+	img.save_png("%s/z%02d_x%d_y%d.png" % [DETAIL_CACHE, level, x, y])
