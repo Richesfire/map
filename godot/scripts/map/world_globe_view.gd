@@ -274,7 +274,8 @@ var _gen_tile := Vector2.ZERO
 var _gen_deg := 1.0
 var _gen_lvl := 0
 var _job_done_lonlat := Vector2(-999, -999)   # 已铺好的瓦片格号
-var _job_done_half := 0.0                       # 该瓦片的跨度
+var _job_done_half := 0.0
+var _annot_center := Vector2.INF   # 玩家所在经纬度，预加载按远近排                       # 该瓦片的跨度
 var _detail_bar: ProgressBar
 var _detail_lbl: Label
 
@@ -731,7 +732,7 @@ func _apply_detail(img: Image, lon0: float, lon1: float, lat0: float, lat1: floa
 ## 只处理已探索区域——没去过的地方按设计本来就不该有细节。
 ## ==============================================================
 const PRELOAD_LEVELS := [10, 11]
-const PRELOAD_CAP := 8            # 一次最多生成多少张，防止开局过久
+const PRELOAD_CAP := 4   # 每次启动只补最近的几张，避免开局等太久；多跑几次就补齐了            # 一次最多生成多少张，防止开局过久
 
 
 ## 返回需要处理的瓦片列表，交给调用方逐张推进
@@ -752,8 +753,15 @@ func plan_preload(exp: Exploration) -> Array:
 		var gy := int(floor(lat / 1.40625))
 		groups[Vector2i(gx, gy)] = true
 
-	# 2) 每个聚类，在各层级上算它覆盖的瓦片
-	for g in groups.keys():
+	# 2) 聚类按离玩家由近到远排序：先补真正会看到的地方
+	var origin := Vector2i.ZERO
+	if _annot_center != Vector2.INF:
+		origin = Vector2i(int(floor(_annot_center.x / 1.40625)), int(floor(_annot_center.y / 1.40625)))
+	var ordered := groups.keys()
+	ordered.sort_custom(func(a, b):
+		return Vector2(a - origin).length() < Vector2(b - origin).length())
+
+	for g in ordered:
 		var gv := g as Vector2i
 		var lon := gv.x * 1.40625
 		var lat := gv.y * 1.40625
