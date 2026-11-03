@@ -270,6 +270,9 @@ const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
 var _provider: MapTextureProvider = ProceduralTextureProvider.new()
 var _tiles: Array = []
+# 先统一走程序生成：预烘焙只覆盖一小块，混用会出现"几块清晰几块糊"的割裂。
+# 等生成质量稳定了，再打开这个开关。
+const USE_PREBAKED := false
 var _file_provider := FileTextureProvider.new()   # res://data/tiles 下预烘焙的瓦片
 var _generating := false
 var _gen_tile := Vector2.ZERO
@@ -725,7 +728,7 @@ func _update_detail_new() -> void:
 				break
 		if has:
 			continue
-		var img: Image = _file_provider.try_cached(w.x, w.y, w.z)
+		var img: Image = _file_provider.try_cached(w.x, w.y, w.z) if USE_PREBAKED else null
 		if img == null:
 			img = _provider.try_cached(w.x, w.y, w.z)
 		if img != null:
