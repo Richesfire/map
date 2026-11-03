@@ -685,14 +685,9 @@ func _update_detail_new() -> void:
 		for dx in 2:
 			want.append(Vector3i(lvl, gx0 + dx, gy0 + dy))
 
-	# 移除层级不对的旧瓦片（换层级时才清）
-	if not _tiles.is_empty():
-		var keep: Array = []
-		for t in _tiles:
-			if int(t["lvl"]) == lvl:
-				keep.append(t)
-		if keep.size() != _tiles.size():
-			_tiles = keep
+	# 注意：**不要**在换层级时立刻清掉旧瓦片。
+	# 新层级的 4 张还没全部就位时，缺的那块会露出底层糊图；
+	# 保留旧层级（更粗）的瓦片垫底，画面始终连续。
 
 	# 补齐缺的瓦片：先读缓存，没有就排队生成
 	for w in want:
@@ -705,7 +700,15 @@ func _update_detail_new() -> void:
 		if has:
 			continue
 		if _tiles.size() >= 4:
-			break
+			# 挤掉层级离当前最远的那张（通常是最旧的）
+			var worst := 0
+			var worst_d := -1
+			for ti in _tiles.size():
+				var d: int = absi(int(_tiles[ti]["lvl"]) - lvl)
+				if d > worst_d:
+					worst_d = d
+					worst = ti
+			_tiles.remove_at(worst)
 		var img: Image = _provider.try_cached(w.x, w.y, w.z)
 		if img != null:
 			_tiles.append(_make_tile(w.x, w.y, w.z, img))

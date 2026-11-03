@@ -867,13 +867,32 @@ func _test_zoom_ui() -> void:
 	var g := dlg._globe
 	var center := g.center_screen()
 	print("[ZOOMUI] 起始 zoom=%.2f fov=%.2f" % [g.get_zoom(), g._cam.fov])
-	for i in 25:
-		var ev := InputEventMouseButton.new()
-		ev.button_index = MOUSE_BUTTON_WHEEL_UP
-		ev.pressed = true
-		ev.position = center
-		Input.parse_input_event(ev)
-		await get_tree().process_frame
+	# 支持 --face=lon,lat 和 --zoomto=N，以便复现任意视角
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--face="):
+			var p2: PackedStringArray = a.substr(7).split(",")
+			if p2.size() == 2:
+				g.face_direction(GeoSphere.lonlat_to_dir(float(p2[0]), float(p2[1])))
+		elif a.begins_with("--zoomto="):
+			var target := float(a.substr(9))
+			var guard := 0
+			while g.get_zoom() < target and guard < 400:
+				g.zoom_by(1.0)
+				guard += 1
+			await get_tree().process_frame
+
+	var has_zoomto := false
+	for a2 in OS.get_cmdline_user_args():
+		if a2.begins_with("--zoomto="):
+			has_zoomto = true
+	if not has_zoomto:
+		for i in 25:
+			var ev := InputEventMouseButton.new()
+			ev.button_index = MOUSE_BUTTON_WHEEL_UP
+			ev.pressed = true
+			ev.position = center
+			Input.parse_input_event(ev)
+			await get_tree().process_frame
 	print("[ZOOMUI] 25 格之后 zoom=%.2f fov=%.2f" % [g.get_zoom(), g._cam.fov])
 	# 等绘制完成再取图，否则拿到的是黑帧
 	await RenderingServer.frame_post_draw
