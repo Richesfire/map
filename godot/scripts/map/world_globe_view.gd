@@ -703,6 +703,13 @@ func _update_detail_new() -> void:
 		for dx in 2:
 			want.append(Vector3i(lvl, gx0 + dx, gy0 + dy))
 
+	# 按"离视野中心的远近"排序：先补中间那块，玩家会看到画面从中心向外逐渐清晰，
+	# 而不是从左上角开始补。
+	want.sort_custom(func(a, b):
+		var ca := Vector2((a.y + 0.5) * tile_deg, (a.z + 0.5) * tile_deg)
+		var cb := Vector2((b.y + 0.5) * tile_deg, (b.z + 0.5) * tile_deg)
+		return ca.distance_squared_to(Vector2(ll.x, ll.y)) < cb.distance_squared_to(Vector2(ll.x, ll.y)))
+
 	# 注意：**不要**在换层级时立刻清掉旧瓦片。
 	# 新层级的 4 张还没全部就位时，缺的那块会露出底层糊图；
 	# 保留旧层级（更粗）的瓦片垫底，画面始终连续。
