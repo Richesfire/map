@@ -721,6 +721,7 @@ func _update_detail_new() -> void:
 		var bb0: float = best["lat0"]
 		var bs: float = best["span"]
 		_apply_detail(best["tex"], bl0, bl0 + bs, bb0, bb0 + bs)
+		print("[PBDBG] zoom=%.0f 视野 %.2f°x%.2f° -> 用 %.1f° 的块" % [_zoom, lon1-lon0, lat1-lat0, bs])
 		_cur_rect_key = key
 		return
 
