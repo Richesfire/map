@@ -263,7 +263,7 @@ func center_screen() -> Vector2:
 const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
-const DETAIL_MIN_ZOOM := 30.0
+const DETAIL_MIN_ZOOM := 7.0   # 降到 7 倍：再大就会看到全球贴图的马赛克
 const DETAIL_PX := 512
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
