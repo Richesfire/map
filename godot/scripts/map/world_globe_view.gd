@@ -685,7 +685,9 @@ func _update_detail_new() -> void:
 
 	# 层级：让 2 张瓦片盖住较长的那一边
 	var need_deg := maxf(absf(lon1v - lon0v), absf(lat1v - lat0v))
-	var lvl: int = clampi(int(ceil(log(360.0 / maxf(need_deg * 0.5, 0.02)) / log(2.0))), 3, 14)
+		# 用 floor 而不是 ceil：ceil 会让瓦片比需要的**小一半**，
+	# 于是 2 张只盖住中间 50%（之前那一半没覆盖就是这么来的）
+	var lvl: int = clampi(int(floor(log(360.0 / maxf(need_deg * 0.5, 0.02)) / log(2.0))), 3, 14)
 	var tile_deg: float = 360.0 / pow(2.0, float(lvl))
 
 	# 组锚定在视野左下角所在格，再保证右上角也在组内
@@ -715,18 +717,20 @@ func _update_detail_new() -> void:
 				break
 		if has:
 			continue
-		if _tiles.size() >= 4:
-			# 挤掉层级离当前最远的那张（通常是最旧的）
-			var worst := 0
-			var worst_d := -1
-			for ti in _tiles.size():
-				var d: int = absi(int(_tiles[ti]["lvl"]) - lvl)
-				if d > worst_d:
-					worst_d = d
-					worst = ti
-			_tiles.remove_at(worst)
 		var img: Image = _provider.try_cached(w.x, w.y, w.z)
 		if img != null:
+			# 只有**确实能加进来**时才挤掉旧的。
+			# 之前是在判断之前就删，结果"正在生成"时删了旧的又加不上新的，
+			# 槽位越跑越少，画面就一半没覆盖。
+			if _tiles.size() >= 4:
+				var worst := 0
+				var worst_d := -1
+				for ti in _tiles.size():
+					var d: int = absi(int(_tiles[ti]["lvl"]) - lvl)
+					if d > worst_d:
+						worst_d = d
+						worst = ti
+				_tiles.remove_at(worst)
 			_tiles.append(_make_tile(w.x, w.y, w.z, img))
 		elif _provider.can_generate() and not _generating:
 			_provider.begin(world, w.x, w.y, w.z, tile_deg, DETAIL_PX)
