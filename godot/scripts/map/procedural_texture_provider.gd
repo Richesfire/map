@@ -78,37 +78,52 @@ func _shade_rows(y0: int, y1: int) -> void:
 	var px := _px
 	for j in range(y0, y1):
 		for i in px:
-			# 3×3 平滑：地形每处微小起伏都跨色阶的话，描边会密得像电路板
-			var hs := 0.0
-			var cn := 0
-			for dj: int in [-1, 0, 1]:
-				for di: int in [-1, 0, 1]:
-					var jj: int = j + dj
-					var ii: int = i + di
-					if jj >= 0 and jj < px and ii >= 0 and ii < px:
-						hs += _h[jj * px + ii]
-						cn += 1
-			var h := hs / float(maxi(cn, 1))
+			var h := _h[j * px + i]
 			var b := _band(h)
-			var c: Color = BAND_COLORS[b]
-			# 和左边/上边的分层不同 -> 画一条描边（地图册那种勾线）
-			# 只在"成片区域"的边界画线：统计 4 邻居里有几个和自己同档。
-			# 少于 3 个说明这是孤立噪点，不画线（否则满屏碎点）。
-			var same := 0
-			var diff := false
+
+			# 边界判定：4 邻居里有没有不同档
+			var boundary := false
 			for d: Vector2i in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
-				var ii2: int = i + d.x
-				var jj2: int = j + d.y
-				if ii2 < 0 or ii2 >= px or jj2 < 0 or jj2 >= px:
+				var ii: int = i + d.x
+				var jj: int = j + d.y
+				if ii < 0 or ii >= px or jj < 0 or jj >= px:
 					continue
-				var bn := _band(_h[jj2 * px + ii2])
-				if bn == b:
-					same += 1
-				else:
-					diff = true
-			if diff and same >= 3:
-				c = OUTLINE
+				if _band(_h[jj * px + ii]) != b:
+					boundary = true
+					break
+
+			var c: Color
+			if boundary:
+				# 边界像素：在像素内取 2×2 子样本（双线性插值，不用再采高程），
+				# 按各档出现比例混色 —— 边缘就是平滑过渡，而不是方块台阶。
+				var acc := Color(0, 0, 0)
+				var n := 0.0
+				for sy in [0.25, 0.75]:
+					for sx in [0.25, 0.75]:
+						var hh := _hbil(float(i) + sx, float(j) + sy)
+						acc += BAND_COLORS[_band(hh)]
+						n += 1.0
+				c = acc / n
+				# 描边：边界处压暗一点，形成地图册式的勾线
+				c = c.lerp(OUTLINE, 0.35)
+			else:
+				c = BAND_COLORS[b]
+
 			_img.set_pixel(i, j, c)
+
+
+## 双线性插值取高度（越界钳制）
+func _hbil(x: float, y: float) -> float:
+	var px := _px
+	var x0 := clampi(int(floor(x)), 0, px - 1)
+	var y0 := clampi(int(floor(y)), 0, px - 1)
+	var x1 := mini(x0 + 1, px - 1)
+	var y1 := mini(y0 + 1, px - 1)
+	var fx := clampf(x - float(x0), 0.0, 1.0)
+	var fy := clampf(y - float(y0), 0.0, 1.0)
+	var a := lerpf(_h[y0 * px + x0], _h[y0 * px + x1], fx)
+	var b2 := lerpf(_h[y1 * px + x0], _h[y1 * px + x1], fx)
+	return lerpf(a, b2, fy)
 
 
 ## 高程分档：负数是水，正数是陆
