@@ -80,10 +80,10 @@ func _shade_rows(y0: int, y1: int) -> void:
 			# 3×3 平滑：地形每处微小起伏都跨色阶的话，描边会密得像电路板
 			var hs := 0.0
 			var cn := 0
-			for dj in [-1, 0, 1]:
-				for di in [-1, 0, 1]:
-					var jj := j + dj
-					var ii := i + di
+			for dj: int in [-1, 0, 1]:
+				for di: int in [-1, 0, 1]:
+					var jj: int = j + dj
+					var ii: int = i + di
 					if jj >= 0 and jj < px and ii >= 0 and ii < px:
 						hs += _h[jj * px + ii]
 						cn += 1
