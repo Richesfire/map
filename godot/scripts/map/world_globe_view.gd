@@ -264,7 +264,7 @@ const FOG_W := 8192
 const FOG_H := 4096
 ## 放大到一定倍数后，用一块"切平面高清图"盖住糊掉的球面
 const DETAIL_MIN_ZOOM := 3.0   # 3 倍就交给纯色细节层：底图是生物群系色，放大后会和纯色有色差   # 降到 7 倍：再大就会看到全球贴图的马赛克
-const DETAIL_PX := 256   # 256 覆盖 0.35° 约 150m/像素；生成快 4 倍，才可能全量预生成
+const DETAIL_PX := 512    # 折中：15° 视野下约 3 公里/像素，生成约 5 秒；1024 要 20 秒不可用   # 256 覆盖 0.35° 约 150m/像素；生成快 4 倍，才可能全量预生成
 const DETAIL_CACHE := "user://region_cache"
 const DETAIL_LADDER := [0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2, 6.4]
 
@@ -755,7 +755,7 @@ func _update_detail_new() -> void:
 
 	# 推进正在生成的那一张
 	if _generating:
-		var prog: float = _provider.step(96)
+		var prog: float = _provider.step(24)
 		_show_progress(prog)
 		if _provider.is_done():
 			var img2: Image = _provider.take()

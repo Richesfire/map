@@ -63,7 +63,7 @@ func step(max_rows: int) -> float:
 				_h[j * _px + i] = _world.get_height_dir(d) if _world != null else 0.0
 		_row = y1
 		if y1 >= _px:
-			_blur(3)
+			_blur(1)
 			_phase = 1
 			_row = 0
 			_img = Image.create(_px, _px, false, Image.FORMAT_RGB8)
