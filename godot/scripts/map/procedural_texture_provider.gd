@@ -109,6 +109,21 @@ func _shade_rows(y0: int, y1: int) -> void:
 			else:
 				c = BAND_COLORS[b]
 
+			# 等高线：每 100 米一条细线，平原地带也能看出结构（地图册的观感）
+			if h > 0.0:
+				var ph := fposmod(h, 100.0)
+				if ph < 12.0:
+					c = c.lerp(OUTLINE, 0.22)
+				# 起伏阴影：用左右/上下高差做很淡的明暗，让平缓地形也有立体感
+				var gx := 0.0
+				var gy := 0.0
+				if i > 0 and i < px - 1:
+					gx = _h[j * px + i + 1] - _h[j * px + i - 1]
+				if j > 0 and j < px - 1:
+					gy = _h[(j + 1) * px + i] - _h[(j - 1) * px + i]
+				var sh := clampf(1.0 + (-gx * 0.5 - gy * 0.6) * 0.010, 0.90, 1.10)
+				c = Color(c.r * sh, c.g * sh, c.b * sh)
+
 			_img.set_pixel(i, j, c)
 
 
