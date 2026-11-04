@@ -63,6 +63,7 @@ func step(max_rows: int) -> float:
 				_h[j * _px + i] = _world.get_height_dir(d) if _world != null else 0.0
 		_row = y1
 		if y1 >= _px:
+			_blur(3)
 			_phase = 1
 			_row = 0
 			_img = Image.create(_px, _px, false, Image.FORMAT_RGB8)
@@ -91,12 +92,21 @@ func _shade_rows(y0: int, y1: int) -> void:
 			var b := _band(h)
 			var c: Color = BAND_COLORS[b]
 			# 和左边/上边的分层不同 -> 画一条描边（地图册那种勾线）
-			var edge := false
-			if i > 0 and _band((_h[j * px + i - 1] + _h[j * px + i]) * 0.5) != b:
-				edge = true
-			elif j > 0 and _band((_h[(j - 1) * px + i] + _h[j * px + i]) * 0.5) != b:
-				edge = true
-			if edge:
+			# 只在"成片区域"的边界画线：统计 4 邻居里有几个和自己同档。
+			# 少于 3 个说明这是孤立噪点，不画线（否则满屏碎点）。
+			var same := 0
+			var diff := false
+			for d: Vector2i in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+				var ii2: int = i + d.x
+				var jj2: int = j + d.y
+				if ii2 < 0 or ii2 >= px or jj2 < 0 or jj2 >= px:
+					continue
+				var bn := _band(_h[jj2 * px + ii2])
+				if bn == b:
+					same += 1
+				else:
+					diff = true
+			if diff and same >= 3:
 				c = OUTLINE
 			_img.set_pixel(i, j, c)
 
@@ -147,3 +157,32 @@ func take() -> Image:
 func save_cache(level: int, x: int, y: int, img: Image) -> void:
 	DirAccess.make_dir_recursive_absolute(CACHE_DIR)
 	img.save_png("%s/z%02d_x%d_y%d.png" % [CACHE_DIR, level, x, y])
+
+
+## 可分离盒式模糊：高程场在像素尺度上太抖，不分档前先模糊，
+## 否则色阶边界会碎成一片噪点（像电路板）。
+func _blur(r: int) -> void:
+	var px := _px
+	var tmp := PackedFloat32Array()
+	tmp.resize(px * px)
+	var w := float(r * 2 + 1)
+	# 横向
+	for j in px:
+		var acc := 0.0
+		for k in range(-r, r + 1):
+			acc += _h[j * px + clampi(k, 0, px - 1)]
+		for i in px:
+			tmp[j * px + i] = acc / w
+			var out := clampi(i - r, 0, px - 1)
+			var inn := clampi(i + r + 1, 0, px - 1)
+			acc += _h[j * px + inn] - _h[j * px + out]
+	# 纵向
+	for i in px:
+		var acc2 := 0.0
+		for k in range(-r, r + 1):
+			acc2 += tmp[clampi(k, 0, px - 1) * px + i]
+		for j in px:
+			_h[j * px + i] = acc2 / w
+			var out2 := clampi(j - r, 0, px - 1)
+			var inn2 := clampi(j + r + 1, 0, px - 1)
+			acc2 += tmp[inn2 * px + i] - tmp[out2 * px + i]
