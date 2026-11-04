@@ -75,42 +75,62 @@ func step(max_rows: int) -> float:
 
 func _shade_rows(y0: int, y1: int) -> void:
 	var px := _px
-	var light := Vector3(-0.55, 0.62, 0.56).normalized()
-	var spacing := _span_m / float(px)
 	for j in range(y0, y1):
 		for i in px:
-			var h := _h[j * px + i]
-			var c: Color
-			if h < 0.0:
-				c = Color(0.10, 0.22, 0.38)
-			elif h < 30.0:
-				c = Color(0.26, 0.42, 0.28)
-			elif h < 70.0:
-				c = Color(0.32, 0.46, 0.27)
-			elif h < 120.0:
-				c = Color(0.38, 0.49, 0.27)
-			elif h < 200.0:
-				c = Color(0.46, 0.51, 0.29)
-			elif h < 320.0:
-				c = Color(0.55, 0.54, 0.34)
-			elif h < 600.0:
-				c = Color(0.62, 0.52, 0.38)
-			elif h < 1000.0:
-				c = Color(0.58, 0.50, 0.46)
-			else:
-				c = Color(0.86, 0.86, 0.84)
-
-			if h >= 0.0:
-				var il := maxi(i - 1, 0)
-				var ir := mini(i + 1, px - 1)
-				var jd := maxi(j - 1, 0)
-				var ju := mini(j + 1, px - 1)
-				var dx := (_h[j * px + ir] - _h[j * px + il]) / (2.0 * spacing) * 8.0
-				var dz := (_h[ju * px + i] - _h[jd * px + i]) / (2.0 * spacing) * 8.0
-				var n := Vector3(-dx, 1.0, -dz).normalized()
-				var lit := clampf(n.dot(light) * 1.4, 0.45, 1.35)
-				c = Color(c.r * lit, c.g * lit, c.b * lit)
+			# 3×3 平滑：地形每处微小起伏都跨色阶的话，描边会密得像电路板
+			var hs := 0.0
+			var cn := 0
+			for dj in [-1, 0, 1]:
+				for di in [-1, 0, 1]:
+					var jj := j + dj
+					var ii := i + di
+					if jj >= 0 and jj < px and ii >= 0 and ii < px:
+						hs += _h[jj * px + ii]
+						cn += 1
+			var h := hs / float(maxi(cn, 1))
+			var b := _band(h)
+			var c: Color = BAND_COLORS[b]
+			# 和左边/上边的分层不同 -> 画一条描边（地图册那种勾线）
+			var edge := false
+			if i > 0 and _band((_h[j * px + i - 1] + _h[j * px + i]) * 0.5) != b:
+				edge = true
+			elif j > 0 and _band((_h[(j - 1) * px + i] + _h[j * px + i]) * 0.5) != b:
+				edge = true
+			if edge:
+				c = OUTLINE
 			_img.set_pixel(i, j, c)
+
+
+## 高程分档：负数是水，正数是陆
+func _band(h: float) -> int:
+	if h < -150.0:
+		return 0      # 深海
+	if h < 0.0:
+		return 1      # 浅海
+	if h < 60.0:
+		return 2      # 平原
+	if h < 200.0:
+		return 3      # 丘陵
+	if h < 500.0:
+		return 4      # 高地
+	if h < 1200.0:
+		return 5      # 山地
+	if h < 2200.0:
+		return 6      # 高山
+	return 7          # 雪线
+
+
+const BAND_COLORS := [
+	Color(0.09, 0.20, 0.36),   # 深海
+	Color(0.19, 0.38, 0.55),   # 浅海
+	Color(0.62, 0.74, 0.52),   # 平原
+	Color(0.72, 0.74, 0.44),   # 丘陵
+	Color(0.74, 0.62, 0.38),   # 高地
+	Color(0.58, 0.44, 0.34),   # 山地
+	Color(0.72, 0.66, 0.62),   # 高山
+	Color(0.94, 0.94, 0.94),   # 雪线
+]
+const OUTLINE := Color(0.34, 0.30, 0.24)
 
 
 func is_done() -> bool:
