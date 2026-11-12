@@ -23,3 +23,7 @@ desktop.ini
 
 # ias\data 是指向 ias-core\data 的目录联接，只保留一份
 ias/data/
+
+# 大型高程数据（可用 scripts 重新生成，见 DATA.md）
+ias-core/data/*.bin
+data/*.bin
