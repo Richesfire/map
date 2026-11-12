@@ -73,6 +73,9 @@ var map_surface: ColorRect
 var map_backdrop: TextureRect
 var _map_shader_ok := false
 var _map_mat: ShaderMaterial
+var _lf_thread: Thread
+var _lf_hi: Image
+var _lf_done := false
 var _dead := false
 
 var tab_held := false
@@ -546,8 +549,6 @@ func _input(e: InputEvent) -> void:
 				elif tab_sel == 3:
 					print("[菜单] 左：待实现（日志/说明）")
 			tab_cross.queue_redraw()
-		elif k.keycode == KEY_M and k.pressed and not k.echo:
-			_open_map()
 		elif k.keycode == KEY_ESCAPE and k.pressed:
 			# 先释放鼠标；已经释放时再关地图
 			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -755,8 +756,7 @@ func _draw_compass() -> void:
 	if terrain != null:
 		for c in TG.cities():
 			marks.append([Vector2(float(c["lon"]), float(c["lat"])), Color(0.90, 0.72, 0.38), str(c["name"])])
-		if has_pin:
-			marks.append([pin_ll, Color(0.86, 0.36, 0.24), "标的"])
+
 	for m in marks:
 		var ll: Vector2 = m[0]
 		var dx: float = (ll.x - terrain.center_lon) * 111320.0 * cos(deg_to_rad(terrain.center_lat))
@@ -936,22 +936,6 @@ func _draw_map() -> void:
 	# 标题与缩放读数
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x * 0.5 - 44, 44), "天下舆图",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(0.86, 0.78, 0.60))
-	var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(map_center.y)), 0.05) / (MAP_W * map_zoom)
-	var span_km := 500.0
-	var span_px := span_km / km_per_px
-	while span_px > 240.0:
-		span_km *= 0.5
-		span_px = span_km / km_per_px
-	while span_px < 80.0:
-		span_km *= 2.0
-		span_px = span_km / km_per_px
-	var sbx := 96.0
-	var sby := vs.y - 62.0
-	map_root.draw_line(Vector2(sbx, sby), Vector2(sbx + span_px, sby), Color(0.22, 0.16, 0.09, 0.95), 2.5)
-	map_root.draw_line(Vector2(sbx, sby - 4), Vector2(sbx, sby + 4), Color(0.22, 0.16, 0.09, 0.95), 2.5)
-	map_root.draw_line(Vector2(sbx + span_px, sby - 4), Vector2(sbx + span_px, sby + 4), Color(0.22, 0.16, 0.09, 0.95), 2.5)
-	map_root.draw_string(ThemeDB.fallback_font, Vector2(sbx, sby - 8), "%d 里" % int(span_km * 2.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.20, 0.14, 0.08))
-
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x - 132, vs.y - 36), "×%s" % _zoom_text(),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
@@ -1045,7 +1029,12 @@ func _setup_world() -> void:
 	sun.light_energy = 1.35
 	sun.light_color = Color(1.0, 0.96, 0.88)
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 500.0
+	sun.directional_shadow_max_distance = 420.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.shadow_bias = 0.06
+	sun.shadow_normal_bias = 2.4
+	sun.shadow_blur = 1.0
+	sun.shadow_opacity = 0.9
 	add_child(sun)
 	_sun = sun
 	print("[世界] 天空 + 太阳已建")
@@ -1085,6 +1074,11 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("dem_size", Vector2(8192.0, 4096.0))
 	_map_mat.set_shader_parameter("noise_tex", nt)
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
+	# 地貌配色图：先 512x256 快速出图，再在线程里烘 1024x512 替换
+	var bimg := _bake_landform_color(512, 256)
+	_map_mat.set_shader_parameter("biome_tex", ImageTexture.create_from_image(bimg))
+	_lf_thread = Thread.new()
+	_lf_thread.start(func() -> void: _lf_hi = _bake_landform_color(1024, 512))
 	map_surface.material = _map_mat
 	_map_shader_ok = true
 	print("[地图] 着色器直绘就绪（%d MB 高程纹理）" % int(bytes.size() / 1048576))
@@ -1115,6 +1109,41 @@ func _build_world_tex() -> void:
 		var t1 := Time.get_ticks_msec()
 		_map_hi = TG.bake_map(MAP_HI_W, MAP_HI_H)
 		print("[地图] 高清烘焙耗时 %d ms" % (Time.get_ticks_msec() - t1)))
+
+
+## 按地貌类型烘焙配色图（地图用）
+func _bake_landform_color(bw: int, bh: int) -> Image:
+	var cbuf := PackedByteArray()
+	cbuf.resize(bw * bh * 3)
+	for by in bh:
+		var blat: float = 90.0 - (float(by) + 0.5) / float(bh) * 180.0
+		for bx in bw:
+			var blon: float = -180.0 + (float(bx) + 0.5) / float(bw) * 360.0
+			var bhgt: float = TG.macro_height(blon, blat)
+			var c: Color
+			if bhgt < -8.0:
+				c = Color(0.26, 0.33, 0.40)
+			else:
+				c = TG.landform_color(TG.landform_kind(blon, blat, bhgt))
+			var i3 := (by * bw + bx) * 3
+			cbuf[i3] = int(clampf(c.r, 0.0, 1.0) * 255.0)
+			cbuf[i3 + 1] = int(clampf(c.g, 0.0, 1.0) * 255.0)
+			cbuf[i3 + 2] = int(clampf(c.b, 0.0, 1.0) * 255.0)
+	return Image.create_from_data(bw, bh, false, Image.FORMAT_RGB8, cbuf)
+
+
+func _poll_lf_thread() -> void:
+	if _lf_thread == null or _lf_done:
+		return
+	if _lf_thread.is_alive():
+		return
+	_lf_thread.wait_to_finish()
+	_lf_done = true
+	if _lf_hi != null and not _lf_hi.is_empty() and _map_mat != null:
+		_map_mat.set_shader_parameter("biome_tex", ImageTexture.create_from_image(_lf_hi))
+		if map_open:
+			map_root.queue_redraw()
+		print("[地图] 高清地貌配色就绪")
 
 
 func _poll_map_thread() -> void:
@@ -1286,6 +1315,7 @@ func _process(delta: float) -> void:
 		_boot_spin += delta * 3.4
 		boot_bar.queue_redraw()
 	_poll_map_thread()
+	_poll_lf_thread()
 	if state != St.GAME:
 		return
 	if compass != null and player != null:

@@ -4,6 +4,7 @@ render_mode unshaded;
 // 世界地图：逐像素从高程纹理算地貌配色 + 地势阴影，放大到任意倍数都不会出现色块。
 uniform sampler2D dem_tex : filter_linear, repeat_disable;
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
+uniform sampler2D biome_tex : filter_linear, repeat_disable;
 uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
@@ -54,13 +55,13 @@ void fragment() {
 	float sy = (hy - h) / km_y;
 	float shade = clamp(0.62 - (sx * 0.55 + sy * 0.75) * 0.0030 * shade_gain, 0.16, 1.0);
 
-	float moist = texture(noise_tex, vec2(uv.x * 9.0, uv.y * 9.0)).r;
-	vec3 c = biome(lat, h, moist);
+	// 配色直接取游戏内同一套 biome 分类生成的低分辨率图，保证地图和地表一致
+	vec3 c = texture(biome_tex, uv).rgb;
 
 	// 古地图纸色
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));
 	vec3 paper = vec3(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04);
-	c = mix(c, paper, 0.55);
+	c = mix(c, paper, 0.30);
 
 	// 阴影叠上去
 	c = mix(c, vec3(0.30, 0.27, 0.22) * (0.45 + 0.75 * shade), shade_alpha);
