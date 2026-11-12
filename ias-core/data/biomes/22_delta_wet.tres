@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_8avxp"]
+
+[resource]
+script = ExtResource("1_8avxp")
+id = "delta_wet"
+display_name = "三角洲"
+category = "海岸"
+subtype = "三角洲"
+disp_tiles = Array[int]([4, 0])
+disp_amp = 1.0
+disp_scale = 260.0
+tex_tiles = Array[int]([9, 10, 2, 15])
+special_kind = 5
+special_density = 0.45
+grass = 0.55
+shrub = 0.12
+rock = 0.01
+tree = 0.1

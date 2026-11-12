@@ -872,7 +872,12 @@ const LF_LOESS := 14
 const LF_DUNE := 15
 const LF_GLACIAL := 16
 const LF_DELTA := 17
-const LF_COUNT := 18
+const LF_MTN_GRANITE := 18
+const LF_MTN_KARST := 19
+const LF_MTN_LOESS := 20
+const LF_MTN_VOLCANIC := 21
+const LF_MTN_ICE := 22
+const LF_COUNT := 23
 
 const MAT_NAMES := ["壤土", "砂质", "岩质"]
 
@@ -889,7 +894,8 @@ static func landform_material(lon: float, lat: float) -> int:
 
 const LF_NAMES := ["平原", "丘陵", "山地", "高原", "盆地", "河谷",
 		"荒漠", "草原", "森林", "湿地", "冰雪", "海岸",
-		"喀斯特", "雅丹", "黄土", "沙丘", "冰川谷", "三角洲"]
+		"喀斯特", "雅丹", "黄土", "沙丘", "冰川谷", "三角洲",
+		"花岗岩山地", "喀斯特山地", "黄土山地", "火山山地", "冰蚀山地"]
 
 
 ## 地貌形态：由海拔、坡度、相对起伏和气候代理共同决定。
@@ -930,7 +936,16 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		# 高海拔山谷 → 冰川谷
 		if h > 3000.0 and relief > 500.0:
 			return LF_GLACIAL
-		return LF_MOUNTAIN
+		# 山地按岩性/成因细分
+		if h > 3200.0:
+			return LF_MTN_ICE
+		if t > 15.0 and m > 0.45:
+			return LF_MTN_KARST
+		if absf(lat) > 24.0 and absf(lat) < 42.0 and m > 0.18 and m < 0.46 and h < 2200.0:
+			return LF_MTN_LOESS
+		if _vnoise(lon * 0.21 + 13.0, lat * 0.21 - 5.0, 9917) > 0.90:
+			return LF_MTN_VOLCANIC
+		return LF_MTN_GRANITE
 	if slope > 0.18 or relief > 260.0:
 		return LF_HILL
 
