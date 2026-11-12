@@ -32,6 +32,9 @@ var player: Node3D
 var ui_layer: CanvasLayer
 var menu_box: Control
 var hud_minimap: Control
+var compass: Control
+var _compass_yaw := 1e9
+var _compass_tex: GradientTexture2D
 var tab_cross: Control
 var map_root: Control
 var clock_label: Label
@@ -250,6 +253,27 @@ func _build_ui() -> void:
 	menu_box.add_child(ver)
 
 	# 小地图（右上）
+	# 方位条（上古卷轴式罗盘）
+	compass = Control.new()
+	compass.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	compass.position = Vector2(-260, 6)
+	compass.size = Vector2(520, 44)
+	compass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui_layer.add_child(compass)
+	compass.draw.connect(_draw_compass)
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.18, 0.82, 1.0])
+	g.colors = PackedColorArray([
+		Color(0.05, 0.04, 0.03, 0.0), Color(0.05, 0.04, 0.03, 0.72),
+		Color(0.05, 0.04, 0.03, 0.72), Color(0.05, 0.04, 0.03, 0.0)])
+	_compass_tex = GradientTexture2D.new()
+	_compass_tex.gradient = g
+	_compass_tex.width = 256
+	_compass_tex.height = 2
+	_compass_tex.fill_from = Vector2(0, 0)
+	_compass_tex.fill_to = Vector2(1, 0)
+	compass.visible = false
+
 	hud_minimap = Control.new()
 	hud_minimap.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	hud_minimap.position = Vector2(-200, 16)
@@ -573,6 +597,8 @@ func _dir_of(d: Vector2) -> int:
 
 func _open_map() -> void:
 	map_open = true
+	if compass != null:
+		compass.visible = false
 	map_root.visible = true
 	if map_backdrop != null:
 		map_backdrop.visible = true
@@ -684,6 +710,66 @@ func _travel_ll(ll: Vector2) -> void:
 
 
 # ---------------- 绘制 ----------------
+## 方位条：以正北为 0，顺时针。视野约 ±110°
+func _draw_compass() -> void:
+	if player == null:
+		return
+	var w: float = compass.size.x
+	var h: float = compass.size.y
+	var cx := w * 0.5
+	var cy := h * 0.5
+	var ppd := 2.4          # 像素 / 度
+	var heading := fposmod(-rad_to_deg(player.yaw), 360.0)
+
+	# 底板（两端渐隐）
+	compass.draw_texture_rect(_compass_tex, Rect2(0, 4, w, h - 4), false)
+	compass.draw_line(Vector2(cx - 210, h - 2), Vector2(cx + 210, h - 2), Color(0.72, 0.62, 0.40, 0.40), 1.0)
+
+	var font: Font = compass.get_theme_default_font()
+	var fsz := 13
+
+	# 刻度：每 15° 一根，45° 的写方位名
+	for deg in range(0, 360, 15):
+		var d := fposmod(float(deg) - heading + 180.0, 360.0) - 180.0
+		if absf(d) > 100.0:
+			continue
+		var x := cx + d * ppd
+		var major := deg % 45 == 0
+		var col := Color(0.92, 0.84, 0.62, 0.92 if major else 0.45)
+		var len := 7.0 if major else 4.0
+		compass.draw_line(Vector2(x, h - 4), Vector2(x, h - 4 - len), col, 1.5 if major else 1.0)
+		if major:
+			var nm: String = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"][deg / 45]
+			var ts: Vector2 = font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fsz)
+			compass.draw_string(font, Vector2(x - ts.x * 0.5, h - 14), nm,
+					HORIZONTAL_ALIGNMENT_LEFT, -1, fsz, Color(0.95, 0.88, 0.68, 0.95))
+
+	# 中心指示
+	compass.draw_colored_polygon(PackedVector2Array([
+		Vector2(cx, h - 2), Vector2(cx - 5, h + 5), Vector2(cx + 5, h + 5)]),
+		Color(0.96, 0.82, 0.48))
+	compass.draw_line(Vector2(cx, 4), Vector2(cx, h - 4), Color(0.96, 0.82, 0.48, 0.35), 1.0)
+
+	# 地标：城市 + 旅行标
+	var marks: Array = []
+	if terrain != null:
+		for c in TG.cities():
+			marks.append([Vector2(float(c["lon"]), float(c["lat"])), Color(0.90, 0.72, 0.38), str(c["name"])])
+		if has_pin:
+			marks.append([pin_ll, Color(0.86, 0.36, 0.24), "标的"])
+	for m in marks:
+		var ll: Vector2 = m[0]
+		var dx: float = (ll.x - terrain.center_lon) * 111320.0 * cos(deg_to_rad(terrain.center_lat))
+		var dz: float = -(ll.y - terrain.center_lat) * 110540.0
+		var brg := fposmod(rad_to_deg(atan2(dx, -dz)), 360.0)
+		var d2 := fposmod(brg - heading + 180.0, 360.0) - 180.0
+		if absf(d2) > 105.0:
+			continue
+		var mx := cx + d2 * ppd
+		compass.draw_colored_polygon(PackedVector2Array([
+			Vector2(mx, 5), Vector2(mx + 4, 10), Vector2(mx, 15), Vector2(mx - 4, 10)]), m[1])
+
+
 func _draw_minimap() -> void:
 	var c := Vector2(90.0, 90.0)
 	# 底盘 + 外框
@@ -850,6 +936,22 @@ func _draw_map() -> void:
 	# 标题与缩放读数
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x * 0.5 - 44, 44), "天下舆图",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(0.86, 0.78, 0.60))
+	var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(map_center.y)), 0.05) / (MAP_W * map_zoom)
+	var span_km := 500.0
+	var span_px := span_km / km_per_px
+	while span_px > 240.0:
+		span_km *= 0.5
+		span_px = span_km / km_per_px
+	while span_px < 80.0:
+		span_km *= 2.0
+		span_px = span_km / km_per_px
+	var sbx := 96.0
+	var sby := vs.y - 62.0
+	map_root.draw_line(Vector2(sbx, sby), Vector2(sbx + span_px, sby), Color(0.22, 0.16, 0.09, 0.95), 2.5)
+	map_root.draw_line(Vector2(sbx, sby - 4), Vector2(sbx, sby + 4), Color(0.22, 0.16, 0.09, 0.95), 2.5)
+	map_root.draw_line(Vector2(sbx + span_px, sby - 4), Vector2(sbx + span_px, sby + 4), Color(0.22, 0.16, 0.09, 0.95), 2.5)
+	map_root.draw_string(ThemeDB.fallback_font, Vector2(sbx, sby - 8), "%d 里" % int(span_km * 2.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.20, 0.14, 0.08))
+
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x - 132, vs.y - 36), "×%s" % _zoom_text(),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
@@ -1186,6 +1288,11 @@ func _process(delta: float) -> void:
 	_poll_map_thread()
 	if state != St.GAME:
 		return
+	if compass != null and player != null:
+		compass.visible = true
+		if absf(player.yaw - _compass_yaw) > 0.0004:
+			_compass_yaw = player.yaw
+			compass.queue_redraw()
 	clock_min += delta * TIME_SCALE
 	_clock_acc += delta
 	if _clock_acc < 0.25:
