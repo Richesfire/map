@@ -1,4 +1,4 @@
-# 数据与仓库说明
+﻿# 数据与仓库说明
 
 仓库里**只放代码、配置、文档和贴图**；运行所需的高程数据放在 GitHub Release 附件里。
 
@@ -24,6 +24,11 @@ python tools/get_data.py          # 下载并解压约 280 MB 数据包
 | cities.json | — | 手工城市（咸阳） |
 | textures/ | 18 MB | 地表 / 法线 / 树皮 / 叶簇 / 草叶图集 |
 | biomes/ | — | 12 个地貌 `.tres` 配置 |
+
+## 自检
+
+双击 `run_tests.bat`（或 `powershell -ExecutionPolicy Bypass -File tools/run_tests.ps1`）跑全部 7 项自检，约 90 秒。
+Godot 不在默认路径时，先设置环境变量 `GODOT_EXE`。
 
 ## 为什么不用 LFS
 
