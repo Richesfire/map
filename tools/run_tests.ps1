@@ -67,7 +67,7 @@ foreach ($t in $tests) {
 Write-Host ''
 Write-Host '================ summary ================' -ForegroundColor Cyan
 $results | Format-Table -AutoSize
-$failed = ($results | Where-Object { $_.State -ne 'PASS' }).Count
+$failed = @($results | Where-Object { $_.State -ne 'PASS' }).Count
 if ($failed -gt 0) {
     Write-Host "$failed test(s) failed" -ForegroundColor Red
     exit 1
