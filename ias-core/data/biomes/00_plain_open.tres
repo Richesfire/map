@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_naey2"]
+
+[resource]
+script = ExtResource("1_naey2")
+id = "plain_open"
+display_name = "开阔平原"
+category = "平原"
+subtype = "开阔平原"
+disp_tiles = Array[int]([0, 1])
+disp_amp = 2.2
+disp_scale = 420.0
+tex_tiles = Array[int]([0, 2, 1, 3])
+grass = 0.55
+shrub = 0.06
+rock = 0.02
+tree = 0.04

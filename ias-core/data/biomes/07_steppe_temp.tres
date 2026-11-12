@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_t5yga"]
+
+[resource]
+script = ExtResource("1_t5yga")
+id = "steppe_temp"
+display_name = "温带草原"
+category = "草原"
+subtype = "温带草原"
+disp_tiles = Array[int]([1, 0])
+disp_amp = 2.4
+disp_scale = 520.0
+tex_tiles = Array[int]([1, 13, 0, 3])
+grass = 0.7
+shrub = 0.06
+rock = 0.02
+tree = 0.05

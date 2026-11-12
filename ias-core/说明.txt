@@ -1,0 +1,14 @@
+﻿ias-core 是游戏运行必需的核心资源，请不要删除。
+
+data\
+  dem2k.bin     全球 2.4km 高程（R16，16384x8192，256 MB）← 地形主数据
+  dem2k.json    投影信息
+  dem.bin       全球 9.8km 高程（备用 + 世界地图底图）
+  land_mask.bin 海陆掩膜（世界地图用）
+
+assets\
+  character.glb 人物模型（暂用胶囊，保留备用）
+  horse.glb     马模型（暂不做马）
+
+游戏项目 ias\data 是指向本目录 data 的目录联接（junction）。
+如果删除本目录，游戏会变成平地。

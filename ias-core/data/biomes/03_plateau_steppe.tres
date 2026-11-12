@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_ajcmq"]
+
+[resource]
+script = ExtResource("1_ajcmq")
+id = "plateau_steppe"
+display_name = "草原高原"
+category = "高原"
+subtype = "草原高原"
+disp_tiles = Array[int]([1, 0])
+disp_amp = 3.0
+disp_scale = 480.0
+tex_tiles = Array[int]([1, 3, 0, 2])
+grass = 0.5
+shrub = 0.05
+rock = 0.06
+tree = 0.03

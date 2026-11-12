@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_ksfuf"]
+
+[resource]
+script = ExtResource("1_ksfuf")
+id = "coast_beach"
+display_name = "沙滩"
+category = "海岸"
+subtype = "沙滩"
+disp_tiles = Array[int]([3, 0])
+disp_amp = 1.0
+disp_scale = 260.0
+tex_tiles = Array[int]([15, 7, 4, 3])
+grass = 0.12
+shrub = 0.04
+rock = 0.06
+tree = 0.05

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_odt0b"]
+
+[resource]
+script = ExtResource("1_odt0b")
+id = "mountain_mid"
+display_name = "中山"
+category = "山地"
+subtype = "中山"
+disp_tiles = Array[int]([2, 5])
+disp_amp = 6.0
+disp_scale = 300.0
+tex_tiles = Array[int]([5, 6, 11, 3])
+grass = 0.18
+shrub = 0.1
+rock = 0.3
+tree = 0.3

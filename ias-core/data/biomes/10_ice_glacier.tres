@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_enwp2"]
+
+[resource]
+script = ExtResource("1_enwp2")
+id = "ice_glacier"
+display_name = "冰川"
+category = "冰雪地貌"
+subtype = "冰川"
+disp_tiles = Array[int]([2, 5])
+disp_amp = 3.2
+disp_scale = 520.0
+tex_tiles = Array[int]([8, 5, 6, 11])
+rock = 0.18

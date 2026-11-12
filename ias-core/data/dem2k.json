@@ -1,0 +1,1 @@
+{"projection":"equirectangular","lon0":-180.0,"lon1":180.0,"lat0":90.0,"lat1":-90.0,"w":16384,"h":8192,"km_per_px":2.44598388671875,"encoding":"R16LE  h = raw/65535*20000-11000 (m)","source":"Terrarium z=6 4096 tiles, rebuilt 2026-11-11"}

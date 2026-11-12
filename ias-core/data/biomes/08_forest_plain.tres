@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_4bsnp"]
+
+[resource]
+script = ExtResource("1_4bsnp")
+id = "forest_plain"
+display_name = "平原森林"
+category = "森林地貌"
+subtype = "平原森林"
+disp_tiles = Array[int]([0, 1])
+disp_amp = 2.8
+disp_scale = 420.0
+tex_tiles = Array[int]([14, 2, 3, 10])
+grass = 0.35
+shrub = 0.16
+rock = 0.02
+tree = 0.65

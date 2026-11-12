@@ -1,0 +1,25 @@
+# Godot 编辑器缓存
+ias/.godot/
+ias/.import/
+
+# Python / 临时文件
+__pycache__/
+*.pyc
+*.tmp
+*.log
+
+# 瓦片缓存、原始压缩包（体积大，可重新下载）
+_tiles_cache/
+*.zip
+C:/Users/12980/Downloads/acg_cache/
+
+# 明确不提交的坏数据与备份
+ias-core/data/dem2k_broken.bin
+项目备份/
+
+# 系统文件
+Thumbs.db
+desktop.ini
+
+# ias\data 是指向 ias-core\data 的目录联接，只保留一份
+ias/data/

@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_ap1fr"]
+
+[resource]
+script = ExtResource("1_ap1fr")
+id = "basin_flat"
+display_name = "平坦盆地"
+category = "盆地"
+subtype = "平坦盆地"
+disp_tiles = Array[int]([0, 1])
+disp_amp = 1.8
+disp_scale = 520.0
+tex_tiles = Array[int]([0, 3, 1, 2])
+grass = 0.52
+shrub = 0.07
+rock = 0.03
+tree = 0.1

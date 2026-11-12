@@ -1,0 +1,82 @@
+[
+ {
+  "slot": 0,
+  "asset": "Grass004",
+  "ok": true
+ },
+ {
+  "slot": 1,
+  "asset": "Grass001",
+  "ok": true
+ },
+ {
+  "slot": 2,
+  "asset": "Grass005",
+  "ok": true
+ },
+ {
+  "slot": 3,
+  "asset": "Ground037",
+  "ok": true
+ },
+ {
+  "slot": 4,
+  "asset": "Gravel022",
+  "ok": true
+ },
+ {
+  "slot": 5,
+  "asset": "Rock030",
+  "ok": true
+ },
+ {
+  "slot": 6,
+  "asset": "Rock035",
+  "ok": true
+ },
+ {
+  "slot": 7,
+  "asset": "Ground064",
+  "ok": true
+ },
+ {
+  "slot": 8,
+  "asset": "Snow006",
+  "ok": true
+ },
+ {
+  "slot": 9,
+  "asset": "Ground048",
+  "ok": true
+ },
+ {
+  "slot": 10,
+  "asset": "Ground054",
+  "ok": true
+ },
+ {
+  "slot": 11,
+  "asset": "Ground046",
+  "ok": true
+ },
+ {
+  "slot": 12,
+  "asset": "Ground033",
+  "ok": true
+ },
+ {
+  "slot": 13,
+  "asset": "Grass007",
+  "ok": true
+ },
+ {
+  "slot": 14,
+  "asset": "Moss001",
+  "ok": true
+ },
+ {
+  "slot": 15,
+  "asset": "Ground080",
+  "ok": true
+ }
+]
