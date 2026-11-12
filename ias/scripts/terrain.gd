@@ -5,10 +5,10 @@ extends Node3D
 const TG := preload("res://scripts/terrain_gen.gd")
 const BiomeLib := preload("res://scripts/biome_library.gd")
 
-const N_THETA := 128
+const N_THETA := 160
 const R_MIN := 6.0
 const R_MAX := 90000.0
-const Q := 1.055
+const Q := 1.062
 const COLLIDE_R := 5000.0
 
 const DEM2K_W := 16384
@@ -524,6 +524,109 @@ func _make_rock() -> ArrayMesh:
 	return st.commit()
 
 
+## 石芽/风蚀柱：上细下粗的锥柱，带噪声
+func _make_spire(ratio: float, seed_i: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seg := 6
+	var levels := 5
+	for li in levels:
+		var y0 := float(li) / float(levels)
+		var y1 := float(li + 1) / float(levels)
+		var r0 := (1.0 - y0 * 0.85) * 0.5
+		var r1 := (1.0 - y1 * 0.85) * 0.5
+		for s in seg:
+			var a0 := TAU * float(s) / float(seg)
+			var a1 := TAU * float(s + 1) / float(seg)
+			var n := 0.82 + 0.36 * TG._vnoise(float(li) * 1.7, float(s) * 0.9, seed_i)
+			var p00 := Vector3(cos(a0) * r0 * n, y0, sin(a0) * r0 * n)
+			var p01 := Vector3(cos(a1) * r0 * n, y0, sin(a1) * r0 * n)
+			var p10 := Vector3(cos(a0) * r1 * n, y1, sin(a0) * r1 * n)
+			var p11 := Vector3(cos(a1) * r1 * n, y1, sin(a1) * r1 * n)
+			st.add_vertex(p00)
+			st.add_vertex(p11)
+			st.add_vertex(p10)
+			st.add_vertex(p00)
+			st.add_vertex(p01)
+			st.add_vertex(p11)
+	st.generate_normals()
+	return st.commit()
+
+
+## 芦苇：几根细长片
+func _make_reeds() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 515
+	for i in 7:
+		var a := rng.randf() * TAU
+		var r := rng.randf() * 0.25
+		var bx := cos(a) * r
+		var bz := sin(a) * r
+		var h := 0.9 + rng.randf() * 0.8
+		var w := 0.035
+		var lean := (rng.randf() - 0.5) * 0.3
+		st.add_vertex(Vector3(bx - w, 0.0, bz))
+		st.add_vertex(Vector3(bx + w, 0.0, bz))
+		st.add_vertex(Vector3(bx + lean, h, bz))
+		st.add_vertex(Vector3(bx - w, 0.0, bz))
+		st.add_vertex(Vector3(bx + lean, h, bz))
+		st.add_vertex(Vector3(bx - w + lean, h, bz))
+	st.generate_normals()
+	return st.commit()
+
+
+## 只在该地貌自己的区域撒专属杂物
+func _scatter_special(mesh: Mesh, target: int, radius: float, seed_i: int,
+		smin: float, smax: float, tint: Color, kind: int, match_lf: int) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = target
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_i
+	var placed := 0
+	var guard := 0
+	while placed < target and guard < target * 20:
+		guard += 1
+		var ang := rng.randf() * TAU
+		var rad := sqrt(rng.randf()) * radius
+		var x := cos(ang) * rad
+		var z := sin(ang) * rad
+		var ll := lonlat_of(x, z)
+		if TG.city_blend(ll.x, ll.y).x > 0.3:
+			continue
+		var hr := TG.dem_at(ll.x, ll.y)
+		if TG.landform_kind(ll.x, ll.y, hr) != match_lf:
+			continue
+		var prof: Dictionary = TG.BiomeLib.profile_for(match_lf)
+		if int(prof.get("special_kind", 0)) != kind:
+			continue
+		if rng.randf() > float(prof.get("special_density", 0.0)):
+			continue
+		var h := TG.height_xyz(x, z, center_lon, center_lat, spacing_at(rad))
+		var s := rng.randf_range(smin, smax)
+		var tr := Transform3D()
+		tr = tr.scaled(Vector3(s, s * rng.randf_range(0.8, 1.35), s))
+		tr = tr.rotated(Vector3.UP, rng.randf() * TAU)
+		tr.origin = Vector3(x, h - 0.1, z)
+		mm.set_instance_transform(placed, tr)
+		var k := rng.randf_range(0.85, 1.15)
+		mm.set_instance_color(placed, Color(tint.r * k, tint.g * k, tint.b * k))
+		placed += 1
+	mm.instance_count = placed
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.95
+	node.material_override = mat
+	print("[杂物] 专属 %d 号 放了 %d 个（守卫 %d 次）" % [kind, placed, guard])
+	return node
+
+
 func _build_props() -> void:
 	if _veg == null:
 		return
@@ -546,6 +649,26 @@ func _build_props() -> void:
 			Color(0.20, 0.30, 0.14), "shrub"))
 	_veg.add_child(_scatter_props(rm, 1400, 1200.0, 7003, 0.35, 1.1,
 			Color(0.42, 0.41, 0.38), "rock"))
+
+	# 各地貌的专属杂物（石芽 / 风蚀柱 / 土柱 / 漂砾 / 芦苇）
+	var spire_a := _make_spire(1.0, 331)
+	var spire_b := _make_spire(1.4, 332)
+	var reeds := _make_reeds()
+	var boulder := _make_rock()
+	var specials := [
+		[12, spire_a, Color(0.56, 0.54, 0.50), 900.0, 0.7, 2.4, 1],   # 喀斯特石芽
+		[13, spire_b, Color(0.60, 0.48, 0.36), 1100.0, 1.2, 3.6, 2],  # 雅丹风蚀柱
+		[14, spire_a, Color(0.58, 0.47, 0.33), 900.0, 0.6, 2.0, 3],   # 黄土土柱
+		[2, boulder, Color(0.46, 0.45, 0.43), 1000.0, 0.8, 2.8, 4],   # 山地漂砾
+		[16, boulder, Color(0.50, 0.52, 0.54), 1000.0, 1.0, 3.4, 4],  # 冰川漂砾
+		[17, reeds, Color(0.34, 0.42, 0.20), 260.0, 0.8, 1.4, 5],     # 三角洲芦苇
+	]
+	for sp in specials:
+		var match_lf: int = sp[0]
+		var mesh: Mesh = sp[1]
+		var col: Color = sp[2]
+		var rad: float = sp[3]
+		_veg.add_child(_scatter_special(mesh, 700, rad, 7100 + match_lf, float(sp[4]), float(sp[5]), col, int(sp[6]), match_lf))
 	print("[植被] 杂物：草/灌木/岩石 已撒")
 
 

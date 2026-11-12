@@ -22,6 +22,8 @@ func _init() -> void:
 		for v in d["tex_tiles"]:
 			tt.append(int(v))
 		p.tex_tiles = tt
+		p.special_kind = int(d.get("special_kind", 0))
+		p.special_density = float(d.get("special_density", 0.0))
 		p.grass = float(d["grass"])
 		p.shrub = float(d["shrub"])
 		p.rock = float(d["rock"])

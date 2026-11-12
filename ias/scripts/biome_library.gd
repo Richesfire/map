@@ -25,6 +25,7 @@ const DEFAULTS := [
 		"disp_tiles": [2, 5], "disp_amp": 6.0, "disp_scale": 300.0,
 		"tex_tiles": [5, 6, 11, 3],
 		"grass": 0.18, "shrub": 0.10, "rock": 0.30, "tree": 0.30,
+		"special_kind": 4, "special_density": 0.12,
 	},
 	{
 		"id": "plateau_steppe", "display_name": "草原高原", "category": "高原", "subtype": "草原高原",
@@ -82,39 +83,45 @@ const DEFAULTS := [
 	},
 	{
 		"id": "karst_cone", "display_name": "喀斯特峰丛", "category": "喀斯特", "subtype": "峰丛洼地",
-		"disp_tiles": [6, 5], "disp_amp": 2.4, "disp_scale": 380.0,
+		"disp_tiles": [6, 5], "disp_amp": 5.0, "disp_scale": 300.0,
 		"tex_tiles": [5, 10, 3, 11],
 		"grass": 0.30, "shrub": 0.20, "rock": 0.25, "tree": 0.30,
+		"special_kind": 1, "special_density": 0.28,
 	},
 	{
 		"id": "yardang", "display_name": "雅丹", "category": "荒漠", "subtype": "风蚀垄",
-		"disp_tiles": [7, 3], "disp_amp": 2.8, "disp_scale": 600.0,
+		"disp_tiles": [7, 3], "disp_amp": 4.5, "disp_scale": 420.0,
 		"tex_tiles": [7, 4, 3, 11],
 		"grass": 0.02, "shrub": 0.03, "rock": 0.15, "tree": 0.0,
+		"special_kind": 2, "special_density": 0.30,
 	},
 	{
 		"id": "loess_yuan", "display_name": "黄土塬", "category": "高原", "subtype": "黄土塬",
-		"disp_tiles": [8, 3], "disp_amp": 3.2, "disp_scale": 420.0,
+		"disp_tiles": [8, 3], "disp_amp": 5.0, "disp_scale": 340.0,
 		"tex_tiles": [1, 3, 0, 4],
 		"grass": 0.45, "shrub": 0.08, "rock": 0.05, "tree": 0.06,
+		"special_kind": 3, "special_density": 0.10,
 	},
 	{
 		"id": "dune_sand", "display_name": "沙丘", "category": "荒漠", "subtype": "沙丘",
-		"disp_tiles": [3, 3], "disp_amp": 3.0, "disp_scale": 700.0,
+		"disp_tiles": [3, 3], "disp_amp": 4.2, "disp_scale": 520.0,
 		"tex_tiles": [7, 7, 3, 4],
 		"grass": 0.01, "shrub": 0.02, "rock": 0.03, "tree": 0.0,
+		"special_kind": 1, "special_density": 0.04,
 	},
 	{
 		"id": "glacial_valley", "display_name": "冰川谷", "category": "冰雪地貌", "subtype": "U 形谷",
-		"disp_tiles": [2, 5], "disp_amp": 3.4, "disp_scale": 520.0,
+		"disp_tiles": [2, 5], "disp_amp": 5.5, "disp_scale": 460.0,
 		"tex_tiles": [8, 5, 6, 11],
 		"grass": 0.02, "shrub": 0.0, "rock": 0.22, "tree": 0.05,
+		"special_kind": 4, "special_density": 0.22,
 	},
 	{
 		"id": "delta_wet", "display_name": "三角洲", "category": "海岸", "subtype": "三角洲",
 		"disp_tiles": [4, 0], "disp_amp": 1.0, "disp_scale": 260.0,
 		"tex_tiles": [9, 10, 2, 15],
 		"grass": 0.55, "shrub": 0.12, "rock": 0.01, "tree": 0.10,
+		"special_kind": 5, "special_density": 0.45,
 	},
 ]
 
@@ -128,6 +135,7 @@ static func _to_dict(p: Resource) -> Dictionary:
 		"category": p.category, "subtype": p.subtype,
 		"disp_tiles": p.disp_tiles, "disp_amp": p.disp_amp, "disp_scale": p.disp_scale,
 		"tex_tiles": p.tex_tiles,
+		"special_kind": p.special_kind, "special_density": p.special_density,
 		"grass": p.grass, "shrub": p.shrub, "rock": p.rock, "tree": p.tree,
 	}
 

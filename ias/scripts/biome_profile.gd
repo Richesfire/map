@@ -16,6 +16,10 @@ class_name BiomeProfile
 @export var tex_tiles: Array[int] = []
 
 # 环境杂物堆密度
+# 专属杂物：0 无 / 1 石芽 / 2 风蚀柱 / 3 土柱 / 4 漂砾 / 5 芦苇
+@export var special_kind: int = 0
+@export var special_density: float = 0.0
+
 @export var grass: float = 0.0
 @export var shrub: float = 0.0
 @export var rock: float = 0.0
