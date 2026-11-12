@@ -40,7 +40,6 @@ $tests = @(
     @{ Name = 'selftest';   Args = @('--selftest');   Window = $false },
     @{ Name = 'maptest';    Args = @('--maptest');    Window = $false },
     @{ Name = 'bugtest';    Args = @('--bugtest');    Window = $true  },
-    @{ Name = 'combattest'; Args = @('--combattest'); Window = $true  }
 )
 
 $results = @()

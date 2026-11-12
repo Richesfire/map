@@ -443,7 +443,7 @@ func _scatter_props(mesh: Mesh, target: int, radius: float, seed_i: int,
 	rng.seed = seed_i
 	var placed := 0
 	var guard := 0
-	while placed < target and guard < target * 14:
+	while placed < target and guard < target * 6:
 		guard += 1
 		var ang := rng.randf() * TAU
 		var rad := sqrt(rng.randf()) * radius
@@ -591,7 +591,7 @@ func _scatter_special(mesh: Mesh, target: int, radius: float, seed_i: int,
 	rng.seed = seed_i
 	var placed := 0
 	var guard := 0
-	while placed < target and guard < target * 20:
+	while placed < target and guard < target * 5:
 		guard += 1
 		var ang := rng.randf() * TAU
 		var rad := sqrt(rng.randf()) * radius
@@ -670,7 +670,7 @@ func _build_props() -> void:
 		var mesh: Mesh = sp[1]
 		var col: Color = sp[2]
 		var rad: float = sp[3]
-		_veg.add_child(_scatter_special(mesh, 700, rad, 7100 + match_lf, float(sp[4]), float(sp[5]), col, int(sp[6]), match_lf))
+		_veg.add_child(_scatter_special(mesh, 350, rad, 7100 + match_lf, float(sp[4]), float(sp[5]), col, int(sp[6]), match_lf))
 	print("[植被] 杂物：草/灌木/岩石 已撒")
 
 
@@ -860,7 +860,7 @@ func _build_vegetation() -> void:
 	var guard := 0
 	var radius := 2600.0
 	var count := 11000
-	while counts[0] + counts[1] + counts[2] < count and guard < 70000:
+	while counts[0] + counts[1] + counts[2] < count and guard < 40000:
 		guard += 1
 		var ang := rng.randf() * TAU
 		var rad := sqrt(rng.randf()) * radius

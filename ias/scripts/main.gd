@@ -52,11 +52,7 @@ var _debug_air := 0.0
 var _debug_hour := -1.0
 var _debug_demtest := PackedStringArray()
 var city_labels: Array = []
-var hud_health: Control
-var incoming_label: Label
-var _incoming_timer: Timer
 var soul_hint: Label
-var hurt_flash: ColorRect
 var _flash := 0.0
 var _mini_pos := Vector2(1e9, 1e9)
 var _mini_yaw := 999.0
@@ -132,14 +128,12 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_build_world_tex()
 	var uargs := OS.get_cmdline_user_args()
-	if uargs.has("--start") or uargs.has("--combattest") or uargs.has("--bugtest"):
+	if uargs.has("--start") or uargs.has("--bugtest"):
 		_boot_text("正在生成地形……")
 		await get_tree().process_frame
 		await get_tree().process_frame
 		await _start_game()
-		if uargs.has("--combattest"):
-			_combat_test()
-		elif uargs.has("--bugtest"):
+		if uargs.has("--bugtest"):
 			_bug_test()
 		elif _debug_shot != "":
 			_take_shot(_debug_shot, _debug_shot_delay)
@@ -284,30 +278,8 @@ func _build_ui() -> void:
 	ui_layer.add_child(info_label)
 
 	# 生命条（左下）
-	hud_health = Control.new()
-	hud_health.set_anchors_preset(Control.PRESET_FULL_RECT)
-	hud_health.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui_layer.add_child(hud_health)
-	hud_health.draw.connect(_draw_health)
 
 	# 来袭方向提示（定向格挡用）
-	incoming_label = Label.new()
-	incoming_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	incoming_label.position = Vector2(-200, -78)
-	incoming_label.size = Vector2(400, 30)
-	incoming_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	incoming_label.add_theme_font_size_override("font_size", 22)
-	incoming_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
-	incoming_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
-	incoming_label.add_theme_constant_override("shadow_offset_x", 2)
-	incoming_label.add_theme_constant_override("shadow_offset_y", 2)
-	incoming_label.visible = false
-	ui_layer.add_child(incoming_label)
-	_incoming_timer = Timer.new()
-	_incoming_timer.one_shot = true
-	_incoming_timer.wait_time = 0.8
-	_incoming_timer.timeout.connect(func() -> void: incoming_label.visible = false)
-	add_child(_incoming_timer)
 
 	# 灵魂模式提示
 	soul_hint = Label.new()
@@ -325,11 +297,6 @@ func _build_ui() -> void:
 	ui_layer.add_child(soul_hint)
 
 	# 受伤红屏
-	hurt_flash = ColorRect.new()
-	hurt_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
-	hurt_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hurt_flash.color = Color(0.55, 0.05, 0.03, 0.0)
-	ui_layer.add_child(hurt_flash)
 
 	# 提示条（旅行耗时等）
 	toast_label = Label.new()
@@ -446,16 +413,6 @@ func _style_button(b: Button) -> void:
 	b.add_theme_stylebox_override("focus", h)
 
 
-func _freeze_enemies(frozen: bool) -> void:
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if not is_instance_valid(e):
-			continue
-		e.set_physics_process(not frozen)
-		if not frozen and terrain != null:
-			e.global_position.y = terrain.height_xyz(e.global_position.x, e.global_position.z) + 1.2
-			e.velocity = Vector3.ZERO
-
-
 func _on_build_progress(p: float) -> void:
 	_boot_set(0.05 + p * 0.78)
 
@@ -489,9 +446,7 @@ func _start_game() -> void:
 		terrain.center_lat = _debug_center.y
 		need_rebuild = true
 		print("[调试] 地形中心 -> %.3f, %.3f" % [terrain.center_lon, terrain.center_lat])
-	_freeze_enemies(true)
 	await terrain.build(_on_build_progress)
-	_freeze_enemies(false)
 	_boot_text("正在布置植被……")
 	_boot_set(0.88)
 	await get_tree().process_frame
@@ -527,13 +482,6 @@ func _start_game() -> void:
 	tmr.timeout.connect(_save_game)
 	add_child(tmr)
 
-	player.hurt.connect(_on_player_hurt)
-	player.died.connect(_on_player_died)
-	player.incoming.connect(_on_incoming)
-	var args := OS.get_cmdline_user_args()
-	for a in args:
-		if a.begins_with("--enemies="):
-			_spawn_enemies(maxi(int(a.substr(10)), 1))
 	_update_hud()
 	_update_sun()
 	_hide_boot()
@@ -714,9 +662,7 @@ func _travel_ll(ll: Vector2) -> void:
 	clock_min += days * 1440.0
 	terrain.center_lon = ll.x
 	terrain.center_lat = ll.y
-	_freeze_enemies(true)
 	await terrain.build(_on_build_progress)
-	_freeze_enemies(false)
 	_boot_text("正在布置植被……")
 	_boot_set(0.9)
 	await get_tree().process_frame
@@ -729,9 +675,6 @@ func _travel_ll(ll: Vector2) -> void:
 	print("[旅行] -> %.2f, %.2f（%.0f 公里，%.1f 日）" % [ll.x, ll.y, dist_km, days])
 
 	# 跨区域旅行：旧区域的敌兵不保留
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e):
-			e.queue_free()
 	_mini_pos = Vector2(1e9, 1e9)
 	_traveling = false
 
@@ -1176,19 +1119,14 @@ func _do_recenter(px: float, pz: float) -> void:
 	var clat: float = terrain.center_lat
 	terrain.center_lon = wrapf(terrain.center_lon + px / (111320.0 * cos(deg_to_rad(clat))) + 180.0, 0.0, 360.0) - 180.0
 	terrain.center_lat = clampf(clat - pz / 110540.0, -85.0, 85.0)
-	_freeze_enemies(true)
 	await terrain.build(_on_build_progress)
 	_boot_text("正在布置植被……")
 	_boot_set(0.9)
 	await get_tree().process_frame
 	terrain._build_vegetation()
 	# 世界坐标整体平移：其它实体要跟玩家一起挪，否则会悬在半空/埋进地下
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e):
-			e.global_position -= Vector3(px, 0.0, pz)
 	player.global_position = Vector3(0.0, terrain.height_xyz(0, 0) + 3.0, 0.0)
 	player.velocity = Vector3.ZERO
-	_freeze_enemies(false)
 	_mini_pos = Vector2(1e9, 1e9)
 	_update_hud()
 	_hide_boot()
@@ -1255,8 +1193,6 @@ func _process(delta: float) -> void:
 	_clock_acc = 0.0
 	_update_hud()
 	_update_sun()
-	if hud_health != null:
-		hud_health.queue_redraw()
 	if hud_minimap != null and player != null:
 		var pp := Vector2(player.global_position.x, player.global_position.z)
 		if pp.distance_to(_mini_pos) > 12.0 or absf(player.yaw - _mini_yaw) > 0.08:
@@ -1264,8 +1200,6 @@ func _process(delta: float) -> void:
 			_mini_yaw = player.yaw
 			hud_minimap.queue_redraw()
 	_flash = maxf(_flash - delta * 1.8, 0.0)
-	if hurt_flash != null:
-		hurt_flash.color.a = _flash
 	_maybe_recenter()
 	_rescue()
 
@@ -1669,31 +1603,6 @@ func _city_test() -> void:
 	get_tree().quit()
 
 
-func _draw_health() -> void:
-	if player == null or hud_health == null:
-		return
-	var vs := get_viewport().get_visible_rect().size
-	var w := 280.0
-	var h := 20.0
-	var p := Vector2(24, vs.y - 56)
-	var f := clampf(float(player.hp) / maxf(float(player.max_hp), 1.0), 0.0, 1.0)
-	hud_health.draw_rect(Rect2(p, Vector2(w, h)), Color(0.10, 0.08, 0.06, 0.85))
-	hud_health.draw_rect(Rect2(p + Vector2(2, 2), Vector2((w - 4.0) * f, h - 4.0)), Color(0.72, 0.20, 0.14))
-	hud_health.draw_rect(Rect2(p, Vector2(w, h)), Color(0.70, 0.60, 0.40, 0.9), false, 2.0)
-	var txt := "生命 %d / %d" % [int(round(player.hp)), int(round(player.max_hp))]
-	hud_health.draw_string(ThemeDB.fallback_font, p + Vector2(8, 15), txt,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.95, 0.90, 0.78))
-	if player.blocking:
-		var bd := {"left": "左", "right": "右", "up": "上", "down": "下"}
-		hud_health.draw_string(ThemeDB.fallback_font, p + Vector2(w + 14, 15),
-				"格挡 " + String(bd.get(player.block_dir, "")),
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.55, 0.80, 0.95))
-	var n := get_tree().get_nodes_in_group("enemies").size()
-	if n > 0:
-		hud_health.draw_string(ThemeDB.fallback_font, p + Vector2(w + 14, 15), "敌 %d" % n,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.85, 0.55, 0.35))
-
-
 func _spawn_enemy(offset: Vector3) -> Node3D:
 	var e: Node3D = load("res://scripts/enemy.gd").new()
 	add_child(e)
@@ -1704,93 +1613,6 @@ func _spawn_enemy(offset: Vector3) -> Node3D:
 	return e
 
 
-func _spawn_enemies(n: int) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 90210
-	for i in n:
-		var a := rng.randf() * TAU
-		var r := 14.0 + rng.randf() * 12.0
-		_spawn_enemy(Vector3(cos(a) * r, 0.0, sin(a) * r))
-	toast("附近出现 %d 名盗匪" % n)
-
-
-func _on_incoming(dir: String) -> void:
-	if incoming_label == null:
-		return
-	var nm := {"left": "左", "right": "右", "up": "上", "thrust": "下刺"}
-	incoming_label.text = "来袭：%s  （右键格挡 %s）" % [nm.get(dir, dir),
-			{"left": "左", "right": "右", "up": "上", "thrust": "下"}.get(dir, dir)]
-	incoming_label.visible = true
-	_incoming_timer.start()
-
-
-func _on_player_hurt(amount: float) -> void:
-	_flash = minf(_flash + 0.30 + amount * 0.01, 0.75)
-
-
-func _on_player_died() -> void:
-	if _dead:
-		return
-	_dead = true
-	toast("你倒下了……")
-	await get_tree().create_timer(2.0).timeout
-	player.respawn()
-	_dead = false
-	toast("整装再战")
-
-
-## 战斗自测：命中 / 敌人反击 / 击杀
-func _combat_test() -> void:
-	await get_tree().create_timer(0.4).timeout
-	# 四向判定（规则同 IAS-main：|x|>|y| 分左右，否则分上劈/下刺）
-	print("[战斗] 四向判定")
-	for spec in [["左", Vector2(-40, 0)], ["右", Vector2(40, 0)],
-			["上", Vector2(0, -40)], ["下刺", Vector2(0, 40)]]:
-		player._mouse_acc = spec[1]
-		player.attack_cd = 0.0
-		player.attacking = false
-		player.start_attack()
-		print("  鼠标 %s → 攻击方向 %s" % [spec[0], player.attack_dir])
-		await get_tree().create_timer(0.7).timeout
-
-	# 定向格挡：方向对上几乎免伤，方向不对只减 55%
-	print("[战斗] 定向格挡")
-	player.hp = 100.0
-	player.blocking = true
-	player.block_dir = "left"
-	player.take_damage(20.0, "left")
-	var hp_match: float = player.hp
-	player.take_damage(20.0, "right")
-	var hp_miss: float = player.hp
-	player.blocking = false
-	player.take_damage(20.0)
-	var hp_none: float = player.hp
-	print("  同向格挡 20 伤害后 %.1f；异向 %.1f；不格挡 %.1f" % [hp_match, hp_miss, hp_none])
-	print("  判定：%s" % ("通过" if (hp_match >= 98.0 and hp_miss < hp_match and hp_none < hp_miss) else "有失败项"))
-	player.hp = 100.0
-	var e := _spawn_enemy(Vector3(0.0, 0.0, -2.2))
-	await get_tree().create_timer(0.3).timeout
-	var before: float = e.hp
-	player.start_attack()
-	await get_tree().create_timer(0.6).timeout
-	var after: float = e.hp if is_instance_valid(e) else 0.0
-	print("[战斗] 我方攻击：敌 hp %.0f → %.0f  %s"
-			% [before, after, "命中" if after < before else "未命中"])
-	var hp0: float = player.hp
-	await get_tree().create_timer(3.2).timeout
-	print("[战斗] 敌人反击：玩家 hp %.0f → %.0f" % [hp0, player.hp])
-	# 连续攻击直到敌人死亡
-	var swings := 0
-	while is_instance_valid(e) and swings < 12:
-		player.start_attack()
-		swings += 1
-		await get_tree().create_timer(0.6).timeout
-	print("[战斗] %d 次攻击后：敌人存活=%s  玩家 hp %.0f" % [swings, is_instance_valid(e), player.hp])
-	print("[战斗] 结果：%s" % ("通过" if (after < before and player.hp < hp0 and not is_instance_valid(e)) else "有失败项"))
-	get_tree().quit()
-
-
-## 回归：本轮修的 bug
 func _bug_test() -> void:
 	await get_tree().create_timer(0.4).timeout
 	var ok := true
@@ -1906,23 +1728,6 @@ func _bug_test() -> void:
 	e1.queue_free()
 	await get_tree().process_frame
 
-	# 2) 跟随重建时敌人要跟世界一起平移
-	var e := _spawn_enemy(Vector3(100.0, 0.0, 0.0))
-	await get_tree().process_frame
-	var ex0: float = e.global_position.x
-	player.global_position = Vector3(5000.0, terrain.height_xyz(5000.0, 0.0) + 3.0, 0.0)
-	await get_tree().process_frame
-	_recentering = true
-	await _do_recenter(5000.0, 0.0)
-	await get_tree().process_frame
-	var ex1: float = e.global_position.x
-	var gh: float = terrain.height_xyz(ex1, e.global_position.z)
-	var dy := absf(e.global_position.y - gh)
-	var b2: bool = absf((ex0 - 5000.0) - ex1) < 2.0 and dy < 3.0
-	ok = ok and b2
-	print("[回归] 重建后敌 x %.1f → %.1f（应 %.1f），与地面高差 %.1f m → %s"
-			% [ex0, ex1, ex0 - 5000.0, dy, "OK" if b2 else "FAIL"])
-
 	# 3) 海上目标要被拦截
 	var lon0: float = terrain.center_lon
 	var lat0: float = terrain.center_lat
@@ -1932,19 +1737,6 @@ func _bug_test() -> void:
 	ok = ok and b3
 	print("[回归] 海上旅行拦截：中心 %.4f,%.4f（未变=%s）→ %s"
 			% [terrain.center_lon, terrain.center_lat, b3, "OK" if b3 else "FAIL"])
-
-	# 4) 旅行后旧敌清空
-	var before := get_tree().get_nodes_in_group("enemies").size()
-	_travel_ll(Vector2(terrain.center_lon + 0.5, terrain.center_lat))
-	var waited2 := 0.0
-	while _traveling and waited2 < 25.0:
-		await get_tree().create_timer(0.25).timeout
-		waited2 += 0.25
-	await get_tree().process_frame
-	var after := get_tree().get_nodes_in_group("enemies").size()
-	var b4: bool = after == 0
-	ok = ok and b4
-	print("[回归] 旅行清场：敌 %d → %d → %s" % [before, after, "OK" if b4 else "FAIL"])
 
 	# 5) 灵魂模式（TAB 上箭头）
 	var cam0: Vector3 = player.cam.global_position

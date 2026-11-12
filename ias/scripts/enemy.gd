@@ -66,7 +66,8 @@ func _physics_process(delta: float) -> void:
 		_windup -= delta
 		if _windup < 0.0:
 			if dist <= atk_range + 0.6:
-				target.take_damage(atk_damage, atk_dir)
+				if target.has_method("take_damage"):
+					target.take_damage(atk_damage, atk_dir)
 				_atk_cd = 1.4
 		velocity.x = 0
 		velocity.z = 0
