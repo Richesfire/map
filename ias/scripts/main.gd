@@ -2034,3 +2034,10 @@ func _probe() -> void:
 		var ll := TG.lonlat_of(-r, 0.0, 113.95, 39.00)
 		print("  r=%3.0f km  lon %.2f  %6.0f m" % [r / 1000.0, ll.x, TG.height_ll(ll.x, ll.y, 0.0)])
 	print("==============================")
+
+
+func _exit_tree() -> void:
+	if _lf_thread != null and _lf_thread.is_alive():
+		_lf_thread.wait_to_finish()
+	if _map_thread != null and _map_thread.is_alive():
+		_map_thread.wait_to_finish()

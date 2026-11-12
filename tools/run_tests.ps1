@@ -1,4 +1,4 @@
-# One-click self test. Usage:
+﻿# One-click self test. Usage:
 #   double-click run_tests.bat
 #   or: powershell -ExecutionPolicy Bypass -File tools/run_tests.ps1
 # Set GODOT_EXE if the engine is not in a default location.
@@ -34,12 +34,12 @@ Write-Host "Project: $proj"
 Write-Host ''
 
 $tests = @(
-    @{ Name = 'citytest';   Args = @('--citytest');   Window = $false },
-    @{ Name = 'seamtest';   Args = @('--seamtest');   Window = $false },
-    @{ Name = 'probe';      Args = @('--probe');      Window = $false },
-    @{ Name = 'selftest';   Args = @('--selftest');   Window = $false },
-    @{ Name = 'maptest';    Args = @('--maptest');    Window = $false },
-    @{ Name = 'bugtest';    Args = @('--bugtest');    Window = $true  }
+    @{ Name = 'citytest';   Args = @('--citytest');   Window = $false; Expect = '起伏' },
+    @{ Name = 'seamtest';   Args = @('--seamtest');   Window = $false; Expect = '接缝' },
+    @{ Name = 'probe';      Args = @('--probe');      Window = $false; Expect = '峰顶' },
+    @{ Name = 'selftest';   Args = @('--selftest');   Window = $false; Expect = '全部通过' },
+    @{ Name = 'maptest';    Args = @('--maptest');    Window = $false; Expect = '相关' },
+    @{ Name = 'bugtest';    Args = @('--bugtest');    Window = $true;  Expect = '全部通过' }
 )
 
 $results = @()
@@ -48,15 +48,16 @@ foreach ($t in $tests) {
     $argList = @('--path', $proj)
     if (-not $t.Window) { $argList += @('--headless', '--quit-after', '900') }
     $argList += '--'
+    $argList += @('--start', '--fresh')
     $argList += $t.Args
-    if ($t.Window) { $argList += @('--start', '--fresh') }
+
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $out = (& $Godot @argList 2>&1 | Out-String)
     $sw.Stop()
 
-    $bad = ($out -match 'FAIL') -or ($out -match 'ERROR')
-    $ok = -not $bad
+    $bad = ($out -match '有失败项') -or ($out -match 'FAIL')
+    $ok = (-not $bad) -and ($out -match $t.Expect)
     $state = if ($ok) { 'PASS' } else { 'FAIL' }
     $results += [pscustomobject]@{ Test = $t.Name; State = $state; Sec = [math]::Round($sw.Elapsed.TotalSeconds, 1) }
     if (-not $ok) {
