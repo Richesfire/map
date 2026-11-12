@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_hpro6"]
+
+[resource]
+script = ExtResource("1_hpro6")
+id = "hill_loess"
+display_name = "黄土丘陵"
+category = "丘陵"
+subtype = "黄土梁"
+disp_tiles = Array[int]([8, 1])
+disp_amp = 4.4
+disp_scale = 320.0
+tex_tiles = Array[int]([1, 3, 4, 0])
+special_kind = 3
+special_density = 0.1
+grass = 0.4
+shrub = 0.08
+rock = 0.06
+tree = 0.1

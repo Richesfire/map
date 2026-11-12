@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_3skgq"]
+
+[resource]
+script = ExtResource("1_3skgq")
+id = "hill_red"
+display_name = "红壤丘陵"
+category = "丘陵"
+subtype = "红壤"
+disp_tiles = Array[int]([1, 6])
+disp_amp = 4.2
+disp_scale = 330.0
+tex_tiles = Array[int]([13, 3, 0, 10])
+grass = 0.42
+shrub = 0.16
+rock = 0.04
+tree = 0.3

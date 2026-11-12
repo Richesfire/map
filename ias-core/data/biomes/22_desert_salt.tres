@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_xdt7g"]
+
+[resource]
+script = ExtResource("1_xdt7g")
+id = "desert_salt"
+display_name = "盐碱地"
+category = "荒漠"
+subtype = "盐碱"
+disp_tiles = Array[int]([4, 3])
+disp_amp = 1.6
+disp_scale = 380.0
+tex_tiles = Array[int]([15, 3, 9, 11])
+grass = 0.04
+shrub = 0.03
+rock = 0.06

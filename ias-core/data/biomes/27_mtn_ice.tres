@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_tls6n"]
+
+[resource]
+script = ExtResource("1_tls6n")
+id = "mtn_ice"
+display_name = "冰蚀山地"
+category = "山地"
+subtype = "刃脊角峰"
+disp_tiles = Array[int]([2, 5])
+disp_amp = 6.5
+disp_scale = 420.0
+tex_tiles = Array[int]([8, 5, 6, 11])
+special_kind = 4
+special_density = 0.18
+grass = 0.02
+rock = 0.35
+tree = 0.03

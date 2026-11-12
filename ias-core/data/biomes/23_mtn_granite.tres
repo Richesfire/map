@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_c7hm2"]
+
+[resource]
+script = ExtResource("1_c7hm2")
+id = "mtn_granite"
+display_name = "花岗岩山地"
+category = "山地"
+subtype = "花岗岩"
+disp_tiles = Array[int]([2, 5])
+disp_amp = 5.5
+disp_scale = 340.0
+tex_tiles = Array[int]([5, 6, 11, 3])
+special_kind = 4
+special_density = 0.16
+grass = 0.16
+shrub = 0.1
+rock = 0.32
+tree = 0.22

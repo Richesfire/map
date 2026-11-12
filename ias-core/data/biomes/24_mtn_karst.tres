@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_d66ot"]
+
+[resource]
+script = ExtResource("1_d66ot")
+id = "mtn_karst"
+display_name = "喀斯特山地"
+category = "山地"
+subtype = "峰丛山地"
+disp_tiles = Array[int]([6, 2])
+disp_amp = 6.0
+disp_scale = 300.0
+tex_tiles = Array[int]([5, 10, 6, 11])
+special_kind = 1
+special_density = 0.3
+grass = 0.28
+shrub = 0.18
+rock = 0.28
+tree = 0.3

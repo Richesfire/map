@@ -877,7 +877,13 @@ const LF_MTN_KARST := 19
 const LF_MTN_LOESS := 20
 const LF_MTN_VOLCANIC := 21
 const LF_MTN_ICE := 22
-const LF_COUNT := 23
+const LF_HILL_RED := 23
+const LF_HILL_LOESS := 24
+const LF_HILL_DANXIA := 25
+const LF_DESERT_SAND := 26
+const LF_DESERT_GOBI := 27
+const LF_DESERT_SALT := 28
+const LF_COUNT := 29
 
 const MAT_NAMES := ["壤土", "砂质", "岩质"]
 
@@ -895,7 +901,8 @@ static func landform_material(lon: float, lat: float) -> int:
 const LF_NAMES := ["平原", "丘陵", "山地", "高原", "盆地", "河谷",
 		"荒漠", "草原", "森林", "湿地", "冰雪", "海岸",
 		"喀斯特", "雅丹", "黄土", "沙丘", "冰川谷", "三角洲",
-		"花岗岩山地", "喀斯特山地", "黄土山地", "火山山地", "冰蚀山地"]
+		"花岗岩山地", "喀斯特山地", "黄土山地", "火山山地", "冰蚀山地",
+		"红壤丘陵", "黄土丘陵", "丹霞丘陵", "沙质荒漠", "砾质荒漠", "盐碱地"]
 
 
 ## 地貌形态：由海拔、坡度、相对起伏和气候代理共同决定。
@@ -947,6 +954,12 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 			return LF_MTN_VOLCANIC
 		return LF_MTN_GRANITE
 	if slope > 0.18 or relief > 260.0:
+		if t > 15.0 and m > 0.50:
+			return LF_HILL_RED
+		if absf(lat) > 24.0 and absf(lat) < 42.0 and m > 0.18 and m < 0.46:
+			return LF_HILL_LOESS
+		if relief > 180.0 and slope > 0.30 and h < 900.0:
+			return LF_HILL_DANXIA
 		return LF_HILL
 
 	# —— 特殊地貌（都是相对平坦但成因不同的区域）——
@@ -969,8 +982,14 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if h < (h_e + h_w + h_n + h_s) * 0.25 - 25.0:
 		return LF_BASIN
 	# 干旱区
+	if m < 0.12 and h < 1200.0:
+		return LF_DESERT_SALT
+	if m < 0.18:
+		return LF_DESERT_GOBI
 	if m < 0.24:
-		return LF_DESERT
+		return LF_DESERT_SAND
+	if m < 0.30 and absf(lat) > 24.0 and absf(lat) < 45.0:
+		return LF_DESERT_GOBI
 	# 湿润低平 → 湿地
 	if m > 0.72 and slope < 0.03:
 		return LF_WETLAND

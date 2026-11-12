@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_oct0y"]
+
+[resource]
+script = ExtResource("1_oct0y")
+id = "mtn_volcanic"
+display_name = "火山山地"
+category = "山地"
+subtype = "火山锥"
+disp_tiles = Array[int]([5, 2])
+disp_amp = 5.0
+disp_scale = 380.0
+tex_tiles = Array[int]([6, 11, 5, 3])
+special_kind = 4
+special_density = 0.2
+grass = 0.1
+shrub = 0.06
+rock = 0.4
+tree = 0.14
