@@ -1278,8 +1278,9 @@ func _update_hud() -> void:
 	var clat: float = terrain.center_lat
 	var h: float = TG.macro_height(clon, clat)
 	var b: int = TG.biome_at(clon, clat, h)
-	info_label.text = "东经 %.2f°  北纬 %.2f°   海拔 %d 米   %s" % [
-			clon, clat, int(round(h)), TG.biome_name(b)]
+	var lf: int = TG.landform_kind(clon, clat, h)
+	info_label.text = "东经 %.2f°  北纬 %.2f°   海拔 %d 米   %s · %s" % [
+			clon, clat, int(round(h)), TG.biome_name(b), TG.LF_NAMES[clampi(lf, 0, TG.LF_COUNT - 1)]]
 
 
 ## 太阳按时辰走：6:00 东升，18:00 西落，夜里只剩一点冷光

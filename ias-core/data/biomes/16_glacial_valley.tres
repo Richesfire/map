@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_f0vla"]
+
+[resource]
+script = ExtResource("1_f0vla")
+id = "glacial_valley"
+display_name = "冰川谷"
+category = "冰雪地貌"
+subtype = "U 形谷"
+disp_tiles = Array[int]([2, 5])
+disp_amp = 3.4
+disp_scale = 520.0
+tex_tiles = Array[int]([8, 5, 6, 11])
+grass = 0.02
+rock = 0.22
+tree = 0.05

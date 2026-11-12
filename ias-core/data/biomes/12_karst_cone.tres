@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_tfv8v"]
+
+[resource]
+script = ExtResource("1_tfv8v")
+id = "karst_cone"
+display_name = "喀斯特峰丛"
+category = "喀斯特"
+subtype = "峰丛洼地"
+disp_tiles = Array[int]([6, 5])
+disp_amp = 2.4
+disp_scale = 380.0
+tex_tiles = Array[int]([5, 10, 3, 11])
+grass = 0.3
+shrub = 0.2
+rock = 0.25
+tree = 0.3

@@ -569,9 +569,9 @@ static func _tile_fbm(x: float, y: float, period: int, seed: int, ridged: bool) 
 static func _build_disp() -> void:
 	if not _disp.is_empty():
 		return
-	var seeds := [1101, 2203, 3307, 4409, 5519, 6607]
-	var ridged := [false, false, true, false, false, true]
-	var total := 6
+	var seeds := [1101, 2203, 3307, 4409, 5519, 6607, 7717, 8803, 9901]
+	var ridged := [false, false, true, false, false, true, true, false, true]
+	var total := 9
 	for k in total:
 		var buf := PackedByteArray()
 		buf.resize(DISP_PX * DISP_PX)
@@ -586,6 +586,17 @@ static func _build_disp() -> void:
 				elif k == 4:
 					# 水面/湿地的缓波
 					val = clampf(val * 0.6 + 0.4 * (0.5 + 0.5 * sin(v * TAU * 2.0 + val * 3.0)), 0.0, 1.0)
+				elif k == 6:
+					# 喀斯特：溶蚀洼地 + 石芽
+					var pit := _tile_vnoise(u * 26.0, v * 26.0, 26, seeds[k])
+					val = clampf(val * 0.55 + 0.45 * (1.0 - smoothstep(0.42, 0.75, pit)), 0.0, 1.0)
+				elif k == 7:
+					# 雅丹：平行风蚀垄
+					val = clampf(val * 0.5 + 0.5 * (0.5 + 0.5 * sin(u * TAU * 7.0 + val * 2.4)), 0.0, 1.0)
+				elif k == 8:
+					# 黄土：树枝状沟壑
+					var gx := _tile_vnoise(u * 14.0, v * 3.0, 14, seeds[k])
+					val = clampf(1.0 - absf(gx * 2.0 - 1.0) * 1.6, 0.0, 1.0) * 0.75 + val * 0.25
 				buf[y * DISP_PX + x] = int(clampf(val, 0.0, 1.0) * 255.0)
 		_disp.append(buf)
 	print("[地形] 置换贴图 %d 张（%dpx，平铺 %.0f m）" % [_disp.size(), DISP_PX, DISP_TILE_M])
@@ -855,10 +866,17 @@ const LF_FOREST := 8
 const LF_WETLAND := 9
 const LF_ICE := 10
 const LF_COAST := 11
-const LF_COUNT := 12
+const LF_KARST := 12
+const LF_YARDANG := 13
+const LF_LOESS := 14
+const LF_DUNE := 15
+const LF_GLACIAL := 16
+const LF_DELTA := 17
+const LF_COUNT := 18
 
 const LF_NAMES := ["平原", "丘陵", "山地", "高原", "盆地", "河谷",
-		"荒漠", "草原", "森林", "湿地", "冰雪", "海岸"]
+		"荒漠", "草原", "森林", "湿地", "冰雪", "海岸",
+		"喀斯特", "雅丹", "黄土", "沙丘", "冰川谷", "三角洲"]
 
 
 ## 地貌形态：由海拔、坡度、相对起伏和气候代理共同决定。
@@ -890,11 +908,32 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 分类用的温度不带高频噪声，否则逐顶点在阈值上来回跳，地表会出同心环带
 	var t := 28.0 - 0.42 * absf(lat) - 0.0062 * maxf(h, 0.0)
 
+	# 喀斯特排在山区判定之前：峰丛本来就陡，但成因不同
+	if m > 0.42 and t > 15.0 and h < 1600.0 and relief < 900.0:
+		return LF_KARST
+
 	# 起伏大 → 山地；中等 → 丘陵
 	if slope > 0.42 or relief > 700.0:
+		# 高海拔山谷 → 冰川谷
+		if h > 3000.0 and relief > 500.0:
+			return LF_GLACIAL
 		return LF_MOUNTAIN
 	if slope > 0.18 or relief > 260.0:
 		return LF_HILL
+
+	# —— 特殊地貌（都是相对平坦但成因不同的区域）——
+	# 雅丹/风蚀垄：极干旱、低平
+	if m < 0.14 and h < 1400.0 and slope < 0.10:
+		return LF_YARDANG
+	# 沙丘：干旱、平坦、低海拔
+	if m < 0.20 and h < 900.0 and slope < 0.05:
+		return LF_DUNE
+	# 黄土：中纬半干旱、台地边缘
+	if absf(lat) > 24.0 and absf(lat) < 43.0 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 0.17:
+		return LF_LOESS
+	# 三角洲：近海低平、湿润
+	if h < 25.0 and m > 0.55 and slope < 0.02:
+		return LF_DELTA
 	# 高而平 → 高原
 	if h > 1200.0:
 		return LF_PLATEAU
@@ -1016,7 +1055,9 @@ static func temp_at(lon: float, lat: float, h: float) -> float:
 static func moist_at(lon: float, lat: float) -> float:
 	var m := _vnoise(lon * 0.42 + 100.0, lat * 0.42 - 30.0, 2027) * 0.5 + 0.5
 	var belt := clampf(1.0 - absf(absf(lat) - 25.0) / 13.0, 0.0, 1.0)
-	return m * (1.0 - 0.62 * belt)
+	# 副热带干旱带只削弱本来就干的区域（否则会把华南也算成荒漠）
+	var dry := clampf(1.0 - m * 1.4, 0.0, 1.0)
+	return m * (1.0 - 0.62 * belt * dry)
 
 
 static func biome_at(lon: float, lat: float, h: float) -> int:

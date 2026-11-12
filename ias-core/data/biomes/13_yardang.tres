@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BiomeProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/biome_profile.gd" id="1_0681g"]
+
+[resource]
+script = ExtResource("1_0681g")
+id = "yardang"
+display_name = "雅丹"
+category = "荒漠"
+subtype = "风蚀垄"
+disp_tiles = Array[int]([7, 3])
+disp_amp = 2.8
+disp_scale = 600.0
+tex_tiles = Array[int]([7, 4, 3, 11])
+grass = 0.02
+shrub = 0.03
+rock = 0.15
