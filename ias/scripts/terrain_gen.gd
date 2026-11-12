@@ -874,6 +874,19 @@ const LF_GLACIAL := 16
 const LF_DELTA := 17
 const LF_COUNT := 18
 
+const MAT_NAMES := ["壤土", "砂质", "岩质"]
+
+
+## 地貌材质：0 壤土 / 1 砂质 / 2 岩质（低频噪声，成片分布）
+static func landform_material(lon: float, lat: float) -> int:
+	var v := _vnoise(lon * 2.3 + 41.0, lat * 2.3 - 17.0, 8081)
+	if v > 0.66:
+		return 2
+	if v < 0.34:
+		return 1
+	return 0
+
+
 const LF_NAMES := ["平原", "丘陵", "山地", "高原", "盆地", "河谷",
 		"荒漠", "草原", "森林", "湿地", "冰雪", "海岸",
 		"喀斯特", "雅丹", "黄土", "沙丘", "冰川谷", "三角洲"]

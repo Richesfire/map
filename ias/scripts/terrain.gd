@@ -79,7 +79,8 @@ func build(progress: Callable = Callable()) -> void:
 	verts.append(Vector3(0, h0, 0))
 	var c0 := TG.biome_color(b0)
 	var lf0 := TG.landform_kind(center_lon, center_lat, h0)
-	cols.append(Color(c0.r, c0.g, c0.b, float(lf0) / 16.0))
+	var mat0 := TG.landform_material(center_lon, center_lat)
+	cols.append(Color(c0.r, c0.g, c0.b, (float(lf0) + float(mat0) * 32.0) / 64.0))
 
 	var total := radii.size()
 	for ri in total:
@@ -95,8 +96,9 @@ func build(progress: Callable = Callable()) -> void:
 			var c := TG.biome_color(biome)
 			var k := 0.90 + 0.20 * TG._vnoise(x * 0.0025, z * 0.0025, 771)
 			var lf := TG.landform_kind(ll.x, ll.y, h)
+			var mat := TG.landform_material(ll.x, ll.y)
 			verts.append(Vector3(x, h, z))
-			cols.append(Color(c.r * k, c.g * k, c.b * k, float(lf) / 16.0))
+			cols.append(Color(c.r * k, c.g * k, c.b * k, (float(lf) + float(mat) * 32.0) / 64.0))
 
 		if ri % 12 == 11:
 			if progress.is_valid():

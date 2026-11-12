@@ -51,7 +51,9 @@ void fragment() {
 	float dryness = texture(noise_tex, wpos.xz * 0.0011).r;
 
 	// 地貌 id 从顶点色 alpha 传进来（0..11），每组地貌从自己的纹理堆取图
-	int lf = int(floor(COLOR.a * 16.0 + 0.5));
+	int packed = int(floor(COLOR.a * 64.0 + 0.5));
+	int lf = packed % 32;
+	int mat = packed / 32;
 	int t0 = 0;
 	int t1 = 2;
 	int t2 = 1;
@@ -100,6 +102,14 @@ void fragment() {
 
 	// 两套尺度混合：近尺度 13m、远尺度 78m，压掉重复感
 	vec2 uv_big = uv * 0.17 + vec2(13.7, 5.3);
+	// 材质偏置：砂质地表更偏沙/砾，岩质地表更偏碎石/岩石
+	if (mat == 1) {
+		t0 = 7;
+		t1 = 4;
+	} else if (mat == 2) {
+		t0 = 5;
+		t1 = 6;
+	}
 	vec3 grass = mix(tile_at(uv, t0), tile_at(uv_big, t0), 0.30);
 	vec3 lush = mix(tile_at(uv, t1), tile_at(uv_big, t1), 0.30);
 	vec3 dry = mix(tile_at(uv, t2), tile_at(uv_big, t2), 0.30);
@@ -108,9 +118,18 @@ void fragment() {
 	vec3 rock = tile_at(uv, 6);
 	vec3 snowt = tile_at(uv, 8);
 
-	vec3 ground = mix(lush, dry, smoothstep(0.56, 0.78, dryness));
-	ground = mix(ground, soil,
-			smoothstep(0.70, 0.88, dryness) * smoothstep(0.25, 0.45, slope));
+	// 多尺度斑块：让 4 张贴图在同一片地里自然交错（草地/枯草/裸土/砾石）
+	float p_big = texture(noise_tex, wpos.xz * 0.0045).r;                          // 约 220 m 斑块
+	float p_mid = texture(noise_tex, wpos.xz * 0.017 + vec2(0.37, 0.11)).r;       // 约 60 m 斑块
+	float p_fine = texture(noise_tex, wpos.xz * 0.055 + vec2(0.71, 0.43)).r;      // 约 20 m 斑块
+
+	vec3 ground = grass;
+	ground = mix(ground, lush, smoothstep(0.34, 0.62, p_big));
+	ground = mix(ground, dry, smoothstep(0.48, 0.72, p_mid));
+	ground = mix(ground, soil, smoothstep(0.52, 0.74, p_fine) * 0.75);
+	// 干湿仍然大范围地影响枯/绿比例
+	ground = mix(ground, dry, smoothstep(0.60, 0.82, dryness) * 0.6);
+	// 陡坡露岩、碎石
 	ground = mix(ground, mix(gravel, rock, smoothstep(0.55, 0.85, slope)),
 			smoothstep(0.42, 0.62, slope));
 	ground = mix(ground, snowt, snow);
