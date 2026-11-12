@@ -772,55 +772,71 @@ func _draw_compass() -> void:
 
 func _draw_minimap() -> void:
 	var c := Vector2(90.0, 90.0)
-	# 底盘 + 外框
-	hud_minimap.draw_circle(c, 92.0, Color(0.09, 0.08, 0.06, 0.94))
+	var R := 88.0
+	# 漆底
+	hud_minimap.draw_circle(c, R + 3.0, Color(0.12, 0.10, 0.07, 0.97))
+
 	if terrain != null:
-		var n := 18
-		var span := 1500.0
-		var cell := (span * 2.0) / float(n)
-		var px_per_m := 78.0 / span
+		var n := 26
+		var span := 1200.0
+		var cell := span * 2.0 / float(n)
+		var ppm := R / span
 		var pcx: float = player.global_position.x if player != null else 0.0
 		var pcz: float = player.global_position.z if player != null else 0.0
+		var lim := span * 0.97
 		for gy in n:
 			for gx in n:
-				var wx := (float(gx) - float(n) * 0.5) * cell
-				var wz := (float(gy) - float(n) * 0.5) * cell
-				if wx * wx + wz * wz > span * span:
+				var wx := (float(gx) - float(n) * 0.5 + 0.5) * cell
+				var wz := (float(gy) - float(n) * 0.5 + 0.5) * cell
+				if wx * wx + wz * wz > lim * lim:
 					continue
-				var hh: float = terrain.height_xyz(pcx + wx, pcz + wz)
 				var ll: Vector2 = terrain.lonlat_of(pcx + wx, pcz + wz)
-				var biome: int = TG.biome_at(ll.x, ll.y, hh)
-				var col: Color = TG.biome_color(biome)
-				var lum := 0.82 + clampf(hh / 4000.0, 0.0, 1.0) * 0.28
+				var hh: float = TG.dem_at(ll.x, ll.y)
+				var lk: int = TG.landform_kind(ll.x, ll.y, hh)
+				var col := Color(0.26, 0.33, 0.40) if hh < -8.0 else TG.landform_color(lk)
+				var lum := 0.70 + clampf((hh + 300.0) / 4200.0, 0.0, 1.0) * 0.50
 				col = Color(col.r * lum, col.g * lum, col.b * lum)
-				var p := c + Vector2(wx * px_per_m, wz * px_per_m)
-				var sz: float = maxf(cell * px_per_m, 1.6)
+				var p := c + Vector2(wx, wz) * ppm
+				var sz: float = maxf(cell * ppm + 0.7, 2.2)
 				hud_minimap.draw_rect(Rect2(p - Vector2(sz * 0.5, sz * 0.5), Vector2(sz, sz)), col)
+
 		# 城市
 		for ct in TG.cities():
 			var cx: float = (float(ct["lon"]) - terrain.center_lon) * 111320.0 * cos(deg_to_rad(terrain.center_lat))
 			var cz: float = -(float(ct["lat"]) - terrain.center_lat) * 110540.0
-			var lx := (cx - pcx) * px_per_m
-			var lz := (cz - pcz) * px_per_m
-			if Vector2(lx, lz).length() < 78.0:
+			var lx := (cx - pcx) * ppm
+			var lz := (cz - pcz) * ppm
+			if Vector2(lx, lz).length() < R - 12.0:
 				var cp := c + Vector2(lx, lz)
-				hud_minimap.draw_rect(Rect2(cp - Vector2(4, 4), Vector2(8, 8)), Color(0.30, 0.17, 0.09))
-				hud_minimap.draw_rect(Rect2(cp - Vector2(4, 4), Vector2(8, 8)), Color(0.88, 0.74, 0.42), false, 1.5)
-	# 边框
-	hud_minimap.draw_arc(c, 90.0, 0.0, TAU, 64, Color(0.52, 0.42, 0.25), 3.0)
-	hud_minimap.draw_arc(c, 86.5, 0.0, TAU, 64, Color(0.20, 0.16, 0.10, 0.9), 2.0)
-	# 指北
-	hud_minimap.draw_string(ThemeDB.fallback_font, c + Vector2(-7, -66), "北",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.88, 0.80, 0.58))
-	# 玩家：朝向三角
+				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.30, 0.17, 0.09))
+				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.92, 0.78, 0.44), false, 1.5)
+
+	# 青铜外环（先秦铜镜感）
+	hud_minimap.draw_arc(c, R + 2.0, 0.0, TAU, 80, Color(0.40, 0.36, 0.22, 0.95), 4.0)
+	hud_minimap.draw_arc(c, R + 0.6, 0.0, TAU, 80, Color(0.78, 0.66, 0.36, 0.85), 1.4)
+	hud_minimap.draw_arc(c, R - 2.2, 0.0, TAU, 80, Color(0.16, 0.13, 0.09, 0.95), 1.6)
+
+	# 四方位刻度
+	for k in 4:
+		var a := TAU * float(k) / 4.0 - PI * 0.5
+		var inner := c + Vector2(cos(a), sin(a)) * (R - 5.0)
+		var outer := c + Vector2(cos(a), sin(a)) * (R + 4.0)
+		hud_minimap.draw_line(inner, outer, Color(0.86, 0.74, 0.42, 0.9), 1.6)
+
+	var afont: Font = ThemeDB.fallback_font
+	hud_minimap.draw_string(afont, c + Vector2(-7, -R + 15), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.92, 0.82, 0.54))
+
+	# 玩家：朝北固定的箭头（北朝上，箭头随视角转）
 	var yawv: float = float(player.yaw) if player != null else 0.0
 	var f := Vector2(-sin(yawv), -cos(yawv))
 	var r := Vector2(-f.y, f.x)
-	var tip := c + f * 9.0
+	var tip := c + f * 10.0
 	var bl := c - f * 5.0 + r * 6.0
 	var br := c - f * 5.0 - r * 6.0
 	hud_minimap.draw_colored_polygon(PackedVector2Array([tip, bl, br]), Color(0.98, 0.88, 0.50))
-	hud_minimap.draw_polyline(PackedVector2Array([tip, bl, br, tip]), Color(0.35, 0.22, 0.10), 1.5)
+	hud_minimap.draw_polyline(PackedVector2Array([tip, bl, br, tip]), Color(0.32, 0.20, 0.09), 1.6)
+
+
 
 func _draw_cross() -> void:
 	var vs := get_viewport().get_visible_rect().size
@@ -877,8 +893,9 @@ func _clamp_map_center() -> void:
 	var ppy := (MAP_H * map_zoom) / 180.0
 	var half_lon := (vs.x * 0.5) / ppd
 	var half_lat := (vs.y * 0.5) / ppy
-	map_center.x = 0.0 if half_lon >= 180.0 else clampf(map_center.x, -180.0 + half_lon, 180.0 - half_lon)
-	map_center.y = 0.0 if half_lat >= 90.0 else clampf(map_center.y, -90.0 + half_lat, 90.0 - half_lat)
+	# A：地图边缘最多拖到屏幕中心（地图最多一半移出屏幕），随缩放自然变化
+	map_center.x = clampf(map_center.x, -180.0, 180.0)
+	map_center.y = clampf(map_center.y, -90.0, 90.0)
 
 
 func _zoom_min() -> float:
