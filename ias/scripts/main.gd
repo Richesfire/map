@@ -51,6 +51,10 @@ var _debug_shot := ""
 var _debug_shot_delay := 3.0
 var _debug_shots: Array = []
 var _preview_args: Array = []
+var city_panel: Control
+var city_tip: Control
+var _panel_city: Dictionary = {}
+var _debug_citypanel := ""
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
 var _debug_air := 0.0
@@ -195,6 +199,8 @@ func _parse_args() -> void:
 			_debug_shot = a.substr(7)
 		elif a.begins_with("--shotdelay="):
 			_debug_shot_delay = float(a.substr(12))
+		elif a.begins_with("--citypanel="):
+			_debug_citypanel = a.substr(12)
 		elif a.begins_with("--preview="):
 			var pp := a.substr(10).split(",")
 			if pp.size() == 5:
@@ -313,6 +319,58 @@ func _build_ui() -> void:
 	_compass_tex.fill_from = Vector2(0, 0)
 	_compass_tex.fill_to = Vector2(1, 0)
 	compass.visible = false
+
+	# 目的地面板（点城市后弹出）
+	city_panel = Control.new()
+	city_panel.anchor_left = 0.5
+	city_panel.anchor_top = 0.5
+	city_panel.anchor_right = 0.5
+	city_panel.anchor_bottom = 0.5
+	city_panel.offset_left = -150.0
+	city_panel.offset_top = -86.0
+	city_panel.offset_right = 150.0
+	city_panel.offset_bottom = 86.0
+	city_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	city_panel.visible = false
+	ui_layer.add_child(city_panel)
+	var cp_bg := Panel.new()
+	cp_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var cp_st := StyleBoxFlat.new()
+	cp_st.bg_color = Color(0.12, 0.10, 0.07, 0.97)
+	cp_st.border_color = Color(0.62, 0.50, 0.28)
+	cp_st.set_border_width_all(2)
+	cp_st.set_corner_radius_all(3)
+	cp_bg.add_theme_stylebox_override("panel", cp_st)
+	city_panel.add_child(cp_bg)
+	var cp_title := Label.new()
+	cp_title.name = "Title"
+	cp_title.position = Vector2(0, 12)
+	cp_title.size = Vector2(300, 34)
+	cp_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cp_title.add_theme_font_size_override("font_size", 22)
+	cp_title.add_theme_color_override("font_color", Color(0.94, 0.84, 0.58))
+	city_panel.add_child(cp_title)
+	for i in 2:
+		var b := Button.new()
+		b.name = "Opt%d" % i
+		b.position = Vector2(24, 62 + i * 46)
+		b.size = Vector2(252, 38)
+		b.add_theme_font_size_override("font_size", 17)
+		b.add_theme_color_override("font_color", Color(0.90, 0.82, 0.60))
+		var bs := StyleBoxFlat.new()
+		bs.bg_color = Color(0.20, 0.16, 0.11, 0.95)
+		bs.border_color = Color(0.46, 0.37, 0.22)
+		bs.set_border_width_all(1)
+		b.add_theme_stylebox_override("normal", bs)
+		var bh := bs.duplicate() as StyleBoxFlat
+		bh.bg_color = Color(0.30, 0.24, 0.15, 0.98)
+		bh.border_color = Color(0.72, 0.58, 0.32)
+		b.add_theme_stylebox_override("hover", bh)
+		b.add_theme_stylebox_override("pressed", bh)
+		city_panel.add_child(b)
+	city_panel.get_node("Opt0").pressed.connect(func() -> void: _city_go("street"))
+	city_panel.get_node("Opt1").pressed.connect(func() -> void: _city_go("yamen"))
+	city_panel.visible = false
 
 	hud_minimap = Control.new()
 	hud_minimap.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -550,6 +608,11 @@ func _start_game() -> void:
 		map_zoom = _debug_mapzoom
 	if OS.get_cmdline_user_args().has("--map"):
 		_open_map()
+	if _debug_citypanel != "":
+		var idx := int(_debug_citypanel)
+		var cs := TG.cities()
+		if idx >= 0 and idx < cs.size():
+			_open_city_panel(cs[idx])
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
 	if sv.has("soul"):
@@ -666,6 +729,8 @@ func _open_map() -> void:
 
 
 func _close_map() -> void:
+	if city_panel != null:
+		city_panel.visible = false
 	if not map_open:
 		return
 	map_open = false
@@ -686,15 +751,18 @@ func _map_input(e: InputEvent) -> void:
 	if e is InputEventMouseButton:
 		var mb := e as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				var hit := _city_hit(mb.position)
+				if not hit.is_empty():
+					_open_city_panel(hit)
+					return
+				_close_city_panel()
 			dragging = mb.pressed
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
 			pin_drag = mb.pressed
 			if mb.pressed:
-				var gh := _gate_hit(mb.position)
-				pin_ll = gh["ll"] if not gh.is_empty() else _screen_to_lonlat(mb.position)
+				pin_ll = _screen_to_lonlat(mb.position)
 				has_pin = true
-				if not gh.is_empty():
-					toast("目标：%s" % String(gh["label"]))
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			else:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -1043,6 +1111,18 @@ func _city_gates(c: Dictionary) -> Array:
 	]
 
 
+## 点选城市：命中图标范围
+func _city_hit(pos: Vector2) -> Dictionary:
+	for c in TG.cities():
+		var lat := float(c["lat"])
+		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
+		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
+		var p := _lonlat_to_screen_off(Vector2(float(c["lon"]), lat), 0.0)
+		if p.distance_to(pos) < maxf(sz * 0.75, 12.0):
+			return c
+	return {}
+
+
 ## 命中测试：鼠标附近是否有城门（只在高倍下）
 func _gate_hit(pos: Vector2) -> Dictionary:
 	for c in TG.cities():
@@ -1274,7 +1354,7 @@ func _zoom_at(target_zoom: float) -> void:
 	var sc0 := _map_scale()
 	var before := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc0.x,
 			map_center.y - (mp.y - vs.y * 0.5) / sc0.y)
-	map_zoom = clampf(target_zoom, _zoom_min(), 4000.0)
+	map_zoom = clampf(target_zoom, _zoom_min(), 50.0)
 	var sc1 := _map_scale()
 	var after := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc1.x,
 			map_center.y - (mp.y - vs.y * 0.5) / sc1.y)
@@ -1285,6 +1365,40 @@ func _zoom_at(target_zoom: float) -> void:
 
 
 ## 临时基准：连续重绘地图，测每帧耗时
+## 打开城市目的地面板
+func _open_city_panel(c: Dictionary) -> void:
+	_panel_city = c
+	var title: Label = city_panel.get_node("Title")
+	title.text = String(c["name"])
+	(city_panel.get_node("Opt0") as Button).text = "街道"
+	(city_panel.get_node("Opt1") as Button).text = "府衙"
+	# 面板必须在地图图层之上
+	if ui_layer != null and city_panel.get_parent() == ui_layer:
+		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.visible = true
+	map_root.queue_redraw()
+
+
+func _close_city_panel() -> void:
+	city_panel.visible = false
+	_panel_city = {}
+
+
+## 街道 = 城中心；府衙 = 城北偏内
+func _city_go(what: String) -> void:
+	if _panel_city.is_empty():
+		return
+	var lon := float(_panel_city["lon"])
+	var lat := float(_panel_city["lat"])
+	var r := float(_panel_city["radius"])
+	if what == "yamen":
+		lat += (r * 0.35) / 110.54
+	var nm := String(_panel_city["name"])
+	_close_city_panel()
+	toast("前往 %s · %s" % [nm, "府衙" if what == "yamen" else "街道"])
+	_travel_ll(Vector2(lon, lat))
+
+
 func _map_bench() -> void:
 	await get_tree().process_frame
 	var t0 := Time.get_ticks_usec()
