@@ -56,6 +56,7 @@ var city_tip: Control
 var _panel_city: Dictionary = {}
 var _panel_village: Dictionary = {}
 var _debug_citypanel := ""
+var _debug_mapcenter := Vector2(INF, INF)
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
 var _debug_air := 0.0
@@ -204,6 +205,10 @@ func _parse_args() -> void:
 			_debug_shot = a.substr(7)
 		elif a.begins_with("--shotdelay="):
 			_debug_shot_delay = float(a.substr(12))
+		elif a.begins_with("--mapcenter="):
+			var mc := a.substr(12).split(",")
+			if mc.size() == 2:
+				_debug_mapcenter = Vector2(float(mc[0]), float(mc[1]))
 		elif a.begins_with("--citypanel="):
 			_debug_citypanel = a.substr(12)
 		elif a.begins_with("--preview="):
@@ -613,6 +618,9 @@ func _start_game() -> void:
 		map_zoom = _debug_mapzoom
 	if OS.get_cmdline_user_args().has("--map"):
 		_open_map()
+	if _debug_mapcenter.x != INF:
+		map_center = _debug_mapcenter
+		_clamp_map_center()
 	if OS.get_cmdline_user_args().has("--hitcenter"):
 		# 调试：直接打开离地图中心最近的聚落面板
 		var best: Dictionary = {}
@@ -1543,20 +1551,9 @@ func _draw_cross() -> void:
 ## 缩放下限：地图至少要占屏幕一半高
 ## 地图边界最多停在屏幕中心：中心不能越出 [-180+半屏, 180-半屏]
 func _clamp_map_center() -> void:
-	var vs := get_viewport().get_visible_rect().size
-	var sc := _map_scale()
-	var base := _sheet_base(vs)
-	var cw: float = base.x * 0.76 * map_zoom
-	var ch: float = cw * 0.5
-	# 地图必须铺满内容区；内容比屏幕小则强制居中
-	var lim_lon: float = clampf(180.0 - (vs.x * 0.5) / sc.x, 0.0, 180.0)
-	var lim_lat: float = clampf(90.0 - (vs.y * 0.5) / sc.y, 0.0, 90.0)
-	if cw * 0.5 < vs.x * 0.5:
-		lim_lon = 0.0
-	if ch * 0.5 < vs.y * 0.5:
-		lim_lat = 0.0
-	map_center.x = clampf(map_center.x, -lim_lon, lim_lon)
-	map_center.y = clampf(map_center.y, -lim_lat, lim_lat)
+	# 地图内容边界最多到屏幕中心：中心只能在 ±180 / ±90 之内
+	map_center.x = clampf(map_center.x, -180.0, 180.0)
+	map_center.y = clampf(map_center.y, -90.0, 90.0)
 
 
 func _zoom_min() -> float:
@@ -1577,7 +1574,7 @@ func _zoom_at(target_zoom: float) -> void:
 	var sc0 := _map_scale()
 	var before := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc0.x,
 			map_center.y - (mp.y - vs.y * 0.5) / sc0.y)
-	map_zoom = clampf(target_zoom, _zoom_min(), 50.0)
+	map_zoom = clampf(target_zoom, _zoom_min(), 120.0)
 	var sc1 := _map_scale()
 	var after := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc1.x,
 			map_center.y - (mp.y - vs.y * 0.5) / sc1.y)
@@ -1711,7 +1708,12 @@ func _draw_map() -> void:
 	var sheet_h: float = content_h / 0.92
 	var pad_x: float = (sheet_w - content_w) * 0.5
 	var pad_y: float = (sheet_h - content_h) * 0.5
-	var content_rect := Rect2(Vector2((vs.x - content_w) * 0.5, (vs.y - content_h) * 0.5),
+	# 整张卷轴按世界坐标摆放：平移时布帛/轴杆/地图一起走
+	var ppd2: float = content_w / 360.0
+	var ppy2: float = content_h / 180.0
+	var content_rect := Rect2(
+			Vector2(vs.x * 0.5 - (map_center.x + 180.0) * ppd2,
+					vs.y * 0.5 - (90.0 - map_center.y) * ppy2),
 			Vector2(content_w, content_h))
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
