@@ -86,6 +86,9 @@ var map_hydro: Control
 var _riv_list: Array = []
 var _lake_list: Array = []
 var _hydro_grid: Dictionary = {}
+var _settle: Array = []
+var _settle_idx: Dictionary = {}
+var _settle_loaded := false
 var _city_links: Array = []
 var _c_ppd := 1.0
 var _c_ppy := 1.0
@@ -985,43 +988,72 @@ func _draw_settlements(sr: Rect2) -> void:
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
-## 村庄：按地貌/水源/坡度/城市距离评分选址，密度分层，近水成串
+## 加载真实聚落（GeoNames 中国，县城及以上 + 人口>3000 的镇）
+func _ensure_settlements() -> void:
+	if _settle_loaded:
+		return
+	_settle_loaded = true
+	var f := FileAccess.open("res://data/settlements.json", FileAccess.READ)
+	if f == null:
+		return
+	var d: Variant = JSON.parse_string(f.get_as_text())
+	if d == null:
+		return
+	for p in d.get("places", []):
+		var lon := float(p["lon"])
+		var lat := float(p["lat"])
+		var item := {"ll": Vector2(lon, lat), "name": String(p["n"]),
+				"lvl": int(p["l"]), "pop": int(p["p"])}
+		_settle.append(item)
+		var key := Vector2i(int(floor(lon / 0.5)), int(floor(lat / 0.5)))
+		if not _settle_idx.has(key):
+			_settle_idx[key] = []
+		(_settle_idx[key] as Array).append(item)
+	print("[地图] 真实聚落 %d 处" % _settle.size())
+
+
+## 视野内的真实聚落（按分数级别过滤）
+func _settlements_in(lon0: float, lat0: float, lon1: float, lat1: float, max_lvl: int) -> Array:
+	_ensure_settlements()
+	var out: Array = []
+	var gx0 := int(floor(lon0 / 0.5))
+	var gx1 := int(floor(lon1 / 0.5))
+	var gy0 := int(floor(lat0 / 0.5))
+	var gy1 := int(floor(lat1 / 0.5))
+	for gy in range(gy0, gy1 + 1):
+		for gx in range(gx0, gx1 + 1):
+			var key := Vector2i(gx, gy)
+			if not _settle_idx.has(key):
+				continue
+			for it in _settle_idx[key]:
+				var ll: Vector2 = it["ll"]
+				if ll.x < lon0 or ll.x > lon1 or ll.y < lat0 or ll.y > lat1:
+					continue
+				if int(it["lvl"]) > max_lvl:
+					continue
+				out.append(it)
+	out.sort_custom(func(a, b) -> bool: return int(a["lvl"]) < int(b["lvl"]))
+	if out.size() > 70:
+		out = out.slice(0, 70)
+	return out
+
+
+## 村庄：真实聚落数据，按缩放分级显示
 func _villages_for_view(sr: Rect2) -> Array:
 	if map_zoom < 12.0:
 		return []
-	_ensure_hydro()
-	var step := 0.14
-	var key := Vector2i(int(floor(map_center.x / step)) * 97 + int(map_zoom * 4.0),
-			int(floor(map_center.y / step)) * 97 + int(map_zoom * 4.0))
-	if key == _vil_key:
-		return _vil_cache
-	_vil_key = key
-	_vil_cache = []
-
+	var max_lvl := 3 if map_zoom < 20.0 else 4
 	var vs3 := get_viewport().get_visible_rect().size
 	var sc3 := _map_scale()
 	var half_lon: float = (vs3.x * 0.5) / sc3.x
 	var half_lat: float = (vs3.y * 0.5) / sc3.y
-	var lon := map_center.x - half_lon
-	var lon1: float = map_center.x + half_lon
-	var lat0: float = map_center.y - half_lat
-	var lat1: float = map_center.y + half_lat
-
-	var row := 0
-	while lon < lon1 and _vil_cache.size() < 45:
-		var lat := lat0 + (step * 0.5 if row % 2 == 1 else 0.0)
-		while lat < lat1 and _vil_cache.size() < 45:
-			var hv := TG._vnoise(lon * 9.7 + 3.1, lat * 9.7 - 1.7, 4711)
-			var jx := (TG._vnoise(lon * 41.0, lat * 41.0, 91) - 0.5) * step * 1.2
-			var jy := (TG._vnoise(lon * 37.0, lat * 37.0, 92) - 0.5) * step * 1.2
-			var vlon := lon + jx
-			var vlat := lat + jy
-			var meta := _village_try(vlon, vlat, hv)
-			if not meta.is_empty():
-				_vil_cache.append(meta)
-			lat += step
-		lon += step
-		row += 1
+	var key := Vector2i(int(floor(map_center.x / 0.2)) * 97 + max_lvl,
+			int(floor(map_center.y / 0.2)) * 97 + int(map_zoom))
+	if key == _vil_key:
+		return _vil_cache
+	_vil_key = key
+	_vil_cache = _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
+			map_center.x + half_lon, map_center.y + half_lat, max_lvl)
 	return _vil_cache
 
 
