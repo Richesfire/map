@@ -986,7 +986,7 @@ func _draw_settlements(sr: Rect2) -> void:
 		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 
 	# 村庄：放大后才出现
-	var vfade := clampf((map_zoom - 12.0) / 6.0, 0.0, 1.0)
+	var vfade := clampf((map_zoom - 15.0) / 3.0, 0.0, 1.0)
 	if vfade <= 0.02:
 		return
 	var vlist := _villages_for_view(sr)
@@ -994,9 +994,11 @@ func _draw_settlements(sr: Rect2) -> void:
 		var p2 := _lonlat_to_screen_off(v["ll"], 0.0)
 		if not sr.has_point(p2):
 			continue
-		var s2: float = clampf(3.0 + map_zoom * 0.14, 3.5, 7.0)
-		map_root.draw_circle(p2, s2, Color(0.38, 0.26, 0.15, 0.9 * vfade))
-		map_root.draw_arc(p2, s2, 0.0, TAU, 12, Color(0.80, 0.66, 0.40, 0.8 * vfade), 1.0)
+		var lvl := int(v["lvl"])
+		var s2: float = [0.0, 4.4, 3.8, 3.2, 2.6][clampi(lvl, 1, 4)]
+		s2 *= clampf(0.8 + map_zoom * 0.02, 0.8, 1.4)
+		map_root.draw_circle(p2, s2, Color(0.36, 0.25, 0.14, 0.85 * vfade))
+		map_root.draw_arc(p2, s2, 0.0, TAU, 10, Color(0.74, 0.60, 0.36, 0.70 * vfade), 1.0)
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
@@ -1045,27 +1047,43 @@ func _settlements_in(lon0: float, lat0: float, lon1: float, lat1: float, max_lvl
 					continue
 				out.append(it)
 	out.sort_custom(func(a, b) -> bool: return int(a["lvl"]) < int(b["lvl"]))
-	if out.size() > 70:
-		out = out.slice(0, 70)
 	return out
 
 
 ## 村庄：真实聚落数据，按缩放分级显示
 func _villages_for_view(sr: Rect2) -> Array:
-	if map_zoom < 12.0:
+	if map_zoom < 15.0:
 		return []
-	var max_lvl := 3 if map_zoom < 20.0 else 4
 	var vs3 := get_viewport().get_visible_rect().size
 	var sc3 := _map_scale()
 	var half_lon: float = (vs3.x * 0.5) / sc3.x
 	var half_lat: float = (vs3.y * 0.5) / sc3.y
-	var key := Vector2i(int(floor(map_center.x / 0.2)) * 97 + max_lvl,
-			int(floor(map_center.y / 0.2)) * 97 + int(map_zoom))
+	var key := Vector2i(int(floor(map_center.x / 0.2)) * 131 + int(map_zoom * 2.0),
+			int(floor(map_center.y / 0.2)))
 	if key == _vil_key:
 		return _vil_cache
 	_vil_key = key
-	_vil_cache = _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
-			map_center.x + half_lon, map_center.y + half_lat, max_lvl)
+	var raw := _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
+			map_center.x + half_lon, map_center.y + half_lat, 4)
+	# 屏幕空间去重叠：间距至少 22 像素，级别高的先占位（稳定，不随缩放跳变）
+	var gap: float = 22.0 / sc3.x
+	var cells: Dictionary = {}
+	_vil_cache = []
+	for it in raw:
+		var ll: Vector2 = it["ll"]
+		var cxy := Vector2i(int(floor(ll.x / gap)), int(floor(ll.y / gap)))
+		var taken := false
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				if cells.has(Vector2i(cxy.x + dx, cxy.y + dy)):
+					taken = true
+					break
+			if taken:
+				break
+		if taken:
+			continue
+		cells[cxy] = true
+		_vil_cache.append(it)
 	return _vil_cache
 
 
@@ -1369,29 +1387,42 @@ func _draw_roads(cr: Rect2) -> void:
 		var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
 		map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
 
-	var vlist := _villages_for_view(cr) if map_zoom >= 14.0 else []
-	var links := 0
-	for v in vlist:
-		if links >= 55:
-			break
-		var vll: Vector2 = v["ll"]
-		var best := Vector2.ZERO
-		var best_d := 1e9
+	# 村落道路：每个聚落连最近的邻居（村或城），0.45° 内，成网状
+	var vlist := _villages_for_view(cr) if map_zoom >= 15.0 else []
+	if not vlist.is_empty():
+		var pts_all: Array = []
+		for v in vlist:
+			pts_all.append(v["ll"])
 		for c in cities:
-			var d := absf(float(c["lon"]) - vll.x) + absf(float(c["lat"]) - vll.y)
-			if d < best_d:
-				best_d = d
-				best = Vector2(float(c["lon"]), float(c["lat"]))
-		if best_d > 6.0:
-			continue
-		var a := _lonlat_to_screen_off(vll, 0.0)
-		var b := _lonlat_to_screen_off(best, 0.0)
-		if not (cr.grow(20.0).has_point(a) or cr.grow(20.0).has_point(b)):
-			continue
-		var dirv := (b - a)
-		var mid := (a + b) * 0.5 + Vector2(-dirv.y, dirv.x).normalized() * (a.distance_to(b) * 0.06)
-		map_root.draw_polyline(PackedVector2Array([a, mid, b]), col, 1.4)
-		links += 1
+			pts_all.append(Vector2(float(c["lon"]), float(c["lat"])))
+		var used: Dictionary = {}
+		var segs := 0
+		for i in pts_all.size():
+			if segs >= 160:
+				break
+			var a: Vector2 = pts_all[i]
+			var bi := -1
+			var best := 0.45
+			for j in pts_all.size():
+				if i == j:
+					continue
+				var bb: Vector2 = pts_all[j]
+				var dd := Vector2((bb.x - a.x) * cos(deg_to_rad(a.y)), bb.y - a.y).length()
+				if dd < best:
+					best = dd
+					bi = j
+			if bi < 0:
+				continue
+			var pair := Vector2i(mini(i, bi), maxi(i, bi))
+			if used.has(pair):
+				continue
+			used[pair] = true
+			var pa := _lonlat_to_screen_off(a, 0.0)
+			var pb := _lonlat_to_screen_off(pts_all[bi], 0.0)
+			if not (cr.grow(30.0).has_point(pa) or cr.grow(30.0).has_point(pb)):
+				continue
+			map_root.draw_line(pa, pb, Color(0.42, 0.27, 0.14, 0.42 * fade), 1.2)
+			segs += 1
 
 
 func _draw_minimap() -> void:
