@@ -8,6 +8,7 @@ uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
 uniform sampler2D palette_tex : filter_nearest, repeat_disable;
+uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
 vec3 pal(float i) {
 	return texture(palette_tex, vec2((i + 0.5) / 32.0, 0.5)).rgb;
@@ -59,39 +60,9 @@ void fragment() {
 	float sy = (hy - h) / km_y;
 	float shade = clamp(0.62 - (sx * 0.55 + sy * 0.75) * 0.0030 * shade_gain, 0.16, 1.0);
 
-	// 湿度 = 气候带（副热带干旱、赤道湿润、中纬适中）+ 低频扰动
-	float alat = abs(lat);
-	float belt_dry = smoothstep(16.0, 27.0, alat) * (1.0 - smoothstep(34.0, 46.0, alat));
-	float base_moist = 0.60 - 0.30 * belt_dry + 0.16 * (1.0 - smoothstep(0.0, 22.0, alat));
-	float pert = texture(noise_tex, vec2(uv.x * 3.0, uv.y * 3.0)).r - 0.5;
-	float wet = clamp(base_moist + pert * 0.30, 0.0, 1.0);
-	float slope = length(vec2(sx, sy));   // 千分比坡度
-	float snow_line = 5200.0 - max(alat - 30.0, 0.0) * 110.0;
-
-	vec3 c;
-	if (h < -8.0) {
-		c = vec3(0.26, 0.33, 0.40);                       // 海面
-	} else {
-		// 干湿三档：荒漠 / 草原 / 森林，平滑过渡
-		float w_desert = 1.0 - smoothstep(0.22, 0.36, wet);
-		float w_forest = smoothstep(0.52, 0.70, wet);
-		float w_steppe = max(1.0 - w_desert - w_forest, 0.0);
-		c = pal(6.0) * w_desert + pal(7.0) * w_steppe + pal(8.0) * w_forest;
-
-		// 坡度：平原 → 丘陵 → 山地
-		float w_hill = smoothstep(40.0, 90.0, slope);
-		float w_mtn = smoothstep(95.0, 190.0, slope);
-		c = mix(c, pal(1.0), w_hill * 0.9);
-		c = mix(c, pal(2.0), w_mtn);
-
-		// 高原（高且平）
-		float w_plateau = smoothstep(2400.0, 3200.0, h) * (1.0 - w_mtn);
-		c = mix(c, pal(3.0), w_plateau * 0.85);
-
-		// 冰雪
-		c = mix(c, pal(10.0), smoothstep(snow_line - 500.0, snow_line, h));
-		if (alat > 66.0 && h < 400.0) c = pal(10.0);
-	}
+	// 地貌配色：直接取预烘焙的地貌编号 → 游戏同一套 29 色
+	float lid = floor(texture(landform_tex, uv).r * 255.0 + 0.5);
+	vec3 c = (lid > 10.5 && lid < 11.5) ? vec3(0.26, 0.33, 0.40) : pal(lid);
 
 	// 古地图纸色
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));

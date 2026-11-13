@@ -2017,6 +2017,18 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("dem_tex", dem_tex)
 	_map_mat.set_shader_parameter("dem_size", Vector2(float(w), float(h)))
 	_map_mat.set_shader_parameter("noise_tex", nt)
+	# 地貌编号贴图（预烘焙，调用游戏自己的 landform_kind）
+	var lf_f := FileAccess.open("res://data/landform_id.bin", FileAccess.READ)
+	if lf_f != null:
+		var lb := lf_f.get_buffer(lf_f.get_length())
+		lf_f.close()
+		var lf_img := Image.create_from_data(4096, 2048, false, Image.FORMAT_R8, lb)
+		_map_mat.set_shader_parameter("landform_tex",
+				ImageTexture.create_from_image(lf_img))
+		print("[地图] 地貌编号贴图 %d KB" % int(lb.size() / 1024))
+	else:
+		print("[地图] 缺少 landform_id.bin，配色退回气候带")
+
 	# 把游戏里的 29 种地貌配色做成 32x1 调色板，地图直接按类别取色
 	var pal := PackedByteArray()
 	pal.resize(32 * 3)
