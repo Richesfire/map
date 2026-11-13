@@ -76,11 +76,16 @@ var _vil_key := Vector2i(99999, 99999)
 var _hydro_r: Array = []
 var _hydro_l: Array = []
 var _hydro_loaded := false
+var map_hydro: Control
+var _riv_list: Array = []
+var _lake_list: Array = []
 var _city_links: Array = []
 var _c_ppd := 1.0
 var _c_ppy := 1.0
 var _c_cx := 0.0
 var _c_cy := 0.0
+var _tm := {}
+var _tm_n := 0
 var _content_w := 1.0
 var _content_h := 1.0
 var _vil_cache: Array = []
@@ -158,6 +163,8 @@ func _ready() -> void:
 		elif _debug_shot != "":
 			_take_shot(_debug_shot, _debug_shot_delay)
 		_run_shots()
+		if uargs.has("--mapbench"):
+			_map_bench()
 	else:
 		_hide_boot()
 		if _debug_shot != "":
@@ -420,6 +427,13 @@ func _build_ui() -> void:
 	map_backdrop.visible = false
 	ui_layer.add_child(map_backdrop)
 
+	# 水系层（裁剪到内容区，单次绘制）
+	map_hydro = Control.new()
+	map_hydro.clip_contents = true
+	map_hydro.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	map_hydro.draw.connect(_draw_hydro_layer)
+	ui_layer.add_child(map_hydro)
+
 	# 卷轴内容区（裁剪，超出部分不显示）
 	map_view = Control.new()
 	map_view.clip_contents = true
@@ -431,6 +445,8 @@ func _build_ui() -> void:
 	map_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_surface.visible = false
 	map_view.add_child(map_surface)
+	if map_hydro != null:
+		ui_layer.move_child(map_hydro, map_view.get_index() + 1)
 	_setup_map_shader()
 
 	# 大地图（标记/经纬网/边框画在这一层，位于 map_surface 之上）
@@ -906,67 +922,73 @@ func _villages_for_view(sr: Rect2) -> Array:
 
 
 
-## 江河湖泊（主要水系）
-func _draw_hydro(cr: Rect2) -> void:
+## 江河湖泊：加载时预处理，绘制时按可见范围逐条画
+func _draw_hydro_layer() -> void:
 	if not _hydro_loaded:
 		_hydro_loaded = true
 		var f := FileAccess.open("res://data/hydro.json", FileAccess.READ)
 		if f != null:
-			var d: Dictionary = JSON.parse_string(f.get_as_text())
+			var d: Variant = JSON.parse_string(f.get_as_text())
 			if d != null:
-				_hydro_r = d.get("rivers", [])
-				_hydro_l = d.get("lakes", [])
-				for l0 in _hydro_l:
-					l0["bb"] = _line_bbox(l0["p"])
-				for r0 in _hydro_r:
-					r0["bb"] = _line_bbox(r0["p"])
-				print("[地图] 水系 %d 条 / 湖泊 %d 个" % [_hydro_r.size(), _hydro_l.size()])
+				for r in d.get("rivers", []):
+					var pts: Array = r["p"]
+					var pa := PackedVector2Array()
+					var mn := Vector2(999, 999)
+					var mx := Vector2(-999, -999)
+					for p in pts:
+						var v := Vector2(float(p[0]), float(p[1]))
+						pa.append(v)
+						mn.x = minf(mn.x, v.x)
+						mn.y = minf(mn.y, v.y)
+						mx.x = maxf(mx.x, v.x)
+						mx.y = maxf(mx.y, v.y)
+					if pa.size() >= 2:
+						_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
+				for l in d.get("lakes", []):
+					var lp := PackedVector2Array()
+					var mn2 := Vector2(999, 999)
+					var mx2 := Vector2(-999, -999)
+					for p in l["p"]:
+						var v2 := Vector2(float(p[0]), float(p[1]))
+						lp.append(v2)
+						mn2.x = minf(mn2.x, v2.x)
+						mn2.y = minf(mn2.y, v2.y)
+						mx2.x = maxf(mx2.x, v2.x)
+						mx2.y = maxf(mx2.y, v2.y)
+					if lp.size() >= 3:
+						lp.append(lp[0])
+						_lake_list.append({"bb": Rect2(mn2, mx2 - mn2), "p": lp})
+				print("[地图] 水系 %d 条，湖泊 %d" % [_riv_list.size(), _lake_list.size()])
+
 	var fade := clampf((map_zoom - 1.0) / 1.6, 0.0, 1.0)
 	if fade <= 0.01:
 		return
-	var sc2 := _map_scale()
-	var half_lon: float = (cr.size.x * 0.5) / sc2.x
-	var half_lat: float = (cr.size.y * 0.5) / sc2.y
-	var lon0 := map_center.x - half_lon - 2.0
-	var lon1 := map_center.x + half_lon + 2.0
-	var lat0 := map_center.y - half_lat - 2.0
-	var lat1 := map_center.y + half_lat + 2.0
-	var lake_col := Color(0.30, 0.38, 0.42, 0.85 * fade)
-	for l in _hydro_l:
-		var pts: Array = l["p"]
-		var bb: Rect2 = l["bb"]
+	var vs := get_viewport().get_visible_rect().size
+	var ppd := _c_ppd
+	var ppy := _c_ppy
+	var tf := Transform2D(Vector2(ppd, 0.0), Vector2(0.0, -ppy),
+			Vector2(vs.x * 0.5 - _c_cx * ppd - map_hydro.position.x,
+					vs.y * 0.5 + _c_cy * ppy - map_hydro.position.y))
+	map_hydro.draw_set_transform_matrix(tf)
+	# 可见经纬度范围（多留 3 度余量）
+	var lon0: float = _c_cx - (vs.x * 0.5 + 40.0) / ppd
+	var lon1: float = _c_cx + (vs.x * 0.5 + 40.0) / ppd
+	var lat0: float = _c_cy - (vs.y * 0.5 + 40.0) / ppy
+	var lat1: float = _c_cy + (vs.y * 0.5 + 40.0) / ppy
+	for r in _riv_list:
+		var bb: Rect2 = r["bb"]
 		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
 			continue
-		var poly := PackedVector2Array()
-		for p in pts:
-			poly.append(_lonlat_to_screen_off(Vector2(float(p[0]), float(p[1])), 0.0))
-		if poly.size() >= 3:
-			var all_in := true
-			for q in poly:
-				if not cr.grow(8.0).has_point(q):
-					all_in = false
-					break
-			if all_in:
-				poly.append(poly[0])
-				map_root.draw_polyline(poly, lake_col, 2.0)
-	for r in _hydro_r:
-		var rk := int(r["r"])
-		var pts2: Array = r["p"]
-		var bb2: Rect2 = r["bb"]
+		var major: bool = int(r["r"]) <= 3
+		var col := Color(0.26, 0.34, 0.40, (0.62 if major else 0.42) * fade)
+		map_hydro.draw_polyline(r["p"], col, (3.0 if major else 1.6) / ppd)
+	var lake_col := Color(0.30, 0.38, 0.42, 0.9 * fade)
+	for l in _lake_list:
+		var bb2: Rect2 = l["bb"]
 		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
 			continue
-		var w: float = clampf(3.4 - float(rk) * 0.35, 0.9, 3.2)
-		var col := Color(0.26, 0.34, 0.40, (0.55 if rk <= 3 else 0.40) * fade)
-		var prev: Vector2 = Vector2(-99999, -99999)
-		var pad := 8.0
-		for p in pts2:
-			var cur := _lonlat_to_screen_off(Vector2(float(p[0]), float(p[1])), 0.0)
-			if prev.x > -90000.0:
-				var a_in := cr.grow(pad).has_point(prev)
-				var b_in := cr.grow(pad).has_point(cur)
-				if a_in or b_in:
-					map_root.draw_line(prev, cur, col, w)
-			prev = cur
+		map_hydro.draw_polyline(l["p"], lake_col, 2.0 / ppd)
+	map_hydro.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 func _line_bbox(pts: Array) -> Rect2:
@@ -1167,13 +1189,9 @@ func _clamp_map_center() -> void:
 	var half_lon := (vs.x * 0.5) / sc.x
 	var half_lat := (vs.y * 0.5) / sc.y
 	# 保证地图始终覆盖内容区（否则会出现黑边）；缩放到整幅可见时自动居中
-	var vs2 := get_viewport().get_visible_rect().size
-	var sc4 := _map_scale()
-	# 用屏幕半宽判断：整幅可见时居中，放大后允许拖到地图边界贴屏幕边
-	var half_lon2 := (vs2.x * 0.5) / sc4.x
-	var half_lat2 := (vs2.y * 0.5) / sc4.y
-	map_center.x = 0.0 if half_lon2 >= 180.0 else clampf(map_center.x, -180.0 + half_lon2, 180.0 - half_lon2)
-	map_center.y = 0.0 if half_lat2 >= 90.0 else clampf(map_center.y, -90.0 + half_lat2, 90.0 - half_lat2)
+	# 以地图内容区域为准：地图边界最多到屏幕中心（半张内容移出屏幕）
+	map_center.x = clampf(map_center.x, -180.0, 180.0)
+	map_center.y = clampf(map_center.y, -90.0, 90.0)
 
 
 func _zoom_min() -> float:
@@ -1204,6 +1222,17 @@ func _zoom_at(target_zoom: float) -> void:
 	map_root.queue_redraw()
 
 
+## 临时基准：连续重绘地图，测每帧耗时
+func _map_bench() -> void:
+	await get_tree().process_frame
+	var t0 := Time.get_ticks_usec()
+	for i in 60:
+		map_root.queue_redraw()
+		await get_tree().process_frame
+	var dt := float(Time.get_ticks_usec() - t0) / 1000.0
+	print("[基准] 60 帧总 %.0f ms，平均 %.1f ms/帧" % [dt, dt / 60.0])
+
+
 func _draw_map() -> void:
 	var vs := get_viewport().get_visible_rect().size
 	_clamp_map_center()
@@ -1226,6 +1255,9 @@ func _draw_map() -> void:
 	_content_h = content_h
 	map_view.position = content_rect.position
 	map_view.size = content_rect.size
+	if map_hydro != null:
+		map_hydro.position = content_rect.position
+		map_hydro.size = content_rect.size
 
 	var sc := _map_scale()
 	var ppd := sc.x
@@ -1273,11 +1305,26 @@ func _draw_map() -> void:
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x - 132, vs.y - 36), "×%s" % _zoom_text(),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
+	var _t0 := Time.get_ticks_usec()
 	_draw_scroll_rollers(scroll_rect)
 	_draw_brocade(scroll_rect, pad_x, pad_y)
-	_draw_hydro(content_rect)
+	var _t1 := Time.get_ticks_usec()
+	var _t2 := Time.get_ticks_usec()
 	_draw_roads(content_rect)
+	var _t3 := Time.get_ticks_usec()
 	_draw_settlements(content_rect)
+	if map_hydro != null:
+		map_hydro.queue_redraw()
+	var _t4 := Time.get_ticks_usec()
+	if OS.get_cmdline_user_args().has("--maptime"):
+		_tm["frame"] = float(_t1 - _t0) / 1000.0
+		_tm["hydro"] = float(_t2 - _t1) / 1000.0
+		_tm["roads"] = float(_t3 - _t2) / 1000.0
+		_tm["settle"] = float(_t4 - _t3) / 1000.0
+		_tm_n += 1
+		if _tm_n % 2 == 0:
+			print("[计时] 框 %.1f ms / 水系 %.1f / 官道 %.1f / 聚落 %.1f"
+					% [_tm["frame"], _tm["hydro"], _tm["roads"], _tm["settle"]])
 
 	# 玩家位置
 	if terrain != null:
