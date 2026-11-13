@@ -1807,8 +1807,8 @@ func _draw_map() -> void:
 	if _map_shader_ok:
 		map_surface.visible = true
 		# 相对裁剪容器定位
-		map_surface.position = rect.position - content_rect.position + Vector2(0.0, -(90.0 - LAT_LIMIT) * ppy2)
-		map_surface.size = Vector2(content_w, content_w * 0.5)
+		map_surface.position = Vector2.ZERO
+		map_surface.size = content_rect.size
 		_map_mat.set_shader_parameter("shade_alpha",
 				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.42)
 	else:
@@ -2074,6 +2074,7 @@ func _setup_map_shader() -> void:
 	var pal_img := Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)
 	_map_mat.set_shader_parameter("palette_tex", ImageTexture.create_from_image(pal_img))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
+	_map_mat.set_shader_parameter("lat_limit", LAT_LIMIT)
 	map_surface.material = _map_mat
 	_map_shader_ok = true
 	print("[地图] 着色器直绘就绪（%d MB 高程纹理）" % int(bytes.size() / 1048576))

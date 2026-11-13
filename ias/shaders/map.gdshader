@@ -7,6 +7,7 @@ uniform sampler2D noise_tex : filter_linear, repeat_enable;
 uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
+uniform float lat_limit = 85.0;
 uniform sampler2D palette_tex : filter_nearest, repeat_disable;
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
@@ -46,8 +47,11 @@ vec3 biome(float lat, float h, float moist) {
 }
 
 void fragment() {
-	vec2 uv = UV;
-	float lat = mix(90.0, -90.0, uv.y);
+	// 可见区是 ±lat_limit，贴图仍是整幅世界：把屏幕 uv 映射到世界 uv
+	float v0 = (90.0 - lat_limit) / 180.0;
+	float v1 = (90.0 + lat_limit) / 180.0;
+	vec2 uv = vec2(UV.x, mix(v0, v1, UV.y));
+	float lat = mix(lat_limit, -lat_limit, UV.y);
 	float h = h_at(uv);
 
 	// 地势阴影：按 DEM 邻域求坡向（固定西北来光）
