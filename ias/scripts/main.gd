@@ -1792,8 +1792,9 @@ func _draw_map() -> void:
 		print("[尺寸] vs=%.0fx%.0f content=%.0fx%.0f at (%.0f,%.0f) sheet=%.0fx%.0f zoom=%.2f"
 				% [vs.x, vs.y, content_w, content_h, content_rect.position.x, content_rect.position.y,
 					sheet_w, sheet_h, map_zoom])
-	map_view.position = content_rect.position
-	map_view.size = content_rect.size
+	# 可见区上下各内缩 1 像素：贴图最边那一行是极地行（冰色），内缩后落在裁剪区外
+	map_view.position = content_rect.position + Vector2(0, 1)
+	map_view.size = content_rect.size - Vector2(0, 2)
 	if map_hydro != null:
 		map_hydro.position = content_rect.position
 		map_hydro.size = content_rect.size
@@ -1849,6 +1850,10 @@ func _draw_map() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
 	var _t0 := Time.get_ticks_usec()
+	# 地图上下各压一条 2px 的墨线：遮住贴图边缘那一行（极地行会显示成白色）
+	map_root.draw_rect(Rect2(content_rect.position, Vector2(content_rect.size.x, 2)), Color(0.22, 0.16, 0.10))
+	map_root.draw_rect(Rect2(content_rect.position + Vector2(0, content_rect.size.y - 2),
+			Vector2(content_rect.size.x, 2)), Color(0.22, 0.16, 0.10))
 	_draw_scroll_rollers(scroll_rect)
 	_draw_brocade(scroll_rect, pad_x, pad_y)
 	var _t1 := Time.get_ticks_usec()

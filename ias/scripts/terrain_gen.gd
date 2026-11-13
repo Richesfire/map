@@ -973,9 +973,9 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	var ice_north := 71.0 + edge_n * 9.0 + edge_n2 * 3.0
 	var ice_south := -59.0 + edge_n * 7.0 + edge_n2 * 3.0
 	if lat > ice_north:
-		return LF_COAST if h < -8.0 else LF_ICE     # 北冰洋是水（海冰不当地面）
+		return LF_COAST if is_water(lon, lat) else LF_ICE
 	if lat < ice_south:
-		return LF_COAST if h < -8.0 else LF_ICE
+		return LF_COAST if is_water(lon, lat) else LF_ICE
 	if alat > 73.0 and h < 500.0:
 		return LF_ICE
 	if h > 5800.0 - maxf(alat - 30.0, 0.0) * 110.0:

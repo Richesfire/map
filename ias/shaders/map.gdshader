@@ -50,7 +50,7 @@ void fragment() {
 	// 可见区是 ±lat_limit，贴图仍是整幅世界：把屏幕 uv 映射到世界 uv
 	float v0 = (90.0 - lat_limit) / 180.0;
 	float v1 = (90.0 + lat_limit) / 180.0;
-	vec2 uv = vec2(UV.x, mix(v0, v1, UV.y));
+	vec2 uv = vec2(clamp(UV.x, 0.0, 1.0), clamp(mix(v0, v1, UV.y), v0, v1));
 	float lat = mix(lat_limit, -lat_limit, UV.y);
 	float h = h_at(uv);
 
