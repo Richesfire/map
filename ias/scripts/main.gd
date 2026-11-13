@@ -92,10 +92,6 @@ var _settle_thin: Array = []
 var _settle_idx: Dictionary = {}
 var _settle_loaded := false
 var _city_links: Array = []
-var _c_ppd := 1.0
-var _c_ppy := 1.0
-var _c_cx := 0.0
-var _c_cy := 0.0
 var _tm := {}
 var _tm_n := 0
 var _content_w := 1.0
@@ -1240,17 +1236,17 @@ func _draw_hydro_layer() -> void:
 	if fade <= 0.01:
 		return
 	var vs := get_viewport().get_visible_rect().size
-	var scn := _map_scale()
-	var ppd: float = scn.x
-	var ppy: float = scn.y
+	var pr := _proj()
+	var ppd: float = pr[0]
+	var ppy: float = pr[1]
 	var tf := Transform2D(Vector2(ppd, 0.0), Vector2(0.0, -ppy),
-			Vector2(vs.x * 0.5 - map_center.x * ppd - map_hydro.position.x,
-					vs.y * 0.5 + map_center.y * ppy - map_hydro.position.y))
+			Vector2(vs.x * 0.5 - float(pr[2]) * ppd - map_hydro.position.x,
+					vs.y * 0.5 + float(pr[3]) * ppy - map_hydro.position.y))
 	map_hydro.draw_set_transform_matrix(tf)
-	var lon0: float = map_center.x - (vs.x * 0.5 + 40.0) / ppd
-	var lon1: float = map_center.x + (vs.x * 0.5 + 40.0) / ppd
-	var lat0: float = map_center.y - (vs.y * 0.5 + 40.0) / ppy
-	var lat1: float = map_center.y + (vs.y * 0.5 + 40.0) / ppy
+	var lon0: float = float(pr[2]) - (vs.x * 0.5 + 40.0) / ppd
+	var lon1: float = float(pr[2]) + (vs.x * 0.5 + 40.0) / ppd
+	var lat0: float = float(pr[3]) - (vs.y * 0.5 + 40.0) / ppy
+	var lat1: float = float(pr[3]) + (vs.y * 0.5 + 40.0) / ppy
 	for r in _riv_list:
 		var bb: Rect2 = r["bb"]
 		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
@@ -1794,10 +1790,6 @@ func _draw_map() -> void:
 	var ppd := sc.x
 	var w := ppd * 360.0
 	var h := sc.y * 180.0
-	_c_ppd = ppd
-	_c_ppy = sc.y
-	_c_cx = map_center.x
-	_c_cy = map_center.y
 	if OS.get_cmdline_user_args().has("--pintest") and not _pin_probed:
 		_pin_probed = true
 		var vsz2 := get_viewport().get_visible_rect().size
@@ -1906,12 +1898,17 @@ func _map_scale() -> Vector2:
 	return Vector2(content_w / 360.0, content_w / 360.0)
 
 
+## 唯一的投影来源：返回 [经度像素, 纬度像素, 中心经度, 中心纬度]
+func _proj() -> Array:
+	var sc := _map_scale()
+	return [sc.x, sc.y, map_center.x, map_center.y]
+
+
 func _lonlat_to_screen_off(ll: Vector2, off: float) -> Vector2:
 	var vs := get_viewport().get_visible_rect().size
-	var ppd := _c_ppd
-	var ppy := _c_ppy
-	return Vector2(vs.x * 0.5 + (ll.x + off - _c_cx) * ppd,
-			vs.y * 0.5 - (ll.y - _c_cy) * ppy)
+	var p := _proj()
+	return Vector2(vs.x * 0.5 + (ll.x + off - float(p[2])) * float(p[0]),
+			vs.y * 0.5 - (ll.y - float(p[3])) * float(p[1]))
 
 
 ## 经纬度 -> 屏幕（以地图中心为基准）
@@ -2011,6 +2008,16 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("dem_tex", dem_tex)
 	_map_mat.set_shader_parameter("dem_size", Vector2(float(w), float(h)))
 	_map_mat.set_shader_parameter("noise_tex", nt)
+	# 把游戏里的 29 种地貌配色做成 32x1 调色板，地图直接按类别取色
+	var pal := PackedByteArray()
+	pal.resize(32 * 3)
+	for i in 32:
+		var col: Color = TG.LF_COLORS[mini(i, TG.LF_COLORS.size() - 1)]
+		pal[i * 3] = int(clampf(col.r, 0.0, 1.0) * 255.0)
+		pal[i * 3 + 1] = int(clampf(col.g, 0.0, 1.0) * 255.0)
+		pal[i * 3 + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
+	var pal_img := Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)
+	_map_mat.set_shader_parameter("palette_tex", ImageTexture.create_from_image(pal_img))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	map_surface.material = _map_mat
 	_map_shader_ok = true

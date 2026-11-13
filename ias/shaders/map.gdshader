@@ -7,6 +7,7 @@ uniform sampler2D noise_tex : filter_linear, repeat_enable;
 uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
+uniform sampler2D palette_tex : filter_nearest, repeat_disable;
 
 float h_at(vec2 uv) {
 	return texture(dem_tex, uv).r * 20000.0 - 11000.0;
@@ -54,37 +55,48 @@ void fragment() {
 	float sy = (hy - h) / km_y;
 	float shade = clamp(0.62 - (sx * 0.55 + sy * 0.75) * 0.0030 * shade_gain, 0.16, 1.0);
 
-	// 逐像素地貌配色：不依赖低分辨率贴图，放大不会糊
-	float slope = length(vec2(sx, sy)) * 1000.0;   // 竖向/水平（千分比）
+	// 逐像素判定地貌类别，颜色取游戏里的同一套调色板（一种地形一种颜色）
+	float slope = length(vec2(sx, sy));   // 千分比坡度（m/km，已经是千分）
 	float moist = texture(noise_tex, vec2(uv.x * 9.0, uv.y * 9.0)).r;
 	float moist2 = texture(noise_tex, vec2(uv.x * 23.0 + 0.31, uv.y * 23.0 + 0.77)).r;
 	float wet = mix(moist, moist2, 0.35);
-
-	vec3 ocean  = vec3(0.24, 0.32, 0.40);
-	vec3 sand   = vec3(0.80, 0.72, 0.50);
-	vec3 steppe = vec3(0.70, 0.66, 0.42);
-	vec3 grass  = vec3(0.52, 0.56, 0.34);
-	vec3 forest = vec3(0.30, 0.42, 0.24);
-	vec3 rock   = vec3(0.46, 0.44, 0.40);
-	vec3 rock_d = vec3(0.38, 0.36, 0.33);
-	vec3 snow   = vec3(0.90, 0.92, 0.93);
-
-	vec3 c = grass;
-	c = mix(c, forest, smoothstep(0.52, 0.72, wet));
-	c = mix(c, steppe, smoothstep(0.46, 0.26, wet));
-	c = mix(c, sand, smoothstep(0.22, 0.10, wet) * smoothstep(-200.0, 600.0, h));
-	// 高海拔压灰、雪线以上变白
-	c = mix(c, rock, smoothstep(2200.0, 3600.0, h) * 0.55);
-	c = mix(c, rock_d, smoothstep(0.10, 0.30, slope) * 0.55);
 	float snow_line = 5200.0 - max(abs(lat) - 30.0, 0.0) * 110.0;
-	c = mix(c, snow, smoothstep(snow_line - 400.0, snow_line, h));
-	if (abs(lat) > 72.0 && h < 400.0) c = vec3(0.88, 0.92, 0.94);
-	c = mix(c, ocean, step(h, -8.0));
+
+	float lf = 0.0;
+	vec3 c;
+	if (h < -8.0) {
+		c = vec3(0.26, 0.33, 0.40);                  // 海面
+	} else if (h > snow_line - 300.0 || (abs(lat) > 65.0 && h < 500.0)) {
+		lf = 10.0;                                   // 冰雪
+	} else if (h > 4200.0) {
+		lf = 22.0;                                   // 冰蚀山地
+	} else if (slope > 170.0) {
+		lf = (wet > 0.55 && abs(lat) < 32.0) ? 19.0 : 18.0;   // 喀斯特山地 / 花岗岩山地
+	} else if (slope > 95.0) {
+		lf = 2.0;                                    // 山地
+	} else if (h > 2600.0) {
+		lf = 3.0;                                    // 高原
+	} else if (slope > 45.0) {
+		lf = 1.0;                                    // 丘陵
+	} else if (wet < 0.24 && h < 1600.0) {
+		lf = 6.0;                                    // 荒漠
+	} else if (wet < 0.30 && h < 1200.0) {
+		lf = 26.0;                                   // 沙质荒漠
+	} else if (wet < 0.40) {
+		lf = 7.0;                                    // 草原
+	} else if (wet > 0.62 && h < 1600.0) {
+		lf = 8.0;                                    // 森林
+	} else if (h < 260.0) {
+		lf = 5.0;                                    // 河谷/低地
+	} else {
+		lf = 0.0;                                    // 平原
+	}
+	if (h >= -8.0) c = texture(palette_tex, vec2((lf + 0.5) / 32.0, 0.5)).rgb;
 
 	// 古地图纸色
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));
 	vec3 paper = vec3(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04);
-	c = mix(c, paper, 0.30);
+	c = mix(c, paper, 0.12);
 
 	// 阴影叠上去
 	c = mix(c, vec3(0.30, 0.27, 0.22) * (0.45 + 0.75 * shade), shade_alpha);
