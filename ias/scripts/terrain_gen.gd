@@ -1003,7 +1003,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 喀斯特只在中国西南（桂黔滇）与中南半岛北部出现，不再全球热带都算
 	# 喀斯特区：边界用噪声抖动，避免出现矩形
 	var kj := (_vnoise(lon * 0.9, lat * 0.9, 6061) - 0.5) * 3.0
-	var karst_region := (lon + kj > 100.0 and lon + kj < 116.0 and lat + kj > 19.0 and lat + kj < 32.0)
+	var karst_region := (lon + kj > 104.0 and lon + kj < 112.5 and lat + kj > 21.0 and lat + kj < 29.0)
 	if karst_region and m > 0.45 and h > 60.0 and h < 1800.0 and relief < 700.0:
 		return LF_KARST
 
@@ -1027,7 +1027,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 起伏大 → 山地；中等 → 丘陵
 	if slope > 22.0 or relief > 700.0:
 		# 高海拔山谷 → 冰川谷
-		if h > 3000.0 and relief > 500.0:
+		if h > 4500.0:
 			return LF_GLACIAL
 		# 山地按岩性/成因细分
 		if h > 3200.0:
@@ -1200,12 +1200,13 @@ const ARID_BOXES := [
 
 const MONSOON_BOXES := [
 	[100.0, 128.0, 8.0, 42.0],     # 东亚（中国东南、日本）
-	[68.0, 98.0, 5.0, 32.0],       # 南亚（印度季风）
+	[65.0, 100.0, 5.0, 35.0],      # 南亚（印度季风，含恒河平原）
 	[-100.0, -72.0, 24.0, 40.0],   # 美国东南
-	[-62.0, -35.0, -35.0, -8.0],   # 巴西东南
+	[-75.0, -32.0, -35.0, 5.0],    # 南美（亚马逊—巴西高原）
 	[143.0, 156.0, -40.0, -12.0],  # 澳洲东岸
 	[22.0, 42.0, -35.0, -5.0],     # 非洲东南
 	[95.0, 110.0, 5.0, 22.0],      # 中南半岛
+	[96.0, 106.0, 19.0, 30.0],     # 中国西南（云南、川西）
 ]
 
 
@@ -1218,7 +1219,7 @@ static func _monsoon(lon: float, lat: float) -> float:
 		var hy: float = (b[3] - b[2]) * 0.5
 		var dx: float = absf(lon - cx) / hx
 		var dy: float = absf(lat - cy) / hy
-		var d: float = maxf(dx, dy)
+		var d: float = maxf(dx, dy) + (_vnoise(lon * 1.7 + 5.0, lat * 1.7, 9191) - 0.5) * 0.5
 		if d < 1.0:
 			best = maxf(best, 1.0 - smoothstep(0.30, 1.0, d))
 	return best
@@ -1238,7 +1239,8 @@ static func moist_at(lon: float, lat: float) -> float:
 		var cy2: float = (b[2] + b[3]) * 0.5
 		var hx2: float = (b[1] - b[0]) * 0.5
 		var hy2: float = (b[3] - b[2]) * 0.5
-		var d2: float = maxf(absf(lon - cx2) / hx2, absf(lat - cy2) / hy2)
+		var wob := (_vnoise(lon * 1.7, lat * 1.7, 8181) - 0.5) * 0.55
+		var d2: float = maxf(absf(lon - cx2) / hx2, absf(lat - cy2) / hy2) + wob
 		var w2: float = 1.0 - smoothstep(0.30, 1.0, d2)
 		if w2 > 0.0:
 			dyn = lerpf(dyn, minf(dyn, 0.14), w2)
