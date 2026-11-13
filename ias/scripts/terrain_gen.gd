@@ -1001,9 +1001,17 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 
 	# 喀斯特排在山区判定之前：峰丛本来就陡，但成因不同
 	# 喀斯特只在中国西南（桂黔滇）与中南半岛北部出现，不再全球热带都算
-	var karst_region := (lon > 100.0 and lon < 116.0 and lat > 19.0 and lat < 32.0)
+	# 喀斯特区：边界用噪声抖动，避免出现矩形
+	var kj := (_vnoise(lon * 0.9, lat * 0.9, 6061) - 0.5) * 3.0
+	var karst_region := (lon + kj > 100.0 and lon + kj < 116.0 and lat + kj > 19.0 and lat + kj < 32.0)
 	if karst_region and m > 0.45 and h > 60.0 and h < 1800.0 and relief < 700.0:
 		return LF_KARST
+
+	# 黄土高原：区域优先（水热条件不适用，这里是风积黄土堆积区）
+	var lj := (_vnoise(lon * 0.7 + 3.0, lat * 0.7 - 2.0, 7072) - 0.5) * 4.0
+	if lat + lj > 32.0 and lat + lj < 40.0 and lon + lj > 100.0 and lon + lj < 118.0 \
+			and h > 200.0 and h < 1900.0 and relief < 800.0:
+		return LF_LOESS if slope < 12.0 else LF_MTN_LOESS
 
 	# 干旱区优先判定（否则低平的沙漠会被判成丘陵/平原）
 	# 盐碱：只在极干、极平的内陆盆地（柴达木、死海、盐湖周边），不能泛化到三大沙漠
@@ -1177,11 +1185,64 @@ static func temp_at(lon: float, lat: float, h: float) -> float:
 
 
 ## 湿度代理：低频噪声 + 副热带干旱带（撒哈拉/阿拉伯/澳洲中部）
+## 季风区湿润加成：这些地方在 10-40 度依然多雨，不能被副高判成沙漠
+## 每个矩形给出 [lon0, lon1, lat0, lat1]，返回 0..1 的接近程度
+const ARID_BOXES := [
+	[74.0, 92.0, 36.0, 42.0],     # 塔克拉玛干
+	[88.0, 112.0, 40.0, 48.0],    # 戈壁
+	[40.0, 66.0, 25.0, 38.0],     # 伊朗高原
+	[55.0, 70.0, 36.0, 45.0],     # 卡拉库姆
+	[-72.0, -68.0, -28.0, -18.0], # 阿塔卡马
+	[-72.0, -66.0, -50.0, -40.0], # 巴塔哥尼亚
+	[18.0, 26.0, -30.0, -22.0],   # 卡拉哈里
+	[120.0, 142.0, -30.0, -20.0], # 澳洲中部
+]
+
+const MONSOON_BOXES := [
+	[100.0, 128.0, 8.0, 42.0],     # 东亚（中国东南、日本）
+	[68.0, 98.0, 5.0, 32.0],       # 南亚（印度季风）
+	[-100.0, -72.0, 24.0, 40.0],   # 美国东南
+	[-62.0, -35.0, -35.0, -8.0],   # 巴西东南
+	[143.0, 156.0, -40.0, -12.0],  # 澳洲东岸
+	[22.0, 42.0, -35.0, -5.0],     # 非洲东南
+	[95.0, 110.0, 5.0, 22.0],      # 中南半岛
+]
+
+
+static func _monsoon(lon: float, lat: float) -> float:
+	var best := 0.0
+	for b in MONSOON_BOXES:
+		var cx: float = (b[0] + b[1]) * 0.5
+		var cy: float = (b[2] + b[3]) * 0.5
+		var hx: float = (b[1] - b[0]) * 0.5
+		var hy: float = (b[3] - b[2]) * 0.5
+		var dx: float = absf(lon - cx) / hx
+		var dy: float = absf(lat - cy) / hy
+		var d: float = maxf(dx, dy)
+		if d < 1.0:
+			best = maxf(best, 1.0 - smoothstep(0.30, 1.0, d))
+	return best
+
+
 static func moist_at(lon: float, lat: float) -> float:
 	var m := _vnoise(lon * 0.42 + 100.0, lat * 0.42 - 30.0, 2027) * 0.5 + 0.5
 	var belt := clampf(1.0 - absf(absf(lat) - 25.0) / 13.0, 0.0, 1.0)
-	# 副热带干旱带：真实世界里 15-35 度大陆内部就是沙漠（撒哈拉、阿拉伯、澳洲中部）
-	return m * (1.0 - 0.78 * belt)
+	var dyn := m * (1.0 - 0.78 * belt)
+	# 季风区：把湿度抬回 0.45 以上，避免被判成荒漠
+	var mon := _monsoon(lon, lat)
+	if mon > 0.0:
+		dyn = maxf(dyn, 0.30 + 0.32 * mon)
+	# 大陆内部沙漠（塔克拉玛干、戈壁、伊朗、卡拉库姆、阿塔卡马、巴塔哥尼亚、卡拉哈里、澳洲中部）
+	for b in ARID_BOXES:
+		var cx2: float = (b[0] + b[1]) * 0.5
+		var cy2: float = (b[2] + b[3]) * 0.5
+		var hx2: float = (b[1] - b[0]) * 0.5
+		var hy2: float = (b[3] - b[2]) * 0.5
+		var d2: float = maxf(absf(lon - cx2) / hx2, absf(lat - cy2) / hy2)
+		var w2: float = 1.0 - smoothstep(0.30, 1.0, d2)
+		if w2 > 0.0:
+			dyn = lerpf(dyn, minf(dyn, 0.14), w2)
+	return clampf(dyn, 0.0, 1.0)
 
 
 static func biome_at(lon: float, lat: float, h: float) -> int:
