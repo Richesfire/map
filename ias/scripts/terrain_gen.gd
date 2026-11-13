@@ -999,9 +999,10 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		return LF_KARST
 
 	# 干旱区优先判定（否则低平的沙漠会被判成丘陵/平原）
+	# 盐碱：只在极干、极平的内陆盆地（柴达木、死海、盐湖周边），不能泛化到三大沙漠
+	if m < 0.10 and relief < 120.0 and h < 4500.0 and slope < 2.0:
+		return LF_DESERT_SALT
 	if m < 0.38 and h < 2200.0 and relief < 400.0:
-		if m < 0.17:
-			return LF_DESERT_SALT
 		if m < 0.24:
 			return LF_DESERT_GOBI
 		if m < 0.31:
@@ -1061,7 +1062,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if m < 0.30 and absf(lat) > 24.0 and absf(lat) < 45.0:
 		return LF_DESERT_GOBI
 	# 湿润低平 → 湿地
-	if m > 0.72 and slope < 1.0:
+	if m > 0.72 and slope < 1.0 and h < 60.0 and relief < 40.0:
 		return LF_WETLAND
 	# 温度带区分草原 / 森林
 	if t < 10.0 or m < 0.45:
