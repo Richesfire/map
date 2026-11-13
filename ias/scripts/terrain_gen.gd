@@ -63,6 +63,8 @@ static var _load_ms: int = 0
 # 近场置换贴图（可平铺 R8）：0 平原 / 1 丘陵 / 2 山地脊 / 3 沙丘
 static var _disp: Array = []
 const DISP_PX := 64
+const DISP_AMP := 6.0
+const DISP_AMP_SCALE := 320.0
 const DISP_TILE_M := 600.0
 
 
@@ -676,14 +678,12 @@ static func detail_fine(lon: float, lat: float, h: float) -> float:
 	# 振幅/平铺尺度/用哪两张贴图，全部来自该地貌的配置
 	var kind := landform_kind(lon, lat, h)
 	var prof: Dictionary = BiomeLib.profile_for(kind)
+	# 简化：每种地貌只用一张置换图，振幅/尺度全局统一，起伏性格由贴图本身表达
 	var ids: Array = prof["disp_tiles"]
-	var amp: float = prof["disp_amp"]
-	var tscale: float = prof["disp_scale"]
-	var u2 := mx / tscale
-	var v2 := my / tscale
-	dv = _disp_at(int(ids[0]), u2, v2) * 0.65
-	dv += _disp_at(int(ids[1]) % _disp.size(), u2 * 1.73 + 0.31, v2 * 1.73 - 0.17) * 0.35
-	var d := (dv - 0.5) * 2.0 * amp
+	var u2 := mx / DISP_AMP_SCALE
+	var v2 := my / DISP_AMP_SCALE
+	dv = _disp_at(int(ids[0]), u2, v2)
+	var d := (dv - 0.5) * 2.0 * DISP_AMP
 
 	# 坡度越大越“崎岖”：用底图梯度估个坡，陡坡加脊状起伏、平地保持平缓
 	var dd := 0.0018
@@ -696,8 +696,8 @@ static func detail_fine(lon: float, lat: float, h: float) -> float:
 	var y := lat * 110.54 * 0.001
 	var rough := 1.0 - absf(_fbm(x * 2.6, y * 2.6, 551, 3) * 2.0 - 1.0)
 	var fine := _vnoise(x * 14.0, y * 14.0, 733)
-	d += (rough - 0.5) * 2.0 * (1.2 + amp * 0.35 * sk)
-	d += (fine - 0.5) * 2.0 * (0.4 + amp * 0.12 * sk)
+	d += (rough - 0.5) * 2.0 * (1.2 + DISP_AMP * 0.35 * sk)
+	d += (fine - 0.5) * 2.0 * (0.4 + DISP_AMP * 0.12 * sk)
 	return d
 
 

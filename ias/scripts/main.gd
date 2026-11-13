@@ -1608,9 +1608,18 @@ func _draw_cross() -> void:
 ## 缩放下限：地图至少要占屏幕一半高
 ## 地图边界最多停在屏幕中心：中心不能越出 [-180+半屏, 180-半屏]
 func _clamp_map_center() -> void:
-	# 地图内容边界最多到屏幕中心：中心只能在 ±180 / ±90 之内
-	map_center.x = clampf(map_center.x, -180.0, 180.0)
-	map_center.y = clampf(map_center.y, -90.0, 90.0)
+	var vs := get_viewport().get_visible_rect().size
+	var sc := _map_scale()
+	var half_lon := (vs.x * 0.5) / sc.x
+	var half_lat := (vs.y * 0.5) / sc.y
+	if half_lon >= 180.0:
+		map_center.x = 0.0
+	else:
+		map_center.x = clampf(map_center.x, -180.0 + half_lon, 180.0 - half_lon)
+	if half_lat >= 90.0:
+		map_center.y = 0.0
+	else:
+		map_center.y = clampf(map_center.y, -90.0 + half_lat, 90.0 - half_lat)
 
 
 func _zoom_min() -> float:
