@@ -85,6 +85,7 @@ var _hydro_loaded := false
 var map_hydro: Control
 var _riv_list: Array = []
 var _lake_list: Array = []
+var _hydro_grid: Dictionary = {}
 var _city_links: Array = []
 var _c_ppd := 1.0
 var _c_ppy := 1.0
@@ -251,7 +252,7 @@ func _build_ui() -> void:
 	menu_box.add_child(bg)
 
 	var band := ColorRect.new()
-	band.color = Color(0.30, 0.24, 0.15, 0.55)
+	band.color = Color(0.42, 0.24, 0.15, 0.55)
 	band.position = Vector2(118, 168)
 	band.size = Vector2(3, 168)
 	menu_box.add_child(band)
@@ -295,7 +296,7 @@ func _build_ui() -> void:
 	var ver := Label.new()
 	ver.text = "地形数据：Terrarium 2.4km 全球 · 太行 300m 近场　｜　Godot 4.7"
 	ver.add_theme_font_size_override("font_size", 13)
-	ver.add_theme_color_override("font_color", Color(0.42, 0.38, 0.30))
+	ver.add_theme_color_override("font_color", Color(0.42, 0.38, 0.42))
 	ver.position = Vector2(24, 24)
 	menu_box.add_child(ver)
 
@@ -364,7 +365,7 @@ func _build_ui() -> void:
 		bs.set_border_width_all(1)
 		b.add_theme_stylebox_override("normal", bs)
 		var bh := bs.duplicate() as StyleBoxFlat
-		bh.bg_color = Color(0.30, 0.24, 0.15, 0.98)
+		bh.bg_color = Color(0.42, 0.24, 0.15, 0.98)
 		bh.border_color = Color(0.72, 0.58, 0.32)
 		b.add_theme_stylebox_override("hover", bh)
 		b.add_theme_stylebox_override("pressed", bh)
@@ -528,7 +529,7 @@ func _build_ui() -> void:
 		var lb := Label.new()
 		lb.text = String(c["name"])
 		lb.add_theme_font_size_override("font_size", 18)
-		lb.add_theme_color_override("font_color", Color(0.30, 0.20, 0.12))
+		lb.add_theme_color_override("font_color", Color(0.42, 0.20, 0.12))
 		lb.visible = false
 		map_root.add_child(lb)
 		lb.visible = false
@@ -905,7 +906,7 @@ func _draw_scroll_rollers(sr: Rect2) -> void:
 		var top := sr.position.y - over
 		var bot := sr.position.y + sr.size.y + over
 		map_root.draw_rect(Rect2(x, top, rod_w, bot - top), Color(0.28, 0.21, 0.13))
-		map_root.draw_rect(Rect2(x + 3, top, rod_w - 6, bot - top), Color(0.40, 0.30, 0.18))
+		map_root.draw_rect(Rect2(x + 3, top, rod_w - 6, bot - top), Color(0.40, 0.42, 0.18))
 		map_root.draw_rect(Rect2(x + 7, top, 3, bot - top), Color(0.52, 0.40, 0.24, 0.7))
 		for yy in [top - 7.0, bot]:
 			map_root.draw_rect(Rect2(x - 3, yy, rod_w + 6, 11), Color(0.24, 0.18, 0.11))
@@ -922,8 +923,8 @@ func _draw_brocade(sr: Rect2, pad_x: float, pad_y: float) -> void:
 
 	var x := sr.position.x
 	while x < sr.position.x + sr.size.x:
-		map_root.draw_line(Vector2(x, sr.position.y), Vector2(x, sr.position.y + pad_y), Color(0.54, 0.43, 0.27, 0.30), 1.0)
-		map_root.draw_line(Vector2(x, sr.position.y + sr.size.y - pad_y), Vector2(x, sr.position.y + sr.size.y), Color(0.54, 0.43, 0.27, 0.30), 1.0)
+		map_root.draw_line(Vector2(x, sr.position.y), Vector2(x, sr.position.y + pad_y), Color(0.54, 0.43, 0.27, 0.42), 1.0)
+		map_root.draw_line(Vector2(x, sr.position.y + sr.size.y - pad_y), Vector2(x, sr.position.y + sr.size.y), Color(0.54, 0.43, 0.27, 0.42), 1.0)
 		x += 7.0
 	var y := sr.position.y
 	while y < sr.position.y + sr.size.y:
@@ -966,8 +967,8 @@ func _draw_settlements(sr: Rect2) -> void:
 							gate_chars[k2], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.42, 0.28, 0.14))
 				k2 += 1
 		# 十字街
-		map_root.draw_line(Vector2(p.x - half.x + 1.5, p.y), Vector2(p.x + half.x - 1.5, p.y), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
-		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
+		map_root.draw_line(Vector2(p.x - half.x + 1.5, p.y), Vector2(p.x + half.x - 1.5, p.y), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
+		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 
 	# 村庄：放大后才出现
 	var vfade := clampf((map_zoom - 12.0) / 6.0, 0.0, 1.0)
@@ -975,7 +976,7 @@ func _draw_settlements(sr: Rect2) -> void:
 		return
 	var vlist := _villages_for_view(sr)
 	for v in vlist:
-		var p2 := _lonlat_to_screen_off(v, 0.0)
+		var p2 := _lonlat_to_screen_off(v["ll"], 0.0)
 		if not sr.has_point(p2):
 			continue
 		var s2: float = clampf(3.0 + map_zoom * 0.14, 3.5, 7.0)
@@ -984,96 +985,138 @@ func _draw_settlements(sr: Rect2) -> void:
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
+## 村庄：按地貌/水源/坡度/城市距离评分选址，密度分层，近水成串
 func _villages_for_view(sr: Rect2) -> Array:
-	var step := 0.16
+	if map_zoom < 12.0:
+		return []
+	_ensure_hydro()
+	var step := 0.14
 	var key := Vector2i(int(floor(map_center.x / step)) * 97 + int(map_zoom * 4.0),
 			int(floor(map_center.y / step)) * 97 + int(map_zoom * 4.0))
-	if key != _vil_key:
-		_vil_key = key
-		_vil_cache = []
-		# 只扫屏幕范围（内容区在高倍下可能是整个世界的几十倍，扫全图会把上限吃光）
-		var vs3 := get_viewport().get_visible_rect().size
-		var sc3 := _map_scale()
-		var half_lon: float = (vs3.x * 0.5) / sc3.x
-		var half_lat: float = (vs3.y * 0.5) / sc3.y
-		var lon0 := map_center.x - half_lon
-		var lon1 := map_center.x + half_lon
-		var lat0 := map_center.y - half_lat
-		var lat1 := map_center.y + half_lat
-		var thr := clampf(0.72 + (lon1 - lon0) / 90.0, 0.78, 0.965)
-		var lon := lon0
-		var row := 0
-		while lon < lon1 and _vil_cache.size() < 60:
-			var lat := lat0 + (step * 0.5 if row % 2 == 1 else 0.0)
-			while lat < lat1:
-				var hv := TG._vnoise(lon * 9.7 + 3.1, lat * 9.7 - 1.7, 4711)
-				if hv > thr:
-					var jx := (TG._vnoise(lon * 41.0, lat * 41.0, 91) - 0.5) * step * 1.6
-					var jy := (TG._vnoise(lon * 37.0, lat * 37.0, 92) - 0.5) * step * 1.6
-					var vlon := lon + jx
-					var vlat := lat + jy
-					var hh := TG.dem_at(vlon, vlat)
-					if hh > 3.0 and hh < 2400.0:
-						# 最小间距 0.30°（各纬度按经度缩放），防止两个村庄叠在一起
-						var ok_near := true
-						for v2 in _vil_cache:
-							var dx: float = (v2.x - vlon) * maxf(cos(deg_to_rad(vlat)), 0.05)
-							if absf(dx) > 0.30:
-								continue
-							if absf(v2.y - vlat) > 0.30:
-								continue
-							if Vector2(dx, v2.y - vlat).length() < 0.30:
-								ok_near = false
-								break
-						if ok_near:
-							_vil_cache.append(Vector2(vlon, vlat))
-				lat += step
-			lon += step
-			row += 1
+	if key == _vil_key:
+		return _vil_cache
+	_vil_key = key
+	_vil_cache = []
+
+	var vs3 := get_viewport().get_visible_rect().size
+	var sc3 := _map_scale()
+	var half_lon: float = (vs3.x * 0.5) / sc3.x
+	var half_lat: float = (vs3.y * 0.5) / sc3.y
+	var lon := map_center.x - half_lon
+	var lon1: float = map_center.x + half_lon
+	var lat0: float = map_center.y - half_lat
+	var lat1: float = map_center.y + half_lat
+
+	var row := 0
+	while lon < lon1 and _vil_cache.size() < 45:
+		var lat := lat0 + (step * 0.5 if row % 2 == 1 else 0.0)
+		while lat < lat1 and _vil_cache.size() < 45:
+			var hv := TG._vnoise(lon * 9.7 + 3.1, lat * 9.7 - 1.7, 4711)
+			var jx := (TG._vnoise(lon * 41.0, lat * 41.0, 91) - 0.5) * step * 1.2
+			var jy := (TG._vnoise(lon * 37.0, lat * 37.0, 92) - 0.5) * step * 1.2
+			var vlon := lon + jx
+			var vlat := lat + jy
+			var meta := _village_try(vlon, vlat, hv)
+			if not meta.is_empty():
+				_vil_cache.append(meta)
+			lat += step
+		lon += step
+		row += 1
 	return _vil_cache
 
+
+## 单点评估：返回 {ll, name, kind} 或空
+func _village_try(lon: float, lat: float, hv: float) -> Dictionary:
+	var h := TG.dem_at(lon, lat)
+	if h <= 3.0 or h > 2400.0:
+		return {}
+	var lf := TG.landform_kind(lon, lat, h)
+	# 地貌基础分（荒漠/冰川/陡山几乎不落村）
+	var sc := 0.0
+	match lf:
+		TG.LF_PLAIN, TG.LF_VALLEY, TG.LF_DELTA, TG.LF_COAST:
+			sc += 2.5
+		TG.LF_STEPPE, TG.LF_HILL, TG.LF_BASIN, TG.LF_HILL_RED, TG.LF_HILL_LOESS, TG.LF_HILL_DANXIA:
+			sc += 1.6
+		TG.LF_FOREST, TG.LF_WETLAND:
+			sc += 0.9
+		TG.LF_MOUNTAIN, TG.LF_KARST, TG.LF_MTN_GRANITE, TG.LF_MTN_KARST, TG.LF_MTN_VOLCANIC, TG.LF_MTN_LOESS:
+			sc -= 0.6
+		TG.LF_DESERT, TG.LF_DESERT_SAND, TG.LF_YARDANG, TG.LF_DESERT_SALT, TG.LF_DESERT_GOBI, TG.LF_DUNE:
+			sc -= 2.5
+		TG.LF_ICE, TG.LF_GLACIAL, TG.LF_MTN_ICE:
+			sc -= 4.0
+	# 近水
+	var w := _water_near(lon, lat)
+	if w < 0.04:
+		sc += 3.2
+	elif w < 0.15:
+		sc += 1.6
+	elif w > 0.5:
+		sc -= 1.2
+	# 坡度（4 邻域差分，度）
+	var d := 0.02
+	var dx := (TG.dem_at(lon + d, lat) - TG.dem_at(lon - d, lat)) / (2.0 * d * 111320.0)
+	var dy := (TG.dem_at(lon, lat + d) - TG.dem_at(lon, lat - d)) / (2.0 * d * 110540.0)
+	var slope := rad_to_deg(atan(sqrt(dx * dx + dy * dy)))
+	if slope < 8.0:
+		sc += 1.0
+	elif slope > 15.0:
+		sc -= 2.0
+	# 城市距离
+	var cd := 9.0
+	for c in TG.cities():
+		var ddx: float = (float(c["lon"]) - lon) * cos(deg_to_rad(lat))
+		var ddy: float = float(c["lat"]) - lat
+		cd = minf(cd, sqrt(ddx * ddx + ddy * ddy))
+	if cd < 0.3:
+		sc += 2.0
+	elif cd < 1.0:
+		sc += 1.0
+	# 随机扰动 + 密度门限（hv 决定“这格有没有人”）
+	var need := 3.4 - (hv - 0.5) * 2.0
+	if sc < need:
+		return {}
+	# 最小间距 0.42°
+	for v2 in _vil_cache:
+		var p2: Vector2 = v2["ll"]
+		var ex: float = (p2.x - lon) * maxf(cos(deg_to_rad(lat)), 0.05)
+		if absf(ex) > 0.42 or absf(p2.y - lat) > 0.42:
+			continue
+		if Vector2(ex, p2.y - lat).length() < 0.42:
+			return {}
+
+	var kind := "plain"
+	if w < 0.15:
+		kind = "water"
+	elif lf in [TG.LF_MOUNTAIN, TG.LF_KARST, TG.LF_MTN_GRANITE, TG.LF_MTN_KARST, TG.LF_MTN_VOLCANIC, TG.LF_MTN_LOESS]:
+		kind = "mount"
+	var nm := _village_name_for(lon, lat, kind, cd)
+	return {"ll": Vector2(lon, lat), "name": nm, "kind": kind}
+
+
+## 按地景取名：近水用 津/泽/陂，山地用 岭/峪/原，平原用 里/亭/乡
+func _village_name_for(lon: float, lat: float, kind: String, city_d: float) -> String:
+	var xings := ["王", "李", "张", "赵", "刘", "陈", "杨", "周", "吴", "徐", "孙", "马", "朱", "郭", "何", "高"]
+	var h1: float = TG._vnoise(lon * 13.0, lat * 13.0, 3311)
+	var h2: float = TG._vnoise(lon * 29.0, lat * 29.0, 7717)
+	var xing: String = xings[int(h1 * 15.999)]
+	if kind == "water":
+		var wl: Array = ["津", "泽", "陂", "渡", "浦"]
+		return xing + wl[int(h2 * 4.999)]
+	if kind == "mount":
+		var ml: Array = ["岭", "峪", "原", "坡"]
+		return xing + ml[int(h2 * 3.999)]
+	if city_d < 0.5:
+		return xing + "亭"
+	return xing + ("里" if h2 < 0.55 else "乡")
 
 
 ## 江河湖泊：加载时预处理，绘制时按可见范围逐条画
 func _draw_hydro_layer() -> void:
 	if OS.get_cmdline_user_args().has("--nohydro"):
 		return
-	if not _hydro_loaded:
-		_hydro_loaded = true
-		var f := FileAccess.open("res://data/hydro.json", FileAccess.READ)
-		if f != null:
-			var d: Variant = JSON.parse_string(f.get_as_text())
-			if d != null:
-				for r in d.get("rivers", []):
-					var pts: Array = r["p"]
-					var pa := PackedVector2Array()
-					var mn := Vector2(999, 999)
-					var mx := Vector2(-999, -999)
-					for p in pts:
-						var v := Vector2(float(p[0]), float(p[1]))
-						pa.append(v)
-						mn.x = minf(mn.x, v.x)
-						mn.y = minf(mn.y, v.y)
-						mx.x = maxf(mx.x, v.x)
-						mx.y = maxf(mx.y, v.y)
-					if pa.size() >= 2:
-						_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
-				for l in d.get("lakes", []):
-					var lp := PackedVector2Array()
-					var mn2 := Vector2(999, 999)
-					var mx2 := Vector2(-999, -999)
-					for p in l["p"]:
-						var v2 := Vector2(float(p[0]), float(p[1]))
-						lp.append(v2)
-						mn2.x = minf(mn2.x, v2.x)
-						mn2.y = minf(mn2.y, v2.y)
-						mx2.x = maxf(mx2.x, v2.x)
-						mx2.y = maxf(mx2.y, v2.y)
-					if lp.size() >= 3:
-						lp.append(lp[0])
-						_lake_list.append({"bb": Rect2(mn2, mx2 - mn2), "p": lp})
-				print("[地图] 水系 %d 条，湖泊 %d" % [_riv_list.size(), _lake_list.size()])
-
+	_ensure_hydro()
 	var fade := clampf((map_zoom - 1.0) / 1.6, 0.0, 1.0)
 	if fade <= 0.01:
 		return
@@ -1084,7 +1127,6 @@ func _draw_hydro_layer() -> void:
 			Vector2(vs.x * 0.5 - _c_cx * ppd - map_hydro.position.x,
 					vs.y * 0.5 + _c_cy * ppy - map_hydro.position.y))
 	map_hydro.draw_set_transform_matrix(tf)
-	# 可见经纬度范围（多留 3 度余量）
 	var lon0: float = _c_cx - (vs.x * 0.5 + 40.0) / ppd
 	var lon1: float = _c_cx + (vs.x * 0.5 + 40.0) / ppd
 	var lat0: float = _c_cy - (vs.y * 0.5 + 40.0) / ppy
@@ -1096,13 +1138,87 @@ func _draw_hydro_layer() -> void:
 		var major: bool = int(r["r"]) <= 3
 		var col := Color(0.26, 0.34, 0.40, (0.62 if major else 0.42) * fade)
 		map_hydro.draw_polyline(r["p"], col, (3.0 if major else 1.6) / ppd)
-	var lake_col := Color(0.30, 0.38, 0.42, 0.9 * fade)
+	var lake_col := Color(0.42, 0.38, 0.42, 0.9 * fade)
 	for l in _lake_list:
 		var bb2: Rect2 = l["bb"]
 		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
 			continue
 		map_hydro.draw_polyline(l["p"], lake_col, 2.0 / ppd)
 	map_hydro.draw_set_transform_matrix(Transform2D.IDENTITY)
+
+
+## 加载水系并建 0.5° 空间网格（供村庄近水判定）
+func _ensure_hydro() -> void:
+	if _hydro_loaded:
+		return
+	_hydro_loaded = true
+	var f := FileAccess.open("res://data/hydro.json", FileAccess.READ)
+	if f == null:
+		return
+	var d: Variant = JSON.parse_string(f.get_as_text())
+	if d == null:
+		return
+	for r in d.get("rivers", []):
+		var pts: Array = r["p"]
+		var pa := PackedVector2Array()
+		var mn := Vector2(999, 999)
+		var mx := Vector2(-999, -999)
+		for p in pts:
+			var v := Vector2(float(p[0]), float(p[1]))
+			pa.append(v)
+			mn.x = minf(mn.x, v.x)
+			mn.y = minf(mn.y, v.y)
+			mx.x = maxf(mx.x, v.x)
+			mx.y = maxf(mx.y, v.y)
+		if pa.size() >= 2:
+			_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
+	for l in d.get("lakes", []):
+		var lp := PackedVector2Array()
+		var mn2 := Vector2(999, 999)
+		var mx2 := Vector2(-999, -999)
+		for p in l["p"]:
+			var v2 := Vector2(float(p[0]), float(p[1]))
+			lp.append(v2)
+			mn2.x = minf(mn2.x, v2.x)
+			mn2.y = minf(mn2.y, v2.y)
+			mx2.x = maxf(mx2.x, v2.x)
+			mx2.y = maxf(mx2.y, v2.y)
+		if lp.size() >= 3:
+			lp.append(lp[0])
+			_lake_list.append({"bb": Rect2(mn2, mx2 - mn2), "p": lp})
+	# 河点网格（抽样每 3 个点一个）
+	for r in _riv_list:
+		var pa2: PackedVector2Array = r["p"]
+		var i := 0
+		while i < pa2.size():
+			var p2: Vector2 = pa2[i]
+			var key := Vector2i(int(floor(p2.x / 0.5)), int(floor(p2.y / 0.5)))
+			if not _hydro_grid.has(key):
+				_hydro_grid[key] = PackedVector2Array()
+			var arr: PackedVector2Array = _hydro_grid[key]
+			arr.append(p2)
+			_hydro_grid[key] = arr
+			i += 3
+	print("[地图] 水系 %d 条，湖泊 %d" % [_riv_list.size(), _lake_list.size()])
+
+
+## 到最近河/湖的近似距离（度）
+func _water_near(lon: float, lat: float) -> float:
+	var cx := int(floor(lon / 0.5))
+	var cy := int(floor(lat / 0.5))
+	var best := 9.0
+	for gy in range(cy - 1, cy + 2):
+		for gx in range(cx - 1, cx + 2):
+			var key := Vector2i(gx, gy)
+			if not _hydro_grid.has(key):
+				continue
+			for p in _hydro_grid[key]:
+				var dx: float = (float(p.x) - lon) * maxf(cos(deg_to_rad(lat)), 0.05)
+				var dy: float = float(p.y) - lat
+				var dd: float = sqrt(dx * dx + dy * dy)
+				if dd < best:
+					best = dd
+	return best
 
 
 func _line_bbox(pts: Array) -> Rect2:
@@ -1131,23 +1247,14 @@ func _city_gates(c: Dictionary) -> Array:
 	]
 
 
-## 村庄名（确定性生成，秦制乡里风格）
-func _village_name(ll: Vector2) -> String:
-	var xings := ["王", "李", "张", "赵", "刘", "陈", "杨", "周", "吴", "徐", "孙", "马", "朱", "郭", "何", "高"]
-	var hou := ["里", "亭", "聚", "庄", "邑"]
-	var h1: float = TG._vnoise(ll.x * 13.0, ll.y * 13.0, 3311)
-	var h2: float = TG._vnoise(ll.x * 29.0, ll.y * 29.0, 7717)
-	return xings[int(h1 * 15.999)] + hou[int(h2 * 4.999)]
-
-
 ## 点选村庄
 func _village_hit(pos: Vector2) -> Dictionary:
 	if map_zoom < 12.0:
 		return {}
 	for v in _villages_for_view(Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)):
-		var p := _lonlat_to_screen_off(v, 0.0)
+		var p := _lonlat_to_screen_off(v["ll"], 0.0)
 		if p.distance_to(pos) < 11.0:
-			return {"ll": v, "name": _village_name(v)}
+			return {"ll": v["ll"], "name": String(v["name"]), "kind": String(v["kind"])}
 	return {}
 
 
@@ -1223,16 +1330,17 @@ func _draw_roads(cr: Rect2) -> void:
 	for v in vlist:
 		if links >= 55:
 			break
+		var vll: Vector2 = v["ll"]
 		var best := Vector2.ZERO
 		var best_d := 1e9
 		for c in cities:
-			var d := absf(float(c["lon"]) - v.x) + absf(float(c["lat"]) - v.y)
+			var d := absf(float(c["lon"]) - vll.x) + absf(float(c["lat"]) - vll.y)
 			if d < best_d:
 				best_d = d
 				best = Vector2(float(c["lon"]), float(c["lat"]))
 		if best_d > 6.0:
 			continue
-		var a := _lonlat_to_screen_off(v, 0.0)
+		var a := _lonlat_to_screen_off(vll, 0.0)
 		var b := _lonlat_to_screen_off(best, 0.0)
 		if not (cr.grow(20.0).has_point(a) or cr.grow(20.0).has_point(b)):
 			continue
@@ -1280,7 +1388,7 @@ func _draw_minimap() -> void:
 			var lz := (cz - pcz) * ppm
 			if Vector2(lx, lz).length() < R - 12.0:
 				var cp := c + Vector2(lx, lz)
-				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.30, 0.17, 0.09))
+				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.42, 0.17, 0.09))
 				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.92, 0.78, 0.44), false, 1.5)
 
 	# 青铜外环（先秦铜镜感）
@@ -1334,7 +1442,7 @@ func _draw_cross() -> void:
 		var edge := Color(0.45, 0.36, 0.22, 0.9)
 		var txt := Color(0.72, 0.66, 0.52)
 		if on:
-			base = Color(0.30, 0.22, 0.12, 0.96)
+			base = Color(0.42, 0.22, 0.12, 0.96)
 			edge = Color(0.95, 0.80, 0.42)
 			txt = Color(1.0, 0.93, 0.72)
 			r = r.grow(6.0)
@@ -2251,7 +2359,7 @@ func _seam_test() -> void:
 	print("======== 近场补丁接缝 ========")
 	var lines := [
 		["东边界 lat38", 38.0, 116.30, 116.70, true],
-		["北边界 lon113", 113.0, 40.30, 40.70, false],
+		["北边界 lon113", 113.0, 40.42, 40.70, false],
 		["南边界 lon114", 114.0, 34.30, 34.70, false],
 	]
 	for spec in lines:
@@ -2625,7 +2733,7 @@ func _draw_boot() -> void:
 	# 转圈
 	var c := Vector2(220.0, 8.0)
 	boot_bar.draw_arc(c, 14.0, _boot_spin, _boot_spin + 2.2, 24, Color(0.85, 0.72, 0.45), 3.0)
-	boot_bar.draw_arc(c, 14.0, 0.0, TAU, 32, Color(0.30, 0.24, 0.16), 1.5)
+	boot_bar.draw_arc(c, 14.0, 0.0, TAU, 32, Color(0.42, 0.24, 0.16), 1.5)
 
 
 func _boot_text(text: String) -> void:
