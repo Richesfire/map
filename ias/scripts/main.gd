@@ -517,6 +517,7 @@ func _build_ui() -> void:
 
 	# 大地图：着色器直绘（逐像素读高程），失败再退回烘焙纹理
 	map_surface = ColorRect.new()
+	map_surface.color = Color(0.26, 0.33, 0.40, 1.0)   # 边缘 1px 用海色，避免白线
 	map_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_surface.visible = false
 	map_view.add_child(map_surface)
@@ -1609,9 +1610,18 @@ func _draw_cross() -> void:
 ## 缩放下限：地图至少要占屏幕一半高
 ## 地图边界最多停在屏幕中心：中心不能越出 [-180+半屏, 180-半屏]
 func _clamp_map_center() -> void:
-	# 地图内容边界最多移动到屏幕中心：中心只能落在裁剪后的世界范围内
-	map_center.x = clampf(map_center.x, -180.0, 180.0)
-	map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
+	var vs := get_viewport().get_visible_rect().size
+	var sc := _map_scale()
+	# 接近整幅可见时自动回到世界中心
+	var span_lon := vs.x / sc.x
+	if span_lon >= 300.0:
+		map_center.x = 0.0
+	else:
+		map_center.x = clampf(map_center.x, -180.0, 180.0)
+	if span_lon * (LAT_LIMIT * 2.0) / 360.0 >= 120.0:
+		map_center.y = 0.0
+	else:
+		map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
 
 
 func _zoom_min() -> float:
@@ -1807,8 +1817,9 @@ func _draw_map() -> void:
 	if _map_shader_ok:
 		map_surface.visible = true
 		# 相对裁剪容器定位
-		map_surface.position = Vector2.ZERO
-		map_surface.size = content_rect.size
+		# 四周各多画 2 像素，把着色器边缘那一行推到裁剪区外，避免出现白线
+		map_surface.position = Vector2(-2, -2)
+		map_surface.size = content_rect.size + Vector2(4, 4)
 		_map_mat.set_shader_parameter("shade_alpha",
 				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.42)
 	else:
