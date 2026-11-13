@@ -783,25 +783,42 @@ func _draw_compass() -> void:
 			Vector2(mx, 5), Vector2(mx + 4, 10), Vector2(mx, 15), Vector2(mx - 4, 10)]), m[1])
 
 
-## 左右卷轴（轴杆 + 轴头 + 绢边）
+## 左右轴杆：接到布帛两侧
 func _draw_scroll_rollers(sr: Rect2) -> void:
-	var rod_w := 22.0
-	var over := 26.0        # 轴杆上下伸出
+	var rod_w := 20.0
+	var over := 10.0
 	for side in 2:
-		var x := sr.position.x - rod_w + (sr.size.x + rod_w * 2.0) * float(side) if side == 1 else sr.position.x - rod_w
-		# 轴杆
+		var x: float = sr.position.x - rod_w if side == 0 else sr.position.x + sr.size.x
 		var top := sr.position.y - over
 		var bot := sr.position.y + sr.size.y + over
-		map_root.draw_rect(Rect2(x, top, rod_w, bot - top), Color(0.30, 0.22, 0.14))
-		map_root.draw_rect(Rect2(x + 3, top, rod_w - 6, bot - top), Color(0.42, 0.31, 0.19))
-		map_root.draw_rect(Rect2(x + 8, top, 4, bot - top), Color(0.52, 0.40, 0.24, 0.7))
-		# 轴头
-		for yy in [top - 8.0, bot]:
-			map_root.draw_rect(Rect2(x - 4, yy, rod_w + 8, 12), Color(0.26, 0.19, 0.12))
-			map_root.draw_rect(Rect2(x - 4, yy, rod_w + 8, 12), Color(0.60, 0.47, 0.27), false, 1.5)
-	# 绢边（内阴影，让内容像画在卷面上）
-	map_root.draw_rect(Rect2(sr.position, Vector2(10, sr.size.y)), Color(0.30, 0.23, 0.14, 0.25))
-	map_root.draw_rect(Rect2(Vector2(sr.position.x + sr.size.x - 10, sr.position.y), Vector2(10, sr.size.y)), Color(0.30, 0.23, 0.14, 0.25))
+		map_root.draw_rect(Rect2(x, top, rod_w, bot - top), Color(0.28, 0.21, 0.13))
+		map_root.draw_rect(Rect2(x + 3, top, rod_w - 6, bot - top), Color(0.40, 0.30, 0.18))
+		map_root.draw_rect(Rect2(x + 7, top, 3, bot - top), Color(0.52, 0.40, 0.24, 0.7))
+		for yy in [top - 7.0, bot]:
+			map_root.draw_rect(Rect2(x - 3, yy, rod_w + 6, 11), Color(0.24, 0.18, 0.11))
+			map_root.draw_rect(Rect2(x - 3, yy, rod_w + 6, 11), Color(0.58, 0.46, 0.26), false, 1.4)
+
+
+## 布帛：左右宽、上下窄，四块拼接，不加内框
+func _draw_brocade(sr: Rect2, pad_x: float, pad_y: float) -> void:
+	var cloth := Color(0.60, 0.49, 0.32)
+	map_root.draw_rect(Rect2(sr.position, Vector2(sr.size.x, pad_y)), cloth)
+	map_root.draw_rect(Rect2(sr.position + Vector2(0, sr.size.y - pad_y), Vector2(sr.size.x, pad_y)), cloth)
+	map_root.draw_rect(Rect2(sr.position + Vector2(0, pad_y), Vector2(pad_x, sr.size.y - pad_y * 2.0)), cloth)
+	map_root.draw_rect(Rect2(sr.position + Vector2(sr.size.x - pad_x, pad_y), Vector2(pad_x, sr.size.y - pad_y * 2.0)), cloth)
+
+	var x := sr.position.x
+	while x < sr.position.x + sr.size.x:
+		map_root.draw_line(Vector2(x, sr.position.y), Vector2(x, sr.position.y + pad_y), Color(0.54, 0.43, 0.27, 0.30), 1.0)
+		map_root.draw_line(Vector2(x, sr.position.y + sr.size.y - pad_y), Vector2(x, sr.position.y + sr.size.y), Color(0.54, 0.43, 0.27, 0.30), 1.0)
+		x += 7.0
+	var y := sr.position.y
+	while y < sr.position.y + sr.size.y:
+		map_root.draw_line(Vector2(sr.position.x, y), Vector2(sr.position.x + pad_x, y), Color(0.70, 0.58, 0.40, 0.22), 1.0)
+		map_root.draw_line(Vector2(sr.position.x + sr.size.x - pad_x, y), Vector2(sr.position.x + sr.size.x, y), Color(0.70, 0.58, 0.40, 0.22), 1.0)
+		y += 7.0
+
+	map_root.draw_rect(sr, Color(0.22, 0.16, 0.10, 0.9), false, 2.0)
 
 
 ## 聚落层：城市画平面简图，村庄随缩放渐显
@@ -874,32 +891,6 @@ func _villages_for_view(sr: Rect2) -> Array:
 	return _vil_cache
 
 
-## 布帛边：卷轴内一圈织纹装饰
-func _draw_brocade(sr: Rect2, border: float) -> void:
-	var cloth := Color(0.62, 0.50, 0.33)
-	var inner := Rect2(sr.position + Vector2(border, border), sr.size - Vector2(border, border) * 2.0)
-	# 四条布边（不覆盖内容区）
-	map_root.draw_rect(Rect2(sr.position, Vector2(sr.size.x, border)), cloth)
-	map_root.draw_rect(Rect2(sr.position + Vector2(0, sr.size.y - border), Vector2(sr.size.x, border)), cloth)
-	map_root.draw_rect(Rect2(sr.position + Vector2(0, border), Vector2(border, sr.size.y - border * 2.0)), cloth)
-	map_root.draw_rect(Rect2(sr.position + Vector2(sr.size.x - border, border), Vector2(border, sr.size.y - border * 2.0)), cloth)
-	# 织纹
-	var step := 7.0
-	var x := sr.position.x
-	while x < sr.position.x + sr.size.x:
-		map_root.draw_line(Vector2(x, sr.position.y), Vector2(x, sr.position.y + border), Color(0.55, 0.44, 0.28, 0.35), 1.0)
-		map_root.draw_line(Vector2(x, sr.position.y + sr.size.y - border), Vector2(x, sr.position.y + sr.size.y), Color(0.55, 0.44, 0.28, 0.35), 1.0)
-		x += step
-	var y := sr.position.y
-	while y < sr.position.y + sr.size.y:
-		map_root.draw_line(Vector2(sr.position.x, y), Vector2(sr.position.x + border, y), Color(0.70, 0.58, 0.40, 0.25), 1.0)
-		map_root.draw_line(Vector2(sr.position.x + sr.size.x - border, y), Vector2(sr.position.x + sr.size.x, y), Color(0.70, 0.58, 0.40, 0.25), 1.0)
-		y += step
-	# 内外描边
-	map_root.draw_rect(sr, Color(0.24, 0.17, 0.10), false, 3.0)
-	map_root.draw_rect(Rect2(sr.position + Vector2(border, border),
-			sr.size - Vector2(border, border) * 2.0), Color(0.26, 0.19, 0.12, 0.85), false, 2.0)
-
 
 ## 江河湖泊（主要水系）
 func _draw_hydro(cr: Rect2) -> void:
@@ -968,6 +959,41 @@ func _line_bbox(pts: Array) -> Rect2:
 		mx.x = maxf(mx.x, float(p[0]))
 		mx.y = maxf(mx.y, float(p[1]))
 	return Rect2(mn, mx - mn)
+
+
+## 官道：村庄连到最近城池（微弯，赭色）
+func _draw_roads(cr: Rect2) -> void:
+	if terrain == null:
+		return
+	var fade := clampf((map_zoom - 1.4) / 1.6, 0.0, 1.0)
+	if fade <= 0.02:
+		return
+	var cities := TG.cities()
+	if cities.is_empty():
+		return
+	var vlist := _villages_for_view(cr)
+	var col := Color(0.42, 0.27, 0.14, 0.55 * fade)
+	var links := 0
+	for v in vlist:
+		if links >= 90:
+			break
+		var best := Vector2.ZERO
+		var best_d := 1e9
+		for c in cities:
+			var d := absf(float(c["lon"]) - v.x) + absf(float(c["lat"]) - v.y)
+			if d < best_d:
+				best_d = d
+				best = Vector2(float(c["lon"]), float(c["lat"]))
+		if best_d > 6.0:
+			continue
+		var a := _lonlat_to_screen_off(v, 0.0)
+		var b := _lonlat_to_screen_off(best, 0.0)
+		if not (cr.grow(20.0).has_point(a) or cr.grow(20.0).has_point(b)):
+			continue
+		var dirv := (b - a)
+		var mid := (a + b) * 0.5 + Vector2(-dirv.y, dirv.x).normalized() * (a.distance_to(b) * 0.06)
+		map_root.draw_polyline(PackedVector2Array([a, mid, b]), col, 1.4)
+		links += 1
 
 
 func _draw_minimap() -> void:
@@ -1114,14 +1140,17 @@ func _draw_map() -> void:
 	if not _map_shader_ok:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
-	# 卷轴区域：左右各留出卷轴和边缘
-	var sc_x := 78.0
-	var sc_y := 44.0
-	var scroll_rect := Rect2(sc_x, sc_y, vs.x - sc_x * 2.0, vs.y - sc_y * 2.0)
-	var border := 26.0
-	map_view.position = scroll_rect.position + Vector2(border, border)
-	map_view.size = scroll_rect.size - Vector2(border, border) * 2.0
-	var content_rect := Rect2(map_view.position, map_view.size)
+	# 卷轴版式：内容居中，布帛左右宽、上下窄
+	var pad_x := 70.0
+	var pad_y := 24.0
+	var content_w: float = vs.x - 360.0
+	var content_h: float = vs.y - 200.0
+	var content_rect := Rect2(Vector2((vs.x - content_w) * 0.5, (vs.y - content_h) * 0.5),
+			Vector2(content_w, content_h))
+	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y),
+			content_rect.size + Vector2(pad_x, pad_y) * 2.0)
+	map_view.position = content_rect.position
+	map_view.size = content_rect.size
 
 	var w := MAP_W * map_zoom
 	var h := MAP_H * map_zoom
@@ -1167,8 +1196,9 @@ func _draw_map() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
 	_draw_scroll_rollers(scroll_rect)
-	_draw_brocade(scroll_rect, border)
+	_draw_brocade(scroll_rect, pad_x, pad_y)
 	_draw_hydro(content_rect)
+	_draw_roads(content_rect)
 	_draw_settlements(content_rect)
 
 	# 玩家位置
@@ -1178,9 +1208,7 @@ func _draw_map() -> void:
 			map_root.draw_circle(pp, 5.0, Color(0.85, 0.25, 0.15))
 			map_root.draw_arc(pp, 8.0, 0.0, TAU, 20, Color(0.55, 0.12, 0.08), 1.5)
 
-	# 卷轴边框
-	map_root.draw_rect(Rect2(0, 0, vs.x, 26), Color(0.34, 0.24, 0.15))
-	map_root.draw_rect(Rect2(0, vs.y - 26, vs.x, 26), Color(0.34, 0.24, 0.15))
+
 	map_root.draw_rect(Rect2(61, 26, vs.x - 122, vs.y - 52), Color(0.70, 0.62, 0.45), false, 3.0)
 
 	# 手工城市标记（每份可见副本都画；标签放在最靠近屏幕中心的那份）
