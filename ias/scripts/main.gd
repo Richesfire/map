@@ -88,6 +88,7 @@ var _riv_list: Array = []
 var _lake_list: Array = []
 var _hydro_grid: Dictionary = {}
 var _settle: Array = []
+var _settle_thin: Array = []
 var _settle_idx: Dictionary = {}
 var _settle_loaded := false
 var _city_links: Array = []
@@ -1026,7 +1027,7 @@ func _draw_settlements(sr: Rect2) -> void:
 		if not sr.has_point(p2):
 			continue
 		var lvl := int(v["lvl"])
-		var s2: float = [0.0, 5.4, 4.8, 4.2, 3.0][clampi(lvl, 1, 4)]
+		var s2: float = [0.0, 5.0, 4.4, 4.0, 3.0][clampi(lvl, 1, 4)]
 		s2 *= clampf(0.8 + map_zoom * 0.02, 0.8, 1.4)
 		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "settle" \
 				and (_hover["ll"] as Vector2).is_equal_approx(v["ll"] as Vector2)
@@ -1035,18 +1036,13 @@ func _draw_settlements(sr: Rect2) -> void:
 		var ink := Color(0.30, 0.20, 0.11, 0.92 * vfade)
 		var gold := Color(0.78, 0.64, 0.38, 0.85 * vfade)
 		if lvl <= 2:
-			# 州/郡：双环 + 中心点
-			map_root.draw_arc(p2, s2 + 1.5, 0.0, TAU, 14, ink, 1.4)
-			map_root.draw_arc(p2, s2, 0.0, TAU, 12, gold, 1.2)
-			map_root.draw_circle(p2, maxf(s2 * 0.32, 1.2), ink)
+			map_root.draw_arc(p2, s2, 0.0, TAU, 16, ink, 1.6)
+			map_root.draw_circle(p2, maxf(s2 * 0.36, 1.2), ink)
 		elif lvl == 3:
-			# 县城：方城
-			var half := Vector2(s2, s2)
-			map_root.draw_rect(Rect2(p2 - half, half * 2.0), gold, false, 1.3)
-			map_root.draw_circle(p2, maxf(s2 * 0.30, 1.1), ink)
+			var half := Vector2(s2 * 0.60, s2 * 0.60)
+			map_root.draw_rect(Rect2(p2 - half, half * 2.0), ink)
 		else:
-			# 乡镇：实心小点
-			map_root.draw_circle(p2, s2 * 0.75, ink)
+			map_root.draw_circle(p2, maxf(s2 * 0.5, 1.0), ink)
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
@@ -1061,6 +1057,7 @@ func _ensure_settlements() -> void:
 	var d: Variant = JSON.parse_string(f.get_as_text())
 	if d == null:
 		return
+	var thin_cells: Dictionary = {}
 	for p in d.get("places", []):
 		var lon := float(p["lon"])
 		var lat := float(p["lat"])
@@ -1082,11 +1079,25 @@ func _ensure_settlements() -> void:
 		var item := {"ll": Vector2(lon, lat), "name": String(p["n"]),
 				"lvl": int(p["l"]), "pop": int(p["p"])}
 		_settle.append(item)
+		# 静态抽稀（0.20°，与视野无关）：保证同一倍率下拖动点位不变
+		var cell := Vector2i(int(floor(lon / 0.20)), int(floor(lat / 0.20)))
+		var keep := true
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				if thin_cells.has(Vector2i(cell.x + dx, cell.y + dy)):
+					keep = false
+					break
+			if not keep:
+				break
+		if not keep:
+			continue
+		thin_cells[cell] = true
+		_settle_thin.append(item)
 		var key := Vector2i(int(floor(lon / 0.5)), int(floor(lat / 0.5)))
 		if not _settle_idx.has(key):
 			_settle_idx[key] = []
 		(_settle_idx[key] as Array).append(item)
-	print("[地图] 真实聚落 %d 处" % _settle.size())
+	print("[地图] 真实聚落 %d 处（抽稀 %d）" % [_settle.size(), _settle_thin.size()])
 
 
 ## 视野内的真实聚落（按分数级别过滤）
@@ -1126,27 +1137,8 @@ func _villages_for_view(sr: Rect2) -> Array:
 	if key == _vil_key:
 		return _vil_cache
 	_vil_key = key
-	var raw := _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
+	_vil_cache = _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
 			map_center.x + half_lon, map_center.y + half_lat, 4)
-	# 屏幕空间去重叠：间距至少 22 像素，级别高的先占位（稳定，不随缩放跳变）
-	var gap: float = 26.0 / sc3.x
-	var cells: Dictionary = {}
-	_vil_cache = []
-	for it in raw:
-		var ll: Vector2 = it["ll"]
-		var cxy := Vector2i(int(floor(ll.x / gap)), int(floor(ll.y / gap)))
-		var taken := false
-		for dx in [-1, 0, 1]:
-			for dy in [-1, 0, 1]:
-				if cells.has(Vector2i(cxy.x + dx, cxy.y + dy)):
-					taken = true
-					break
-			if taken:
-				break
-		if taken:
-			continue
-		cells[cxy] = true
-		_vil_cache.append(it)
 	return _vil_cache
 
 
@@ -1246,16 +1238,17 @@ func _draw_hydro_layer() -> void:
 	if fade <= 0.01:
 		return
 	var vs := get_viewport().get_visible_rect().size
-	var ppd := _c_ppd
-	var ppy := _c_ppy
+	var scn := _map_scale()
+	var ppd: float = scn.x
+	var ppy: float = scn.y
 	var tf := Transform2D(Vector2(ppd, 0.0), Vector2(0.0, -ppy),
-			Vector2(vs.x * 0.5 - _c_cx * ppd - map_hydro.position.x,
-					vs.y * 0.5 + _c_cy * ppy - map_hydro.position.y))
+			Vector2(vs.x * 0.5 - map_center.x * ppd - map_hydro.position.x,
+					vs.y * 0.5 + map_center.y * ppy - map_hydro.position.y))
 	map_hydro.draw_set_transform_matrix(tf)
-	var lon0: float = _c_cx - (vs.x * 0.5 + 40.0) / ppd
-	var lon1: float = _c_cx + (vs.x * 0.5 + 40.0) / ppd
-	var lat0: float = _c_cy - (vs.y * 0.5 + 40.0) / ppy
-	var lat1: float = _c_cy + (vs.y * 0.5 + 40.0) / ppy
+	var lon0: float = map_center.x - (vs.x * 0.5 + 40.0) / ppd
+	var lon1: float = map_center.x + (vs.x * 0.5 + 40.0) / ppd
+	var lat0: float = map_center.y - (vs.y * 0.5 + 40.0) / ppy
+	var lat1: float = map_center.y + (vs.y * 0.5 + 40.0) / ppy
 	for r in _riv_list:
 		var bb: Rect2 = r["bb"]
 		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
@@ -1450,42 +1443,53 @@ func _draw_roads(cr: Rect2) -> void:
 		var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
 		map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
 
-	# 村落道路：每个聚落连最近的邻居（村或城），0.45° 内，成网状
+	# 官道：镇→县→州→城，逐级汇聚；跨水不连
 	var vlist := _villages_for_view(cr) if map_zoom >= 15.0 else []
 	if not vlist.is_empty():
-		var pts_all: Array = []
+		var all_pts: Array = []
 		for v in vlist:
-			pts_all.append(v["ll"])
+			all_pts.append({"ll": v["ll"], "lvl": int(v["lvl"])})
 		for c in cities:
-			pts_all.append(Vector2(float(c["lon"]), float(c["lat"])))
-		var used: Dictionary = {}
-		var segs := 0
-		for i in pts_all.size():
-			if segs >= 160:
+			all_pts.append({"ll": Vector2(float(c["lon"]), float(c["lat"])), "lvl": 0})
+		var drawn := 0
+		for i in all_pts.size():
+			if drawn >= 160:
 				break
-			var a: Vector2 = pts_all[i]
+			var a: Vector2 = all_pts[i]["ll"]
+			var al: int = all_pts[i]["lvl"]
+			if al == 0:
+				continue
 			var bi := -1
-			var best := 0.45
-			for j in pts_all.size():
-				if i == j:
+			var best := 2.0
+			for j in all_pts.size():
+				if int(all_pts[j]["lvl"]) >= al:
 					continue
-				var bb: Vector2 = pts_all[j]
-				var dd := Vector2((bb.x - a.x) * cos(deg_to_rad(a.y)), bb.y - a.y).length()
+				var b: Vector2 = all_pts[j]["ll"]
+				var dd := Vector2((b.x - a.x) * cos(deg_to_rad(a.y)), b.y - a.y).length()
 				if dd < best:
 					best = dd
 					bi = j
 			if bi < 0:
 				continue
-			var pair := Vector2i(mini(i, bi), maxi(i, bi))
-			if used.has(pair):
+			var b2: Vector2 = all_pts[bi]["ll"]
+			var wet := false
+			for k in [0.3, 0.5, 0.7]:
+				var mp: Vector2 = a.lerp(b2, k)
+				if TG.dem_at(mp.x, mp.y) < -8.0:
+					wet = true
+					break
+			if wet:
 				continue
-			used[pair] = true
 			var pa := _lonlat_to_screen_off(a, 0.0)
-			var pb := _lonlat_to_screen_off(pts_all[bi], 0.0)
+			var pb := _lonlat_to_screen_off(b2, 0.0)
 			if not (cr.grow(30.0).has_point(pa) or cr.grow(30.0).has_point(pb)):
 				continue
-			map_root.draw_line(pa, pb, Color(0.42, 0.27, 0.14, 0.42 * fade), 1.2)
-			segs += 1
+			var dvv := pb - pa
+			var midv := (pa + pb) * 0.5 + Vector2(-dvv.y, dvv.x).normalized() * (pa.distance_to(pb) * 0.04)
+			map_root.draw_polyline(PackedVector2Array([pa, midv, pb]),
+					Color(0.40, 0.26, 0.13, 0.5 * fade), 1.3)
+			drawn += 1
+
 
 
 func _draw_minimap() -> void:
