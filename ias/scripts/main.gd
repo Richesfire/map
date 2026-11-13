@@ -50,6 +50,7 @@ var _debug_fresh := false
 var _debug_shot := ""
 var _debug_shot_delay := 3.0
 var _debug_shots: Array = []
+var _preview_args: Array = []
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
 var _debug_air := 0.0
@@ -153,6 +154,10 @@ func _ready() -> void:
 	await get_tree().process_frame
 	_build_world_tex()
 	var uargs := OS.get_cmdline_user_args()
+	if not _preview_args.is_empty():
+		_preview_tile(float(_preview_args[0]), float(_preview_args[1]), float(_preview_args[2]),
+				int(_preview_args[3]), String(_preview_args[4]))
+		return
 	if uargs.has("--start") or uargs.has("--bugtest"):
 		_boot_text("正在生成地形……")
 		await get_tree().process_frame
@@ -190,6 +195,10 @@ func _parse_args() -> void:
 			_debug_shot = a.substr(7)
 		elif a.begins_with("--shotdelay="):
 			_debug_shot_delay = float(a.substr(12))
+		elif a.begins_with("--preview="):
+			var pp := a.substr(10).split(",")
+			if pp.size() == 5:
+				_preview_args = [float(pp[0]), float(pp[1]), float(pp[2]), int(pp[3]), pp[4]]
 		elif a.begins_with("--shots="):
 			for item in a.substr(8).split("|", false):
 				var bits := item.split("@")
@@ -681,8 +690,11 @@ func _map_input(e: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
 			pin_drag = mb.pressed
 			if mb.pressed:
-				pin_ll = _screen_to_lonlat(mb.position)
+				var gh := _gate_hit(mb.position)
+				pin_ll = gh["ll"] if not gh.is_empty() else _screen_to_lonlat(mb.position)
 				has_pin = true
+				if not gh.is_empty():
+					toast("目标：%s" % String(gh["label"]))
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			else:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -695,10 +707,9 @@ func _map_input(e: InputEvent) -> void:
 	elif e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
 		if dragging:
-			var ppd := (MAP_W * map_zoom) / 360.0
-			var ppy := (MAP_H * map_zoom) / 180.0
-			map_center.x -= mm.relative.x / ppd
-			map_center.y += mm.relative.y / ppy
+			var sc := _map_scale()
+			map_center.x -= mm.relative.x / sc.x
+			map_center.y += mm.relative.y / sc.y
 			# 地图边界最多停在屏幕中心：中心经度不能越出 [-180+半屏, 180-半屏]
 			_clamp_map_center()
 			map_root.queue_redraw()
@@ -868,6 +879,19 @@ func _draw_settlements(sr: Rect2) -> void:
 		var r := Rect2(p - half, Vector2(sz, sz))
 		map_root.draw_rect(r, Color(0.72, 0.62, 0.42, 0.85))
 		map_root.draw_rect(r, Color(0.26, 0.18, 0.10), false, maxf(sz * 0.10, 1.5))
+		# 城门（够大才画）
+		if sz >= 40.0:
+			var gate_chars := ["南", "东", "北", "西"]
+			var k2 := 0
+			for g in _city_gates(ct):
+				var gp := _lonlat_to_screen_off(g["ll"], 0.0)
+				var gpix: float = clampf(sz * 0.09, 2.0, 5.0)
+				map_root.draw_rect(Rect2(gp - Vector2(gpix, gpix) * 0.5, Vector2(gpix, gpix) * 1.6),
+						Color(0.52, 0.34, 0.18))
+				if sz >= 90.0:
+					map_root.draw_string(ThemeDB.fallback_font, gp + Vector2(-6, -gpix - 4),
+							gate_chars[k2], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.42, 0.28, 0.14))
+				k2 += 1
 		# 十字街
 		map_root.draw_line(Vector2(p.x - half.x + 1.5, p.y), Vector2(p.x + half.x - 1.5, p.y), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
@@ -1002,6 +1026,36 @@ func _line_bbox(pts: Array) -> Rect2:
 		mx.x = maxf(mx.x, float(p[0]))
 		mx.y = maxf(mx.y, float(p[1]))
 	return Rect2(mn, mx - mn)
+
+
+## 城门位置：城墙四边中点（经纬度）
+func _city_gates(c: Dictionary) -> Array:
+	var lon := float(c["lon"])
+	var lat := float(c["lat"])
+	var r_km := float(c["radius"])
+	var dlat := r_km / 110.54
+	var dlon := r_km / (111.32 * maxf(cos(deg_to_rad(lat)), 0.05))
+	return [
+		{"name": "北门", "ll": Vector2(lon, lat + dlat)},
+		{"name": "东门", "ll": Vector2(lon + dlon, lat)},
+		{"name": "南门", "ll": Vector2(lon, lat - dlat)},
+		{"name": "西门", "ll": Vector2(lon - dlon, lat)},
+	]
+
+
+## 命中测试：鼠标附近是否有城门（只在高倍下）
+func _gate_hit(pos: Vector2) -> Dictionary:
+	for c in TG.cities():
+		var p := _lonlat_to_screen_off(Vector2(float(c["lon"]), float(c["lat"])), 0.0)
+		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(float(c["lat"]))), 0.05) / (_map_scale().x * 360.0)
+		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
+		if sz < 40.0:
+			continue
+		for g in _city_gates(c):
+			var gp := _lonlat_to_screen_off(g["ll"], 0.0)
+			if gp.distance_to(pos) < maxf(10.0, sz * 0.16):
+				return {"ll": g["ll"], "label": "%s·%s" % [String(c["name"]), String(g["name"])]}
+	return {}
 
 
 ## 官道：村庄连到最近城池（微弯，赭色）
@@ -1188,17 +1242,15 @@ func _draw_cross() -> void:
 func _clamp_map_center() -> void:
 	var vs := get_viewport().get_visible_rect().size
 	var sc := _map_scale()
-	var half_lon := (vs.x * 0.5) / sc.x
-	var half_lat := (vs.y * 0.5) / sc.y
-	# 保证地图始终覆盖内容区（否则会出现黑边）；缩放到整幅可见时自动居中
-	# 地图必须铺满内容区（不能露背景）：内容区边界即地图可移动的极限
-	var vs2 := get_viewport().get_visible_rect().size
-	var sc5 := _map_scale()
-	var lim_lon: float = clampf(180.0 - (vs2.x * 0.5) / sc5.x, 0.0, 180.0)
-	var lim_lat: float = clampf(90.0 - (vs2.y * 0.5) / sc5.y, 0.0, 90.0)
-	if _content_w * 0.5 < vs2.x * 0.5:
+	var base := _sheet_base(vs)
+	var cw: float = base.x * 0.76 * map_zoom
+	var ch: float = cw * 0.5
+	# 地图必须铺满内容区；内容比屏幕小则强制居中
+	var lim_lon: float = clampf(180.0 - (vs.x * 0.5) / sc.x, 0.0, 180.0)
+	var lim_lat: float = clampf(90.0 - (vs.y * 0.5) / sc.y, 0.0, 90.0)
+	if cw * 0.5 < vs.x * 0.5:
 		lim_lon = 0.0
-	if _content_h * 0.5 < vs2.y * 0.5:
+	if ch * 0.5 < vs.y * 0.5:
 		lim_lat = 0.0
 	map_center.x = clampf(map_center.x, -lim_lon, lim_lon)
 	map_center.y = clampf(map_center.y, -lim_lat, lim_lat)
@@ -1243,9 +1295,47 @@ func _map_bench() -> void:
 	print("[基准] 60 帧总 %.0f ms，平均 %.1f ms/帧" % [dt, dt / 60.0])
 
 
+## 高倍地图预览：按真实地形函数采样，输出 PNG（用于评估放大后的观感）
+func _preview_tile(lon: float, lat: float, span: float, px: int, out_path: String) -> void:
+	var t0 := Time.get_ticks_msec()
+	var hs := PackedFloat32Array()
+	hs.resize(px * px)
+	var step := span / float(px)
+	var lat_per_px := step
+	var lon_per_px := step / maxf(cos(deg_to_rad(lat)), 0.05)
+	for y in px:
+		var py: float = lat + span * 0.5 - float(y) * lat_per_px
+		for x in px:
+			var px_lon: float = lon - span * 0.5 + float(x) * lon_per_px
+			hs[y * px + x] = TG.height_ll(px_lon, py, 0.0)
+	var img := Image.create(px, px, false, Image.FORMAT_RGB8)
+	var sun := Vector3(-0.55, 0.62, -0.56).normalized()
+	for y in px:
+		for x in px:
+			var h: float = hs[y * px + x]
+			var hx: float = hs[y * px + mini(x + 1, px - 1)]
+			var hy: float = hs[mini(y + 1, px - 1) * px + x]
+			var dzdx: float = (hx - h) / (step * 111320.0)
+			var dzdy: float = (hy - h) / (step * 110540.0)
+			var n := Vector3(-dzdx, 1.0, -dzdy).normalized()
+			var sh: float = clampf(n.dot(sun), 0.0, 1.0)
+			var px_lon: float = lon - span * 0.5 + float(x) * lon_per_px
+			var py: float = lat + span * 0.5 - float(y) * lat_per_px
+			var lk: int = TG.landform_kind(px_lon, py, h)
+			var c: Color
+			if h < -8.0:
+				c = Color(0.20, 0.28, 0.36)
+			else:
+				c = TG.landform_color(lk)
+			var light: float = 0.62 + sh * 0.62
+			img.set_pixel(x, y, Color(c.r * light, c.g * light, c.b * light))
+	var err := img.save_png(out_path)
+	print("[预览] %s err=%d 用时 %d ms" % [out_path, err, Time.get_ticks_msec() - t0])
+	get_tree().quit()
+
+
 func _draw_map() -> void:
 	var vs := get_viewport().get_visible_rect().size
-	_clamp_map_center()
 	if not _map_shader_ok:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
@@ -1263,6 +1353,7 @@ func _draw_map() -> void:
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
 	_content_h = content_h
+	_clamp_map_center()
 	if OS.get_cmdline_user_args().has("--mapsize"):
 		print("[尺寸] vs=%.0fx%.0f content=%.0fx%.0f at (%.0f,%.0f) sheet=%.0fx%.0f zoom=%.2f"
 				% [vs.x, vs.y, content_w, content_h, content_rect.position.x, content_rect.position.y,
