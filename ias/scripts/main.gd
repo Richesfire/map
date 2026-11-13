@@ -70,6 +70,9 @@ var _map_thread: Thread
 var _map_hi_done := false
 var _map_hi: Array = []
 var map_surface: ColorRect
+var map_view: Control
+var _vil_key := Vector2i(99999, 99999)
+var _vil_cache: Array = []
 var map_backdrop: TextureRect
 var _map_shader_ok := false
 var _map_mat: ShaderMaterial
@@ -399,11 +402,17 @@ func _build_ui() -> void:
 	map_backdrop.visible = false
 	ui_layer.add_child(map_backdrop)
 
+	# 卷轴内容区（裁剪，超出部分不显示）
+	map_view = Control.new()
+	map_view.clip_contents = true
+	map_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui_layer.add_child(map_view)
+
 	# 大地图：着色器直绘（逐像素读高程），失败再退回烘焙纹理
 	map_surface = ColorRect.new()
 	map_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_surface.visible = false
-	ui_layer.add_child(map_surface)
+	map_view.add_child(map_surface)
 	_setup_map_shader()
 
 	# 大地图（标记/经纬网/边框画在这一层，位于 map_surface 之上）
@@ -420,6 +429,7 @@ func _build_ui() -> void:
 		lb.add_theme_color_override("font_color", Color(0.30, 0.20, 0.12))
 		lb.visible = false
 		map_root.add_child(lb)
+		lb.visible = false
 		city_labels.append(lb)
 
 
@@ -770,6 +780,95 @@ func _draw_compass() -> void:
 			Vector2(mx, 5), Vector2(mx + 4, 10), Vector2(mx, 15), Vector2(mx - 4, 10)]), m[1])
 
 
+## 左右卷轴（轴杆 + 轴头 + 绢边）
+func _draw_scroll_rollers(sr: Rect2) -> void:
+	var rod_w := 22.0
+	var over := 26.0        # 轴杆上下伸出
+	for side in 2:
+		var x := sr.position.x - rod_w + (sr.size.x + rod_w * 2.0) * float(side) if side == 1 else sr.position.x - rod_w
+		# 轴杆
+		var top := sr.position.y - over
+		var bot := sr.position.y + sr.size.y + over
+		map_root.draw_rect(Rect2(x, top, rod_w, bot - top), Color(0.30, 0.22, 0.14))
+		map_root.draw_rect(Rect2(x + 3, top, rod_w - 6, bot - top), Color(0.42, 0.31, 0.19))
+		map_root.draw_rect(Rect2(x + 8, top, 4, bot - top), Color(0.52, 0.40, 0.24, 0.7))
+		# 轴头
+		for yy in [top - 8.0, bot]:
+			map_root.draw_rect(Rect2(x - 4, yy, rod_w + 8, 12), Color(0.26, 0.19, 0.12))
+			map_root.draw_rect(Rect2(x - 4, yy, rod_w + 8, 12), Color(0.60, 0.47, 0.27), false, 1.5)
+	# 绢边（内阴影，让内容像画在卷面上）
+	map_root.draw_rect(Rect2(sr.position, Vector2(10, sr.size.y)), Color(0.30, 0.23, 0.14, 0.25))
+	map_root.draw_rect(Rect2(Vector2(sr.position.x + sr.size.x - 10, sr.position.y), Vector2(10, sr.size.y)), Color(0.30, 0.23, 0.14, 0.25))
+
+
+## 聚落层：城市画平面简图，村庄随缩放渐显
+func _draw_settlements(sr: Rect2) -> void:
+	if terrain == null:
+		return
+	# 城市：平面简图（城墙 + 十字街 + 街区）
+	for ct in TG.cities():
+		var lon := float(ct["lon"])
+		var lat := float(ct["lat"])
+		var p := _lonlat_to_screen_off(Vector2(lon, lat), 0.0)
+		if not sr.has_point(p):
+			continue
+		var sz: float = clampf(6.0 + map_zoom * 2.2, 10.0, 34.0)
+		var half := Vector2(sz, sz) * 0.5
+		var r := Rect2(p - half, Vector2(sz, sz))
+		map_root.draw_rect(r, Color(0.72, 0.62, 0.42, 0.85))
+		map_root.draw_rect(r, Color(0.26, 0.18, 0.10), false, maxf(sz * 0.10, 1.5))
+		# 十字街
+		map_root.draw_line(Vector2(p.x - half.x + 1.5, p.y), Vector2(p.x + half.x - 1.5, p.y), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
+		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
+
+	# 村庄：放大后才出现
+	var vfade := clampf((map_zoom - 3.2) / 3.0, 0.0, 1.0)
+	if vfade <= 0.02:
+		return
+	var vlist := _villages_for_view(sr)
+	for v in vlist:
+		var p2 := _lonlat_to_screen_off(v, 0.0)
+		if not sr.has_point(p2):
+			continue
+		var s2: float = clampf(2.0 + map_zoom * 0.35, 2.0, 5.5)
+		map_root.draw_rect(Rect2(p2 - Vector2(s2, s2) * 0.5, Vector2(s2, s2)), Color(0.34, 0.24, 0.14, 0.85 * vfade))
+
+
+## 当前视野内的村庄（确定性生成 + 缓存）
+func _villages_for_view(sr: Rect2) -> Array:
+	var step := 0.16
+	var key := Vector2i(int(floor(map_center.x / step)) * 97 + int(map_zoom * 4.0),
+			int(floor(map_center.y / step)) * 97 + int(map_zoom * 4.0))
+	if key != _vil_key:
+		_vil_key = key
+		_vil_cache = []
+		var half_lon: float = (sr.size.x * 0.5) / ((MAP_W * map_zoom) / 360.0)
+		var half_lat: float = (sr.size.y * 0.5) / ((MAP_H * map_zoom) / 180.0)
+		var lon0 := map_center.x - half_lon
+		var lon1 := map_center.x + half_lon
+		var lat0 := map_center.y - half_lat
+		var lat1 := map_center.y + half_lat
+		var thr := clampf(0.55 + (lon1 - lon0) / 70.0, 0.62, 0.93)
+		var lon := lon0
+		var row := 0
+		while lon < lon1 and _vil_cache.size() < 400:
+			var lat := lat0 + (step * 0.5 if row % 2 == 1 else 0.0)
+			while lat < lat1:
+				var hv := TG._vnoise(lon * 9.7 + 3.1, lat * 9.7 - 1.7, 4711)
+				if hv > thr:
+					var jx := (TG._vnoise(lon * 41.0, lat * 41.0, 91) - 0.5) * step * 1.6
+					var jy := (TG._vnoise(lon * 37.0, lat * 37.0, 92) - 0.5) * step * 1.6
+					var vlon := lon + jx
+					var vlat := lat + jy
+					var hh := TG.macro_height(vlon, vlat)
+					if hh > 3.0 and hh < 2400.0:
+						_vil_cache.append(Vector2(vlon, vlat))
+				lat += step
+			lon += step
+			row += 1
+	return _vil_cache
+
+
 func _draw_minimap() -> void:
 	var c := Vector2(90.0, 90.0)
 	var R := 88.0
@@ -914,6 +1013,13 @@ func _draw_map() -> void:
 	if not _map_shader_ok:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
+	# 卷轴区域：左右各留出卷轴和边缘
+	var sc_x := 78.0
+	var sc_y := 44.0
+	var scroll_rect := Rect2(sc_x, sc_y, vs.x - sc_x * 2.0, vs.y - sc_y * 2.0)
+	map_view.position = scroll_rect.position
+	map_view.size = scroll_rect.size
+
 	var w := MAP_W * map_zoom
 	var h := MAP_H * map_zoom
 	var ppd := w / 360.0
@@ -924,7 +1030,8 @@ func _draw_map() -> void:
 	var rect := Rect2(Vector2(x0, y0), Vector2(w, h))
 	if _map_shader_ok:
 		map_surface.visible = true
-		map_surface.position = rect.position
+		# 相对裁剪容器定位
+		map_surface.position = rect.position - scroll_rect.position
 		map_surface.size = rect.size
 		_map_mat.set_shader_parameter("shade_alpha",
 				clampf((map_zoom - 1.2) / 5.0, 0.0, 1.0) * 0.72)
@@ -956,6 +1063,9 @@ func _draw_map() -> void:
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x - 132, vs.y - 36), "×%s" % _zoom_text(),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
+	_draw_scroll_rollers(scroll_rect)
+	_draw_settlements(scroll_rect)
+
 	# 玩家位置
 	if terrain != null:
 		var pp := _lonlat_to_screen_off(Vector2(terrain.center_lon, terrain.center_lat), 0.0)
@@ -969,21 +1079,6 @@ func _draw_map() -> void:
 	map_root.draw_rect(Rect2(61, 26, vs.x - 122, vs.y - 52), Color(0.70, 0.62, 0.45), false, 3.0)
 
 	# 手工城市标记（每份可见副本都画；标签放在最靠近屏幕中心的那份）
-	var ci := 0
-	for c in TG.cities():
-		var cll := Vector2(float(c["lon"]), float(c["lat"]))
-		var cp := _lonlat_to_screen_off(cll, 0.0)
-		var any := cp.x > -20 and cp.x < vs.x + 20 and cp.y > -20 and cp.y < vs.y + 20
-		if any:
-			map_root.draw_rect(Rect2(cp + Vector2(-4, -4), Vector2(8, 8)), Color(0.32, 0.18, 0.10))
-			map_root.draw_rect(Rect2(cp + Vector2(-4, -4), Vector2(8, 8)), Color(0.85, 0.72, 0.42), false, 1.5)
-		if ci < city_labels.size():
-			var lb: Label = city_labels[ci]
-			lb.visible = any
-			if any:
-				lb.position = cp + Vector2(8, -22)
-		ci += 1
-
 	# 旅行标（同样按副本绘制，跨循环边界不丢标记）
 	if has_pin:
 		var ps := _lonlat_to_screen_off(pin_ll, 0.0)
