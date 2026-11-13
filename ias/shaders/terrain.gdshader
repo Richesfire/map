@@ -5,7 +5,7 @@ render_mode diffuse_burley, specular_schlick_ggx;
 uniform sampler2D noise_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D ground_atlas : source_color, filter_linear, repeat_enable;
 uniform sampler2D ground_normal : hint_normal, filter_linear, repeat_enable;
-uniform float normal_strength = 1.0;
+uniform float normal_strength = 1.55;
 uniform float atlas_n = 4.0;
 uniform float tex_scale = 0.075;     // 1/米：贴图重复尺度（约 13m 一次）
 uniform float tex_strength = 0.80;   // 纹理占最终颜色的比例
@@ -120,7 +120,7 @@ void fragment() {
 	vec2 tuv = fract(uv) * 0.985 + 0.0075;
 	vec2 cellN = vec2(float(t0 % 4), floor(float(t0) / 4.0)) * (1.0 / atlas_n);
 	vec3 tn = texture(ground_normal, cellN + tuv * (1.0 / atlas_n)).rgb * 2.0 - 1.0;
-	float nstr = normal_strength * (1.0 - smoothstep(60.0, 200.0, distance(wpos, CAMERA_POSITION_WORLD)));
+	float nstr = normal_strength * (1.0 - smoothstep(140.0, 460.0, distance(wpos, CAMERA_POSITION_WORLD)));
 
 	// 两套尺度混合：近尺度 13m、远尺度 78m，压掉重复感
 	vec2 uv_big = uv * 0.17 + vec2(13.7, 5.3);
@@ -132,10 +132,12 @@ void fragment() {
 		t0 = 5;
 		t1 = 6;
 	}
-	vec3 grass = mix(tile_at(uv, t0), tile_at(uv_big, t0), 0.30);
-	vec3 lush = mix(tile_at(uv, t1), tile_at(uv_big, t1), 0.30);
-	vec3 dry = mix(tile_at(uv, t2), tile_at(uv_big, t2), 0.30);
-	vec3 soil = mix(tile_at(uv, t3), tile_at(uv_big, t3), 0.30);
+	// 旋转 + 缩放的第二层，专门用来打散贴图重复感
+	vec2 uv_rot = vec2(uv.x * 0.82 + uv.y * 0.57, -uv.x * 0.57 + uv.y * 0.82) * 1.63 + vec2(41.3, 17.9);
+	vec3 grass = mix(mix(tile_at(uv, t0), tile_at(uv_big, t0), 0.30), tile_at(uv_rot, t0), 0.34);
+	vec3 lush = mix(mix(tile_at(uv, t1), tile_at(uv_big, t1), 0.30), tile_at(uv_rot, t1), 0.34);
+	vec3 dry = mix(mix(tile_at(uv, t2), tile_at(uv_big, t2), 0.30), tile_at(uv_rot, t2), 0.34);
+	vec3 soil = mix(mix(tile_at(uv, t3), tile_at(uv_big, t3), 0.30), tile_at(uv_rot, t3), 0.34);
 	vec3 gravel = tile_at(uv, 5);
 	vec3 rock = tile_at(uv, 6);
 	vec3 snowt = tile_at(uv, 8);
@@ -152,8 +154,8 @@ void fragment() {
 	// 干湿仍然大范围地影响枯/绿比例
 	ground = mix(ground, dry, smoothstep(0.60, 0.82, dryness) * 0.6);
 	// 陡坡露岩、碎石
-	ground = mix(ground, mix(gravel, rock, smoothstep(0.55, 0.85, slope)),
-			smoothstep(0.42, 0.62, slope));
+	ground = mix(ground, mix(gravel, rock, smoothstep(0.45, 0.80, slope)),
+			smoothstep(0.30, 0.56, slope));
 	ground = mix(ground, snowt, snow);
 
 	vec3 c = COLOR.rgb;
@@ -168,7 +170,9 @@ void fragment() {
 	float micro = texture(noise_tex, wpos.xz * 0.32).r;
 	ground *= 0.92 + 0.16 * micro;
 	ALBEDO = mix(c, ground * (0.85 + 0.30 * dot(c, vec3(0.33))), ts);
-	NORMAL = normalize(wnrm + vec3(tn.x, 0.0, tn.y) * 0.45 * nstr);
+	float hump = texture(noise_tex, wpos.xz * 0.021).r - texture(noise_tex, wpos.xz * 0.047 + vec2(5.7, 2.3)).r;
+	vec3 bump_n = vec3(hump * 0.55, 0.0, hump * 0.55) * (1.0 - smoothstep(80.0, 300.0, distance(wpos, CAMERA_POSITION_WORLD)));
+	NORMAL = normalize(wnrm + vec3(tn.x, 0.0, tn.y) * 0.55 * nstr + bump_n);
 	ROUGHNESS = mix(0.97, 0.88, smoothstep(0.45, 0.8, slope));
 	SPECULAR = 0.06;
 }
