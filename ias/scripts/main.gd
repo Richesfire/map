@@ -1141,10 +1141,10 @@ func _draw_map() -> void:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
 	# 卷轴版式：内容居中，布帛左右宽、上下窄
-	var pad_x := 70.0
-	var pad_y := 24.0
-	var content_w: float = vs.x - 360.0
-	var content_h: float = vs.y - 200.0
+	var pad_y := 22.0
+	var content_w: float = vs.x * 0.52
+	var content_h: float = vs.y * 0.50
+	var pad_x: float = maxf((vs.x - content_w) * 0.5 - 34.0, 60.0)
 	var content_rect := Rect2(Vector2((vs.x - content_w) * 0.5, (vs.y - content_h) * 0.5),
 			Vector2(content_w, content_h))
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y),
@@ -1209,7 +1209,7 @@ func _draw_map() -> void:
 			map_root.draw_arc(pp, 8.0, 0.0, TAU, 20, Color(0.55, 0.12, 0.08), 1.5)
 
 
-	map_root.draw_rect(Rect2(61, 26, vs.x - 122, vs.y - 52), Color(0.70, 0.62, 0.45), false, 3.0)
+
 
 	# 手工城市标记（每份可见副本都画；标签放在最靠近屏幕中心的那份）
 	# 旅行标（同样按副本绘制，跨循环边界不丢标记）
