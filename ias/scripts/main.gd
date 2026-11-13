@@ -613,6 +613,18 @@ func _start_game() -> void:
 		map_zoom = _debug_mapzoom
 	if OS.get_cmdline_user_args().has("--map"):
 		_open_map()
+	if OS.get_cmdline_user_args().has("--hitcenter"):
+		# 调试：直接打开离地图中心最近的聚落面板
+		var best: Dictionary = {}
+		var bd := 9.0
+		for v in _settlements_in(map_center.x - 3.0, map_center.y - 3.0,
+				map_center.x + 3.0, map_center.y + 3.0, 4):
+			var d: float = (v["ll"] as Vector2).distance_to(map_center)
+			if d < bd:
+				bd = d
+				best = v
+		if not best.is_empty():
+			_open_village_panel({"ll": best["ll"], "name": best["name"], "kind": "village"})
 	if _debug_citypanel != "":
 		var idx := int(_debug_citypanel)
 		var cs := TG.cities()
