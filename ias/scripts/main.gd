@@ -49,6 +49,7 @@ var _debug_center := Vector2(INF, INF)
 var _debug_fresh := false
 var _debug_shot := ""
 var _debug_shot_delay := 3.0
+var _debug_shots: Array = []
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
 var _debug_air := 0.0
@@ -91,7 +92,7 @@ var _tab_acc := Vector2.ZERO
 var _tab_locked := false
 var map_open := false
 var map_center := Vector2(113.72, 36.00)   # 地图中心经纬度
-var map_zoom := 2.6
+var map_zoom := 1.0
 var pin_ll := Vector2(INF, INF)   # 旅行标：经纬度（钉在地图上）
 var has_pin := false
 var loading_box: Control = null
@@ -149,10 +150,12 @@ func _ready() -> void:
 			_bug_test()
 		elif _debug_shot != "":
 			_take_shot(_debug_shot, _debug_shot_delay)
+		_run_shots()
 	else:
 		_hide_boot()
 		if _debug_shot != "":
 			_take_shot(_debug_shot, _debug_shot_delay)
+		_run_shots()
 
 	_bug_unused()
 
@@ -173,6 +176,11 @@ func _parse_args() -> void:
 			_debug_shot = a.substr(7)
 		elif a.begins_with("--shotdelay="):
 			_debug_shot_delay = float(a.substr(12))
+		elif a.begins_with("--shots="):
+			for item in a.substr(8).split("|", false):
+				var bits := item.split("@")
+				if bits.size() == 2:
+					_debug_shots.append([bits[0], float(bits[1])])
 		elif a.begins_with("--mapzoom="):
 			_debug_mapzoom = float(a.substr(10))
 		elif a.begins_with("--yaw="):
@@ -833,7 +841,7 @@ func _draw_settlements(sr: Rect2) -> void:
 		if not sr.has_point(p):
 			continue
 		# 真实尺寸换算：咸阳城墙约 3.7km 见方
-		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (MAP_W * map_zoom)
+		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
 		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
 		var half := Vector2(sz, sz) * 0.5
 		var r := Rect2(p - half, Vector2(sz, sz))
@@ -864,8 +872,9 @@ func _villages_for_view(sr: Rect2) -> Array:
 	if key != _vil_key:
 		_vil_key = key
 		_vil_cache = []
-		var half_lon: float = (sr.size.x * 0.5) / ((MAP_W * map_zoom) / 360.0)
-		var half_lat: float = (sr.size.y * 0.5) / ((MAP_H * map_zoom) / 180.0)
+		var sc3 := _map_scale()
+		var half_lon: float = (sr.size.x * 0.5) / sc3.x
+		var half_lat: float = (sr.size.y * 0.5) / sc3.y
 		var lon0 := map_center.x - half_lon
 		var lon1 := map_center.x + half_lon
 		var lat0 := map_center.y - half_lat
@@ -906,8 +915,9 @@ func _draw_hydro(cr: Rect2) -> void:
 	var fade := clampf((map_zoom - 1.0) / 1.6, 0.0, 1.0)
 	if fade <= 0.01:
 		return
-	var half_lon: float = (cr.size.x * 0.5) / ((MAP_W * map_zoom) / 360.0)
-	var half_lat: float = (cr.size.y * 0.5) / ((MAP_H * map_zoom) / 180.0)
+	var sc2 := _map_scale()
+	var half_lon: float = (cr.size.x * 0.5) / sc2.x
+	var half_lat: float = (cr.size.y * 0.5) / sc2.y
 	var lon0 := map_center.x - half_lon - 2.0
 	var lon1 := map_center.x + half_lon + 2.0
 	var lat0 := map_center.y - half_lat - 2.0
@@ -1140,18 +1150,20 @@ func _draw_cross() -> void:
 ## 地图边界最多停在屏幕中心：中心不能越出 [-180+半屏, 180-半屏]
 func _clamp_map_center() -> void:
 	var vs := get_viewport().get_visible_rect().size
-	var ppd := (MAP_W * map_zoom) / 360.0
-	var ppy := (MAP_H * map_zoom) / 180.0
-	var half_lon := (vs.x * 0.5) / ppd
-	var half_lat := (vs.y * 0.5) / ppy
-	# A：地图边缘最多拖到屏幕中心（地图最多一半移出屏幕），随缩放自然变化
-	map_center.x = clampf(map_center.x, -180.0, 180.0)
-	map_center.y = clampf(map_center.y, -90.0, 90.0)
+	var sc := _map_scale()
+	var half_lon := (vs.x * 0.5) / sc.x
+	var half_lat := (vs.y * 0.5) / sc.y
+	# 保证地图始终覆盖内容区（否则会出现黑边）；缩放到整幅可见时自动居中
+	var vs2 := get_viewport().get_visible_rect().size
+	var sc4 := _map_scale()
+	var half_lon2 := (vs2.x * 0.52 * 0.5) / sc4.x
+	var half_lat2 := (vs2.y * 0.50 * 0.5) / sc4.y
+	map_center.x = 0.0 if half_lon2 >= 180.0 else clampf(map_center.x, -180.0 + half_lon2, 180.0 - half_lon2)
+	map_center.y = 0.0 if half_lat2 >= 90.0 else clampf(map_center.y, -90.0 + half_lat2, 90.0 - half_lat2)
 
 
 func _zoom_min() -> float:
-	var vs := get_viewport().get_visible_rect().size
-	return maxf(0.35, (vs.y * 0.5) / float(MAP_H))
+	return 0.7
 
 
 func _zoom_text() -> String:
@@ -1177,9 +1189,10 @@ func _draw_map() -> void:
 	map_view.position = content_rect.position
 	map_view.size = content_rect.size
 
-	var w := MAP_W * map_zoom
-	var h := MAP_H * map_zoom
-	var ppd := w / 360.0
+	var sc := _map_scale()
+	var ppd := sc.x
+	var w := ppd * 360.0
+	var h := sc.y * 180.0
 
 	# 一张完整地图（不再左右复制）
 	var x0 := vs.x * 0.5 + (-180.0 - map_center.x) * ppd
@@ -1246,10 +1259,18 @@ func _draw_map() -> void:
 
 
 ## 经纬度 -> 屏幕（off 用于三份副本：-360 / 0 / +360）
+## 地图缩放基准：内容区宽度 × 缩放倍数（1 倍 = 整幅世界图可见）
+func _map_scale() -> Vector2:
+	var vs := get_viewport().get_visible_rect().size
+	var w: float = vs.x * 0.52 * map_zoom
+	return Vector2(w / 360.0, (w * 0.5) / 180.0)
+
+
 func _lonlat_to_screen_off(ll: Vector2, off: float) -> Vector2:
 	var vs := get_viewport().get_visible_rect().size
-	var ppd := (MAP_W * map_zoom) / 360.0
-	var ppy := (MAP_H * map_zoom) / 180.0
+	var sc := _map_scale()
+	var ppd := sc.x
+	var ppy := sc.y
 	return Vector2(vs.x * 0.5 + (ll.x + off - map_center.x) * ppd,
 			vs.y * 0.5 - (ll.y - map_center.y) * ppy)
 
@@ -2244,13 +2265,22 @@ func _bug_unused() -> void:
 	pass
 
 
-func _take_shot(path: String, delay: float = 3.0) -> void:
+func _run_shots() -> void:
+	var last := -1.0
+	for s in _debug_shots:
+		last = maxf(last, float(s[1]))
+	for s in _debug_shots:
+		_take_shot(String(s[0]), float(s[1]), absf(float(s[1]) - last) < 0.01)
+
+
+func _take_shot(path: String, delay: float = 3.0, do_quit: bool = true) -> void:
 	await get_tree().create_timer(delay).timeout
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	var err := img.save_png(path)
 	print("[截图] %s err=%d" % [path, err])
-	get_tree().quit()
+	if do_quit:
+		get_tree().quit()
 
 
 ## 山体特征层校验：对比“只用底图”和“底图+山体特征”的峰顶/山脚高程
