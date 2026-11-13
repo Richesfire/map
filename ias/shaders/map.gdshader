@@ -55,8 +55,32 @@ void fragment() {
 	float sy = (hy - h) / km_y;
 	float shade = clamp(0.62 - (sx * 0.55 + sy * 0.75) * 0.0030 * shade_gain, 0.16, 1.0);
 
-	// 配色直接取游戏内同一套 biome 分类生成的低分辨率图，保证地图和地表一致
-	vec3 c = texture(biome_tex, uv).rgb;
+	// 逐像素地貌配色：不依赖低分辨率贴图，放大不会糊
+	float slope = length(vec2(sx, sy)) * 1000.0;   // 竖向/水平（千分比）
+	float moist = texture(noise_tex, vec2(uv.x * 9.0, uv.y * 9.0)).r;
+	float moist2 = texture(noise_tex, vec2(uv.x * 23.0 + 0.31, uv.y * 23.0 + 0.77)).r;
+	float wet = mix(moist, moist2, 0.35);
+
+	vec3 ocean  = vec3(0.24, 0.32, 0.40);
+	vec3 sand   = vec3(0.80, 0.72, 0.50);
+	vec3 steppe = vec3(0.70, 0.66, 0.42);
+	vec3 grass  = vec3(0.52, 0.56, 0.34);
+	vec3 forest = vec3(0.30, 0.42, 0.24);
+	vec3 rock   = vec3(0.46, 0.44, 0.40);
+	vec3 rock_d = vec3(0.38, 0.36, 0.33);
+	vec3 snow   = vec3(0.90, 0.92, 0.93);
+
+	vec3 c = grass;
+	c = mix(c, forest, smoothstep(0.52, 0.72, wet));
+	c = mix(c, steppe, smoothstep(0.46, 0.26, wet));
+	c = mix(c, sand, smoothstep(0.22, 0.10, wet) * smoothstep(-200.0, 600.0, h));
+	// 高海拔压灰、雪线以上变白
+	c = mix(c, rock, smoothstep(2200.0, 3600.0, h) * 0.55);
+	c = mix(c, rock_d, smoothstep(0.10, 0.30, slope) * 0.55);
+	float snow_line = 5200.0 - max(abs(lat) - 30.0, 0.0) * 110.0;
+	c = mix(c, snow, smoothstep(snow_line - 400.0, snow_line, h));
+	if (abs(lat) > 72.0 && h < 400.0) c = vec3(0.88, 0.92, 0.94);
+	c = mix(c, ocean, step(h, -8.0));
 
 	// 古地图纸色
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));

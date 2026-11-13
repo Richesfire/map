@@ -1846,7 +1846,6 @@ func _draw_map() -> void:
 	_draw_brocade(scroll_rect, pad_x, pad_y)
 	var _t1 := Time.get_ticks_usec()
 	var _t2 := Time.get_ticks_usec()
-	_draw_roads(content_rect)
 	var _t3 := Time.get_ticks_usec()
 	_draw_settlements(content_rect)
 	if map_hydro != null:
