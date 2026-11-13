@@ -72,6 +72,9 @@ var _map_hi: Array = []
 var map_surface: ColorRect
 var map_view: Control
 var _vil_key := Vector2i(99999, 99999)
+var _hydro_r: Array = []
+var _hydro_l: Array = []
+var _hydro_loaded := false
 var _vil_cache: Array = []
 var map_backdrop: TextureRect
 var _map_shader_ok := false
@@ -812,7 +815,9 @@ func _draw_settlements(sr: Rect2) -> void:
 		var p := _lonlat_to_screen_off(Vector2(lon, lat), 0.0)
 		if not sr.has_point(p):
 			continue
-		var sz: float = clampf(6.0 + map_zoom * 2.2, 10.0, 34.0)
+		# 真实尺寸换算：咸阳城墙约 3.7km 见方
+		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (MAP_W * map_zoom)
+		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
 		var half := Vector2(sz, sz) * 0.5
 		var r := Rect2(p - half, Vector2(sz, sz))
 		map_root.draw_rect(r, Color(0.72, 0.62, 0.42, 0.85))
@@ -867,6 +872,102 @@ func _villages_for_view(sr: Rect2) -> Array:
 			lon += step
 			row += 1
 	return _vil_cache
+
+
+## 布帛边：卷轴内一圈织纹装饰
+func _draw_brocade(sr: Rect2, border: float) -> void:
+	var cloth := Color(0.62, 0.50, 0.33)
+	var inner := Rect2(sr.position + Vector2(border, border), sr.size - Vector2(border, border) * 2.0)
+	# 四条布边（不覆盖内容区）
+	map_root.draw_rect(Rect2(sr.position, Vector2(sr.size.x, border)), cloth)
+	map_root.draw_rect(Rect2(sr.position + Vector2(0, sr.size.y - border), Vector2(sr.size.x, border)), cloth)
+	map_root.draw_rect(Rect2(sr.position + Vector2(0, border), Vector2(border, sr.size.y - border * 2.0)), cloth)
+	map_root.draw_rect(Rect2(sr.position + Vector2(sr.size.x - border, border), Vector2(border, sr.size.y - border * 2.0)), cloth)
+	# 织纹
+	var step := 7.0
+	var x := sr.position.x
+	while x < sr.position.x + sr.size.x:
+		map_root.draw_line(Vector2(x, sr.position.y), Vector2(x, sr.position.y + border), Color(0.55, 0.44, 0.28, 0.35), 1.0)
+		map_root.draw_line(Vector2(x, sr.position.y + sr.size.y - border), Vector2(x, sr.position.y + sr.size.y), Color(0.55, 0.44, 0.28, 0.35), 1.0)
+		x += step
+	var y := sr.position.y
+	while y < sr.position.y + sr.size.y:
+		map_root.draw_line(Vector2(sr.position.x, y), Vector2(sr.position.x + border, y), Color(0.70, 0.58, 0.40, 0.25), 1.0)
+		map_root.draw_line(Vector2(sr.position.x + sr.size.x - border, y), Vector2(sr.position.x + sr.size.x, y), Color(0.70, 0.58, 0.40, 0.25), 1.0)
+		y += step
+	# 内外描边
+	map_root.draw_rect(sr, Color(0.24, 0.17, 0.10), false, 3.0)
+	map_root.draw_rect(Rect2(sr.position + Vector2(border, border),
+			sr.size - Vector2(border, border) * 2.0), Color(0.26, 0.19, 0.12, 0.85), false, 2.0)
+
+
+## 江河湖泊（主要水系）
+func _draw_hydro(cr: Rect2) -> void:
+	if not _hydro_loaded:
+		_hydro_loaded = true
+		var f := FileAccess.open("res://data/hydro.json", FileAccess.READ)
+		if f != null:
+			var d: Dictionary = JSON.parse_string(f.get_as_text())
+			if d != null:
+				_hydro_r = d.get("rivers", [])
+				_hydro_l = d.get("lakes", [])
+				print("[地图] 水系 %d 条 / 湖泊 %d 个" % [_hydro_r.size(), _hydro_l.size()])
+	var fade := clampf((map_zoom - 1.0) / 1.6, 0.0, 1.0)
+	if fade <= 0.01:
+		return
+	var half_lon: float = (cr.size.x * 0.5) / ((MAP_W * map_zoom) / 360.0)
+	var half_lat: float = (cr.size.y * 0.5) / ((MAP_H * map_zoom) / 180.0)
+	var lon0 := map_center.x - half_lon - 2.0
+	var lon1 := map_center.x + half_lon + 2.0
+	var lat0 := map_center.y - half_lat - 2.0
+	var lat1 := map_center.y + half_lat + 2.0
+	var lake_col := Color(0.30, 0.38, 0.42, 0.85 * fade)
+	for l in _hydro_l:
+		var pts: Array = l["p"]
+		var bb := _line_bbox(pts)
+		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
+			continue
+		var poly := PackedVector2Array()
+		for p in pts:
+			poly.append(_lonlat_to_screen_off(Vector2(float(p[0]), float(p[1])), 0.0))
+		if poly.size() >= 3:
+			var all_in := true
+			for q in poly:
+				if not cr.grow(8.0).has_point(q):
+					all_in = false
+					break
+			if all_in:
+				poly.append(poly[0])
+				map_root.draw_polyline(poly, lake_col, 2.0)
+	for r in _hydro_r:
+		var rk := int(r["r"])
+		var pts2: Array = r["p"]
+		var bb2 := _line_bbox(pts2)
+		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
+			continue
+		var w: float = clampf(3.4 - float(rk) * 0.35, 0.9, 3.2)
+		var col := Color(0.26, 0.34, 0.40, (0.55 if rk <= 3 else 0.40) * fade)
+		var prev: Vector2 = Vector2(-99999, -99999)
+		var pad := 8.0
+		for p in pts2:
+			var cur := _lonlat_to_screen_off(Vector2(float(p[0]), float(p[1])), 0.0)
+			if prev.x > -90000.0:
+				var a_in := cr.grow(pad).has_point(prev)
+				var b_in := cr.grow(pad).has_point(cur)
+				if a_in or b_in:
+					map_root.draw_line(prev, cur, col, w)
+			prev = cur
+
+
+func _line_bbox(pts: Array) -> Rect2:
+	var mn := Vector2(999, 999)
+	var mx := Vector2(-999, -999)
+	for p in pts:
+		mn.x = minf(mn.x, float(p[0]))
+		mn.y = minf(mn.y, float(p[1]))
+		mx.x = maxf(mx.x, float(p[0]))
+		mx.y = maxf(mx.y, float(p[1]))
+	return Rect2(mn, mx - mn)
 
 
 func _draw_minimap() -> void:
@@ -1017,8 +1118,10 @@ func _draw_map() -> void:
 	var sc_x := 78.0
 	var sc_y := 44.0
 	var scroll_rect := Rect2(sc_x, sc_y, vs.x - sc_x * 2.0, vs.y - sc_y * 2.0)
-	map_view.position = scroll_rect.position
-	map_view.size = scroll_rect.size
+	var border := 26.0
+	map_view.position = scroll_rect.position + Vector2(border, border)
+	map_view.size = scroll_rect.size - Vector2(border, border) * 2.0
+	var content_rect := Rect2(map_view.position, map_view.size)
 
 	var w := MAP_W * map_zoom
 	var h := MAP_H * map_zoom
@@ -1031,7 +1134,7 @@ func _draw_map() -> void:
 	if _map_shader_ok:
 		map_surface.visible = true
 		# 相对裁剪容器定位
-		map_surface.position = rect.position - scroll_rect.position
+		map_surface.position = rect.position - content_rect.position
 		map_surface.size = rect.size
 		_map_mat.set_shader_parameter("shade_alpha",
 				clampf((map_zoom - 1.2) / 5.0, 0.0, 1.0) * 0.72)
@@ -1064,7 +1167,9 @@ func _draw_map() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
 	_draw_scroll_rollers(scroll_rect)
-	_draw_settlements(scroll_rect)
+	_draw_brocade(scroll_rect, border)
+	_draw_hydro(content_rect)
+	_draw_settlements(content_rect)
 
 	# 玩家位置
 	if terrain != null:
