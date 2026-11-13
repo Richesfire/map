@@ -1978,13 +1978,20 @@ func _setup_map_shader() -> void:
 	if sh == null:
 		print("[地图] 着色器缺失，退回烘焙纹理")
 		return
-	var f := FileAccess.open("res://data/dem_map.bin", FileAccess.READ)
+	# 优先用半分辨率（16MB），没有就退回 8192（64MB）
+	var w := 4096
+	var h := 2048
+	var f := FileAccess.open("res://data/dem_map_lo.bin", FileAccess.READ)
 	if f == null:
-		print("[地图] 缺少 dem_map.bin，退回烘焙纹理")
+		w = 8192
+		h = 4096
+		f = FileAccess.open("res://data/dem_map.bin", FileAccess.READ)
+	if f == null:
+		print("[地图] 缺少高程纹理，退回烘焙纹理")
 		return
 	var bytes := f.get_buffer(f.get_length())
 	f.close()
-	var img := Image.create_from_data(8192, 4096, false, Image.FORMAT_R16, bytes)
+	var img := Image.create_from_data(w, h, false, Image.FORMAT_R16, bytes)
 	if img == null:
 		print("[地图] 高程纹理创建失败，退回烘焙纹理")
 		return
@@ -2002,7 +2009,7 @@ func _setup_map_shader() -> void:
 	_map_mat = ShaderMaterial.new()
 	_map_mat.shader = sh
 	_map_mat.set_shader_parameter("dem_tex", dem_tex)
-	_map_mat.set_shader_parameter("dem_size", Vector2(8192.0, 4096.0))
+	_map_mat.set_shader_parameter("dem_size", Vector2(float(w), float(h)))
 	_map_mat.set_shader_parameter("noise_tex", nt)
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	map_surface.material = _map_mat
