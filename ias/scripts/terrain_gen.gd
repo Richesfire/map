@@ -575,9 +575,9 @@ static func _tile_fbm(x: float, y: float, period: int, seed: int, ridged: bool) 
 static func _build_disp() -> void:
 	if not _disp.is_empty():
 		return
-	var seeds := [1101, 2203, 3307, 4409, 5519, 6607, 7717, 8803, 9901]
-	var ridged := [false, false, true, false, false, true, true, false, true]
-	var total := 9
+	var seeds := [1101, 2203, 3307, 4409, 5519, 6607, 7717, 8803, 9901, 12007, 13043]
+	var ridged := [false, false, true, false, false, true, true, false, true, true, false]
+	var total := 11
 	for k in total:
 		var buf := PackedByteArray()
 		buf.resize(DISP_PX * DISP_PX)
@@ -603,6 +603,15 @@ static func _build_disp() -> void:
 					# 黄土：树枝状沟壑
 					var gx := _tile_vnoise(u * 14.0, v * 3.0, 14, seeds[k])
 					val = clampf(1.0 - absf(gx * 2.0 - 1.0) * 1.6, 0.0, 1.0) * 0.75 + val * 0.25
+				elif k == 9:
+					# 冰裂/碎石：多组方向交错的裂隙
+					var c1 := _tile_vnoise(u * 11.0, v * 11.0, 11, seeds[k])
+					var c2 := _tile_vnoise(u * 17.0 + 5.0, v * 17.0 - 3.0, 17, seeds[k] + 1)
+					var cr := minf(c1, c2)
+					val = clampf(1.0 - smoothstep(0.16, 0.42, cr) * 1.25 + val * 0.30, 0.0, 1.0)
+				elif k == 10:
+					# 缓波：低频大起伏（平原/盆地用）
+					val = clampf(0.35 + 0.65 * _tile_fbm(u * 2.2, v * 2.2, 4, seeds[k], false), 0.0, 1.0)
 				buf[y * DISP_PX + x] = int(clampf(val, 0.0, 1.0) * 255.0)
 		_disp.append(buf)
 	print("[地形] 置换贴图 %d 张（%dpx，平铺 %.0f m）" % [_disp.size(), DISP_PX, DISP_TILE_M])
@@ -673,7 +682,7 @@ static func detail_fine(lon: float, lat: float, h: float) -> float:
 	var u2 := mx / tscale
 	var v2 := my / tscale
 	dv = _disp_at(int(ids[0]), u2, v2) * 0.65
-	dv += _disp_at(int(ids[1]) % 6, u2 * 1.73 + 0.31, v2 * 1.73 - 0.17) * 0.35
+	dv += _disp_at(int(ids[1]) % _disp.size(), u2 * 1.73 + 0.31, v2 * 1.73 - 0.17) * 0.35
 	var d := (dv - 0.5) * 2.0 * amp
 
 	# 坡度越大越“崎岖”：用底图梯度估个坡，陡坡加脊状起伏、平地保持平缓
