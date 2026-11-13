@@ -101,6 +101,7 @@ var _content_w := 1.0
 var _content_h := 1.0
 var _vil_cache: Array = []
 var _hover: Dictionary = {}
+var _pin_probed := false
 var map_backdrop: TextureRect
 var _map_shader_ok := false
 var _map_mat: ShaderMaterial
@@ -791,6 +792,9 @@ func _map_input(e: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
 			pin_drag = mb.pressed
 			if mb.pressed:
+				if not _hover.is_empty():
+					_hover = {}
+					map_root.queue_redraw()
 				pin_ll = _screen_to_lonlat(mb.position)
 				has_pin = true
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -1022,14 +1026,27 @@ func _draw_settlements(sr: Rect2) -> void:
 		if not sr.has_point(p2):
 			continue
 		var lvl := int(v["lvl"])
-		var s2: float = [0.0, 4.4, 3.8, 3.2, 2.6][clampi(lvl, 1, 4)]
+		var s2: float = [0.0, 5.4, 4.8, 4.2, 3.0][clampi(lvl, 1, 4)]
 		s2 *= clampf(0.8 + map_zoom * 0.02, 0.8, 1.4)
 		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "settle" \
 				and (_hover["ll"] as Vector2).is_equal_approx(v["ll"] as Vector2)
 		if hov:
 			map_root.draw_circle(p2, s2 + 3.5, Color(0.96, 0.82, 0.42, 0.95 * vfade))
-		map_root.draw_circle(p2, s2, Color(0.36, 0.25, 0.14, 0.85 * vfade))
-		map_root.draw_arc(p2, s2, 0.0, TAU, 10, Color(0.74, 0.60, 0.36, 0.70 * vfade), 1.0)
+		var ink := Color(0.30, 0.20, 0.11, 0.92 * vfade)
+		var gold := Color(0.78, 0.64, 0.38, 0.85 * vfade)
+		if lvl <= 2:
+			# 州/郡：双环 + 中心点
+			map_root.draw_arc(p2, s2 + 1.5, 0.0, TAU, 14, ink, 1.4)
+			map_root.draw_arc(p2, s2, 0.0, TAU, 12, gold, 1.2)
+			map_root.draw_circle(p2, maxf(s2 * 0.32, 1.2), ink)
+		elif lvl == 3:
+			# 县城：方城
+			var half := Vector2(s2, s2)
+			map_root.draw_rect(Rect2(p2 - half, half * 2.0), gold, false, 1.3)
+			map_root.draw_circle(p2, maxf(s2 * 0.30, 1.1), ink)
+		else:
+			# 乡镇：实心小点
+			map_root.draw_circle(p2, s2 * 0.75, ink)
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
@@ -1047,17 +1064,21 @@ func _ensure_settlements() -> void:
 	for p in d.get("places", []):
 		var lon := float(p["lon"])
 		var lat := float(p["lat"])
-		# 落在手工城池范围内的聚落不要（避免“村在城里”）
-		var inside := false
+		# 落在城池范围内的聚落：沿径向推到城外，不删除
 		for c in TG.cities():
-			var dx: float = (lon - float(c["lon"])) * maxf(cos(deg_to_rad(lat)), 0.05)
-			var dy: float = lat - float(c["lat"])
+			var clon := float(c["lon"])
+			var clat := float(c["lat"])
+			var dx: float = (lon - clon) * maxf(cos(deg_to_rad(lat)), 0.05)
+			var dy: float = lat - clat
+			var dist: float = Vector2(dx, dy).length()
 			var lim: float = (float(c["radius"]) + 1.5) / 111.0
-			if Vector2(dx, dy).length() < lim:
-				inside = true
-				break
-		if inside:
-			continue
+			if dist < lim:
+				var ang := atan2(dy, dx)
+				if dist < 1e-6:
+					ang = 0.0
+				var push: float = lim * 1.15
+				lon = clon + (cos(ang) * push) / maxf(cos(deg_to_rad(clat)), 0.05)
+				lat = clat + sin(ang) * push
 		var item := {"ll": Vector2(lon, lat), "name": String(p["n"]),
 				"lvl": int(p["l"]), "pop": int(p["p"])}
 		_settle.append(item)
@@ -1108,7 +1129,7 @@ func _villages_for_view(sr: Rect2) -> Array:
 	var raw := _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
 			map_center.x + half_lon, map_center.y + half_lat, 4)
 	# 屏幕空间去重叠：间距至少 22 像素，级别高的先占位（稳定，不随缩放跳变）
-	var gap: float = 22.0 / sc3.x
+	var gap: float = 26.0 / sc3.x
 	var cells: Dictionary = {}
 	_vil_cache = []
 	for it in raw:
@@ -1771,6 +1792,13 @@ func _draw_map() -> void:
 	_c_ppy = sc.y
 	_c_cx = map_center.x
 	_c_cy = map_center.y
+	if OS.get_cmdline_user_args().has("--pintest") and not _pin_probed:
+		_pin_probed = true
+		var vsz2 := get_viewport().get_visible_rect().size
+		var pr := Vector2(vsz2.x * 0.25, vsz2.y * 0.75)
+		var llp := _screen_to_lonlat(pr)
+		var bk := _lonlat_to_screen_off(llp, 0.0)
+		print("[针测] %.0f,%.0f -> %.3f,%.3f -> %.0f,%.0f" % [pr.x, pr.y, llp.x, llp.y, bk.x, bk.y])
 
 	# 一张完整地图（不再左右复制）
 	var x0 := vs.x * 0.5 + (-180.0 - map_center.x) * ppd
@@ -1893,8 +1921,9 @@ func _lonlat_to_screen(ll: Vector2) -> Vector2:
 ## 屏幕 -> 经纬度
 func _screen_to_lonlat(p: Vector2) -> Vector2:
 	var vs := get_viewport().get_visible_rect().size
-	var ppd := (MAP_W * map_zoom) / 360.0
-	var ppy := (MAP_H * map_zoom) / 180.0
+	var sc := _map_scale()
+	var ppd := sc.x
+	var ppy := sc.y
 	var lon: float = map_center.x + (p.x - vs.x * 0.5) / ppd
 	var lat: float = map_center.y - (p.y - vs.y * 0.5) / ppy
 	lon = wrapf(lon + 180.0, 0.0, 360.0) - 180.0
