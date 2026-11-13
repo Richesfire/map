@@ -100,6 +100,7 @@ var _tm_n := 0
 var _content_w := 1.0
 var _content_h := 1.0
 var _vil_cache: Array = []
+var _hover: Dictionary = {}
 var map_backdrop: TextureRect
 var _map_shader_ok := false
 var _map_mat: ShaderMaterial
@@ -803,6 +804,21 @@ func _map_input(e: InputEvent) -> void:
 			map_root.queue_redraw()
 	elif e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
+		if not dragging and not pin_drag:
+			var hc := _city_hit(mm.position)
+			var hv: Dictionary = {}
+			if not hc.is_empty():
+				hv = {"kind": "city", "ll": Vector2(float(hc["lon"]), float(hc["lat"]))}
+			else:
+				var vs_hit := _village_hit(mm.position)
+				if not vs_hit.is_empty():
+					hv = {"kind": "settle", "ll": vs_hit["ll"]}
+			var same: bool = hv.is_empty() == _hover.is_empty()
+			if same and not hv.is_empty():
+				same = (hv["ll"] as Vector2).is_equal_approx(_hover["ll"])
+			if not same:
+				_hover = hv
+				map_root.queue_redraw()
 		if dragging:
 			var sc := _map_scale()
 			map_center.x -= mm.relative.x / sc.x
@@ -976,6 +992,9 @@ func _draw_settlements(sr: Rect2) -> void:
 		var r := Rect2(p - half, Vector2(sz, sz))
 		map_root.draw_rect(r, Color(0.72, 0.62, 0.42, 0.85))
 		map_root.draw_rect(r, Color(0.26, 0.18, 0.10), false, maxf(sz * 0.10, 1.5))
+		if not _hover.is_empty() and String(_hover.get("kind", "")) == "city" \
+				and (_hover["ll"] as Vector2).is_equal_approx(Vector2(float(ct["lon"]), float(ct["lat"]))):
+			map_root.draw_arc(p, sz * 0.85, 0.0, TAU, 24, Color(0.98, 0.84, 0.44, 0.95), 2.0)
 		# 城门（够大才画）
 		if sz >= 40.0:
 			var gate_chars := ["南", "东", "北", "西"]
@@ -1005,6 +1024,10 @@ func _draw_settlements(sr: Rect2) -> void:
 		var lvl := int(v["lvl"])
 		var s2: float = [0.0, 4.4, 3.8, 3.2, 2.6][clampi(lvl, 1, 4)]
 		s2 *= clampf(0.8 + map_zoom * 0.02, 0.8, 1.4)
+		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "settle" \
+				and (_hover["ll"] as Vector2).is_equal_approx(v["ll"] as Vector2)
+		if hov:
+			map_root.draw_circle(p2, s2 + 3.5, Color(0.96, 0.82, 0.42, 0.95 * vfade))
 		map_root.draw_circle(p2, s2, Color(0.36, 0.25, 0.14, 0.85 * vfade))
 		map_root.draw_arc(p2, s2, 0.0, TAU, 10, Color(0.74, 0.60, 0.36, 0.70 * vfade), 1.0)
 
@@ -1024,6 +1047,17 @@ func _ensure_settlements() -> void:
 	for p in d.get("places", []):
 		var lon := float(p["lon"])
 		var lat := float(p["lat"])
+		# 落在手工城池范围内的聚落不要（避免“村在城里”）
+		var inside := false
+		for c in TG.cities():
+			var dx: float = (lon - float(c["lon"])) * maxf(cos(deg_to_rad(lat)), 0.05)
+			var dy: float = lat - float(c["lat"])
+			var lim: float = (float(c["radius"]) + 1.5) / 111.0
+			if Vector2(dx, dy).length() < lim:
+				inside = true
+				break
+		if inside:
+			continue
 		var item := {"ll": Vector2(lon, lat), "name": String(p["n"]),
 				"lvl": int(p["l"]), "pop": int(p["p"])}
 		_settle.append(item)
@@ -1323,7 +1357,7 @@ func _village_hit(pos: Vector2) -> Dictionary:
 		return {}
 	for v in _villages_for_view(Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)):
 		var p := _lonlat_to_screen_off(v["ll"], 0.0)
-		if p.distance_to(pos) < 11.0:
+		if p.distance_to(pos) < 14.0:
 			return {"ll": v["ll"], "name": String(v["name"]), "kind": String(v["kind"])}
 	return {}
 
