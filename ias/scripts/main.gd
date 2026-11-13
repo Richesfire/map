@@ -1014,7 +1014,19 @@ func _villages_for_view(sr: Rect2) -> Array:
 					var vlat := lat + jy
 					var hh := TG.dem_at(vlon, vlat)
 					if hh > 3.0 and hh < 2400.0:
-						_vil_cache.append(Vector2(vlon, vlat))
+						# 最小间距 0.30°（各纬度按经度缩放），防止两个村庄叠在一起
+						var ok_near := true
+						for v2 in _vil_cache:
+							var dx: float = (v2.x - vlon) * maxf(cos(deg_to_rad(vlat)), 0.05)
+							if absf(dx) > 0.30:
+								continue
+							if absf(v2.y - vlat) > 0.30:
+								continue
+							if Vector2(dx, v2.y - vlat).length() < 0.30:
+								ok_near = false
+								break
+						if ok_near:
+							_vil_cache.append(Vector2(vlon, vlat))
 				lat += step
 			lon += step
 			row += 1
