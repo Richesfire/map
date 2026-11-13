@@ -968,7 +968,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		return LF_ICE
 	if h > 5800.0 - maxf(alat - 30.0, 0.0) * 110.0:
 		return LF_ICE
-	if h < 45.0:
+	if h < 8.0:
 		return LF_COAST
 
 	# 坡度与相对起伏（用 1.5km 邻域的高低差近似）
@@ -988,45 +988,57 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	var t := 28.0 - 0.42 * absf(lat) - 0.0062 * maxf(h, 0.0)
 
 	# 喀斯特排在山区判定之前：峰丛本来就陡，但成因不同
-	if m > 0.42 and t > 15.0 and h < 1600.0 and relief < 900.0:
+	# 喀斯特只在中国西南（桂黔滇）与中南半岛北部出现，不再全球热带都算
+	var karst_region := (lon > 100.0 and lon < 116.0 and lat > 19.0 and lat < 32.0)
+	if karst_region and m > 0.45 and h > 60.0 and h < 1800.0 and relief < 700.0:
 		return LF_KARST
 
+	# 干旱区优先判定（否则低平的沙漠会被判成丘陵/平原）
+	if m < 0.38 and h < 2200.0 and relief < 400.0:
+		if m < 0.17:
+			return LF_DESERT_SALT
+		if m < 0.24:
+			return LF_DESERT_GOBI
+		if m < 0.31:
+			return LF_DESERT_SAND
+		return LF_DUNE if slope < 6.0 else LF_DESERT_GOBI
+
 	# 起伏大 → 山地；中等 → 丘陵
-	if slope > 0.42 or relief > 700.0:
+	if slope > 22.0 or relief > 700.0:
 		# 高海拔山谷 → 冰川谷
 		if h > 3000.0 and relief > 500.0:
 			return LF_GLACIAL
 		# 山地按岩性/成因细分
 		if h > 3200.0:
 			return LF_MTN_ICE
-		if t > 15.0 and m > 0.45:
+		if karst_region and m > 0.45:
 			return LF_MTN_KARST
-		if absf(lat) > 24.0 and absf(lat) < 42.0 and m > 0.18 and m < 0.46 and h < 2200.0:
+		if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.18 and m < 0.46 and h < 2200.0:
 			return LF_MTN_LOESS
 		if _vnoise(lon * 0.21 + 13.0, lat * 0.21 - 5.0, 9917) > 0.90:
 			return LF_MTN_VOLCANIC
 		return LF_MTN_GRANITE
-	if slope > 0.18 or relief > 260.0:
+	if slope > 7.0 or relief > 220.0:
 		if t > 15.0 and m > 0.50:
 			return LF_HILL_RED
-		if absf(lat) > 24.0 and absf(lat) < 42.0 and m > 0.18 and m < 0.46:
+		if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.18 and m < 0.46:
 			return LF_HILL_LOESS
-		if relief > 180.0 and slope > 0.30 and h < 900.0:
+		if relief > 180.0 and slope > 12.0 and h < 900.0:
 			return LF_HILL_DANXIA
 		return LF_HILL
 
 	# —— 特殊地貌（都是相对平坦但成因不同的区域）——
 	# 雅丹/风蚀垄：极干旱、低平
-	if m < 0.14 and h < 1400.0 and slope < 0.10:
+	if m < 0.14 and h < 1400.0 and slope < 3.0:
 		return LF_YARDANG
 	# 沙丘：干旱、平坦、低海拔
-	if m < 0.20 and h < 900.0 and slope < 0.05:
+	if m < 0.20 and h < 900.0 and slope < 1.5:
 		return LF_DUNE
 	# 黄土：中纬半干旱、台地边缘
-	if absf(lat) > 24.0 and absf(lat) < 43.0 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 0.17:
+	if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 5.0:
 		return LF_LOESS
 	# 三角洲：近海低平、湿润
-	if h < 25.0 and m > 0.55 and slope < 0.02:
+	if h < 25.0 and m > 0.55 and slope < 0.8:
 		return LF_DELTA
 	# 高而平 → 高原
 	if h > 1200.0:
@@ -1044,7 +1056,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if m < 0.30 and absf(lat) > 24.0 and absf(lat) < 45.0:
 		return LF_DESERT_GOBI
 	# 湿润低平 → 湿地
-	if m > 0.72 and slope < 0.03:
+	if m > 0.72 and slope < 1.0:
 		return LF_WETLAND
 	# 温度带区分草原 / 森林
 	if t < 10.0 or m < 0.45:
@@ -1155,9 +1167,8 @@ static func temp_at(lon: float, lat: float, h: float) -> float:
 static func moist_at(lon: float, lat: float) -> float:
 	var m := _vnoise(lon * 0.42 + 100.0, lat * 0.42 - 30.0, 2027) * 0.5 + 0.5
 	var belt := clampf(1.0 - absf(absf(lat) - 25.0) / 13.0, 0.0, 1.0)
-	# 副热带干旱带只削弱本来就干的区域（否则会把华南也算成荒漠）
-	var dry := clampf(1.0 - m * 1.4, 0.0, 1.0)
-	return m * (1.0 - 0.62 * belt * dry)
+	# 副热带干旱带：真实世界里 15-35 度大陆内部就是沙漠（撒哈拉、阿拉伯、澳洲中部）
+	return m * (1.0 - 0.78 * belt)
 
 
 static func biome_at(lon: float, lat: float, h: float) -> int:
