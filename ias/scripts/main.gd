@@ -2031,7 +2031,10 @@ func _setup_map_shader() -> void:
 	if lf_f != null:
 		var lb := lf_f.get_buffer(lf_f.get_length())
 		lf_f.close()
-		var lf_img := Image.create_from_data(4096, 2048, false, Image.FORMAT_R8, lb)
+		# 分辨率自适应：R8，宽 = 2 × 高
+		var lh := int(sqrt(float(lb.size()) / 2.0))
+		var lw := lh * 2
+		var lf_img := Image.create_from_data(lw, lh, false, Image.FORMAT_R8, lb)
 		_map_mat.set_shader_parameter("landform_tex",
 				ImageTexture.create_from_image(lf_img))
 		print("[地图] 地貌编号贴图 %d KB" % int(lb.size() / 1024))

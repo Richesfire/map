@@ -2,8 +2,8 @@ extends SceneTree
 ## 烘焙地貌编号贴图：调用游戏自己的 TG.landform_kind，保证地图配色与游戏一致。
 ## 用法：godot --headless --script res://tools/bake_landform_id.gd
 
-const W := 4096
-const H := 2048
+const W := 8192
+const H := 4096
 const OUT := "res://data/landform_id.bin"
 
 
