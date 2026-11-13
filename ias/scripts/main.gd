@@ -54,6 +54,7 @@ var _preview_args: Array = []
 var city_panel: Control
 var city_tip: Control
 var _panel_city: Dictionary = {}
+var _panel_village: Dictionary = {}
 var _debug_citypanel := ""
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
@@ -756,6 +757,10 @@ func _map_input(e: InputEvent) -> void:
 				if not hit.is_empty():
 					_open_city_panel(hit)
 					return
+				var vh := _village_hit(mb.position)
+				if not vh.is_empty():
+					_open_village_panel(vh)
+					return
 				_close_city_panel()
 			dragging = mb.pressed
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -973,8 +978,9 @@ func _draw_settlements(sr: Rect2) -> void:
 		var p2 := _lonlat_to_screen_off(v, 0.0)
 		if not sr.has_point(p2):
 			continue
-		var s2: float = clampf(2.0 + map_zoom * 0.35, 2.0, 5.5)
-		map_root.draw_rect(Rect2(p2 - Vector2(s2, s2) * 0.5, Vector2(s2, s2)), Color(0.34, 0.24, 0.14, 0.85 * vfade))
+		var s2: float = clampf(3.0 + map_zoom * 0.14, 3.5, 7.0)
+		map_root.draw_circle(p2, s2, Color(0.38, 0.26, 0.15, 0.9 * vfade))
+		map_root.draw_arc(p2, s2, 0.0, TAU, 12, Color(0.80, 0.66, 0.40, 0.8 * vfade), 1.0)
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
@@ -985,9 +991,11 @@ func _villages_for_view(sr: Rect2) -> Array:
 	if key != _vil_key:
 		_vil_key = key
 		_vil_cache = []
+		# 只扫屏幕范围（内容区在高倍下可能是整个世界的几十倍，扫全图会把上限吃光）
+		var vs3 := get_viewport().get_visible_rect().size
 		var sc3 := _map_scale()
-		var half_lon: float = (sr.size.x * 0.5) / sc3.x
-		var half_lat: float = (sr.size.y * 0.5) / sc3.y
+		var half_lon: float = (vs3.x * 0.5) / sc3.x
+		var half_lat: float = (vs3.y * 0.5) / sc3.y
 		var lon0 := map_center.x - half_lon
 		var lon1 := map_center.x + half_lon
 		var lat0 := map_center.y - half_lat
@@ -1111,6 +1119,26 @@ func _city_gates(c: Dictionary) -> Array:
 	]
 
 
+## 村庄名（确定性生成，秦制乡里风格）
+func _village_name(ll: Vector2) -> String:
+	var xings := ["王", "李", "张", "赵", "刘", "陈", "杨", "周", "吴", "徐", "孙", "马", "朱", "郭", "何", "高"]
+	var hou := ["里", "亭", "聚", "庄", "邑"]
+	var h1: float = TG._vnoise(ll.x * 13.0, ll.y * 13.0, 3311)
+	var h2: float = TG._vnoise(ll.x * 29.0, ll.y * 29.0, 7717)
+	return xings[int(h1 * 15.999)] + hou[int(h2 * 4.999)]
+
+
+## 点选村庄
+func _village_hit(pos: Vector2) -> Dictionary:
+	if map_zoom < 3.0:
+		return {}
+	for v in _villages_for_view(Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)):
+		var p := _lonlat_to_screen_off(v, 0.0)
+		if p.distance_to(pos) < 11.0:
+			return {"ll": v, "name": _village_name(v)}
+	return {}
+
+
 ## 点选城市：命中图标范围
 func _city_hit(pos: Vector2) -> Dictionary:
 	for c in TG.cities():
@@ -1178,10 +1206,10 @@ func _draw_roads(cr: Rect2) -> void:
 		var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
 		map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
 
-	var vlist := _villages_for_view(cr)
+	var vlist := _villages_for_view(cr) if map_zoom >= 6.0 else []
 	var links := 0
 	for v in vlist:
-		if links >= 90:
+		if links >= 55:
 			break
 		var best := Vector2.ZERO
 		var best_d := 1e9
@@ -1371,8 +1399,24 @@ func _open_city_panel(c: Dictionary) -> void:
 	var title: Label = city_panel.get_node("Title")
 	title.text = String(c["name"])
 	(city_panel.get_node("Opt0") as Button).text = "街道"
-	(city_panel.get_node("Opt1") as Button).text = "府衙"
+	var b1 := city_panel.get_node("Opt1") as Button
+	b1.text = "府衙"
+	b1.visible = true
 	# 面板必须在地图图层之上
+	if ui_layer != null and city_panel.get_parent() == ui_layer:
+		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.visible = true
+	map_root.queue_redraw()
+
+
+## 打开村庄面板（只有一个“进村”）
+func _open_village_panel(v: Dictionary) -> void:
+	_panel_city = {}
+	_panel_village = v
+	var title: Label = city_panel.get_node("Title")
+	title.text = String(v["name"])
+	(city_panel.get_node("Opt0") as Button).text = "进村"
+	(city_panel.get_node("Opt1") as Button).visible = false
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
 	city_panel.visible = true
@@ -1382,10 +1426,20 @@ func _open_city_panel(c: Dictionary) -> void:
 func _close_city_panel() -> void:
 	city_panel.visible = false
 	_panel_city = {}
+	_panel_village = {}
+	if city_panel != null:
+		(city_panel.get_node("Opt1") as Button).visible = true
 
 
 ## 街道 = 城中心；府衙 = 城北偏内
 func _city_go(what: String) -> void:
+	if not _panel_village.is_empty():
+		var vll: Vector2 = _panel_village["ll"]
+		var vn := String(_panel_village["name"])
+		_close_city_panel()
+		toast("前往 %s" % vn)
+		_travel_ll(vll)
+		return
 	if _panel_city.is_empty():
 		return
 	var lon := float(_panel_city["lon"])
@@ -1497,12 +1551,12 @@ func _draw_map() -> void:
 		map_surface.position = rect.position - content_rect.position
 		map_surface.size = rect.size
 		_map_mat.set_shader_parameter("shade_alpha",
-				clampf((map_zoom - 1.2) / 5.0, 0.0, 1.0) * 0.72)
+				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.42)
 	else:
 		if _world_tex != null:
 			map_root.draw_texture_rect(_world_tex, rect, false)
 		if _shade_tex != null:
-			var a := clampf((map_zoom - 1.2) / 5.0, 0.0, 1.0) * 0.72
+			var a := clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.42
 			if a > 0.01:
 				map_root.draw_texture_rect(_shade_tex, rect, false, Color(0.32, 0.29, 0.24, a))
 
