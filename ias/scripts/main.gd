@@ -76,6 +76,13 @@ var _vil_key := Vector2i(99999, 99999)
 var _hydro_r: Array = []
 var _hydro_l: Array = []
 var _hydro_loaded := false
+var _city_links: Array = []
+var _c_ppd := 1.0
+var _c_ppy := 1.0
+var _c_cx := 0.0
+var _c_cy := 0.0
+var _content_w := 1.0
+var _content_h := 1.0
 var _vil_cache: Array = []
 var map_backdrop: TextureRect
 var _map_shader_ok := false
@@ -882,7 +889,7 @@ func _villages_for_view(sr: Rect2) -> Array:
 		var thr := clampf(0.55 + (lon1 - lon0) / 70.0, 0.62, 0.93)
 		var lon := lon0
 		var row := 0
-		while lon < lon1 and _vil_cache.size() < 400:
+		while lon < lon1 and _vil_cache.size() < 260:
 			var lat := lat0 + (step * 0.5 if row % 2 == 1 else 0.0)
 			while lat < lat1:
 				var hv := TG._vnoise(lon * 9.7 + 3.1, lat * 9.7 - 1.7, 4711)
@@ -891,7 +898,7 @@ func _villages_for_view(sr: Rect2) -> Array:
 					var jy := (TG._vnoise(lon * 37.0, lat * 37.0, 92) - 0.5) * step * 1.6
 					var vlon := lon + jx
 					var vlat := lat + jy
-					var hh := TG.macro_height(vlon, vlat)
+					var hh := TG.dem_at(vlon, vlat)
 					if hh > 3.0 and hh < 2400.0:
 						_vil_cache.append(Vector2(vlon, vlat))
 				lat += step
@@ -911,6 +918,10 @@ func _draw_hydro(cr: Rect2) -> void:
 			if d != null:
 				_hydro_r = d.get("rivers", [])
 				_hydro_l = d.get("lakes", [])
+				for l0 in _hydro_l:
+					l0["bb"] = _line_bbox(l0["p"])
+				for r0 in _hydro_r:
+					r0["bb"] = _line_bbox(r0["p"])
 				print("[地图] 水系 %d 条 / 湖泊 %d 个" % [_hydro_r.size(), _hydro_l.size()])
 	var fade := clampf((map_zoom - 1.0) / 1.6, 0.0, 1.0)
 	if fade <= 0.01:
@@ -925,7 +936,7 @@ func _draw_hydro(cr: Rect2) -> void:
 	var lake_col := Color(0.30, 0.38, 0.42, 0.85 * fade)
 	for l in _hydro_l:
 		var pts: Array = l["p"]
-		var bb := _line_bbox(pts)
+		var bb: Rect2 = l["bb"]
 		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
 			continue
 		var poly := PackedVector2Array()
@@ -943,7 +954,7 @@ func _draw_hydro(cr: Rect2) -> void:
 	for r in _hydro_r:
 		var rk := int(r["r"])
 		var pts2: Array = r["p"]
-		var bb2 := _line_bbox(pts2)
+		var bb2: Rect2 = r["bb"]
 		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
 			continue
 		var w: float = clampf(3.4 - float(rk) * 0.35, 0.9, 3.2)
@@ -982,30 +993,34 @@ func _draw_roads(cr: Rect2) -> void:
 	if cities.is_empty():
 		return
 	var col := Color(0.42, 0.27, 0.14, 0.55 * fade)
-	# 城际官道：每座城连最近的 2 座（去重）
-	var links_c: Array = []
-	for i in cities.size():
-		var a := Vector2(float(cities[i]["lon"]), float(cities[i]["lat"]))
-		var ds: Array = []
-		for j in cities.size():
-			if i == j:
-				continue
-			var b := Vector2(float(cities[j]["lon"]), float(cities[j]["lat"]))
-			ds.append([a.distance_to(b), j])
-		ds.sort_custom(func(x, y): return x[0] < y[0])
-		for k in mini(2, ds.size()):
-			var key := Vector2i(mini(i, int(ds[k][1])), maxi(i, int(ds[k][1])))
-			if links_c.has(key):
-				continue
-			links_c.append(key)
-			var p1 := _lonlat_to_screen_off(a, 0.0)
-			var b2 := Vector2(float(cities[int(ds[k][1])]["lon"]), float(cities[int(ds[k][1])]["lat"]))
-			var p2 := _lonlat_to_screen_off(b2, 0.0)
-			if not (cr.grow(30.0).has_point(p1) or cr.grow(30.0).has_point(p2)):
-				continue
-			var dv := p2 - p1
-			var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
-			map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
+	# 城际官道：每座城连最近的 2 座（链接表只算一次）
+	if _city_links.is_empty():
+		var seen: Dictionary = {}
+		for i in cities.size():
+			var a := Vector2(float(cities[i]["lon"]), float(cities[i]["lat"]))
+			var ds: Array = []
+			for j in cities.size():
+				if i == j:
+					continue
+				var b := Vector2(float(cities[j]["lon"]), float(cities[j]["lat"]))
+				ds.append([a.distance_to(b), j])
+			ds.sort_custom(func(x, y): return x[0] < y[0])
+			for k in mini(2, ds.size()):
+				var key := Vector2i(mini(i, int(ds[k][1])), maxi(i, int(ds[k][1])))
+				if seen.has(key):
+					continue
+				seen[key] = true
+				_city_links.append(key)
+	for key in _city_links:
+		var i2: int = key.x
+		var j2: int = key.y
+		var p1 := _lonlat_to_screen_off(Vector2(float(cities[i2]["lon"]), float(cities[i2]["lat"])), 0.0)
+		var p2 := _lonlat_to_screen_off(Vector2(float(cities[j2]["lon"]), float(cities[j2]["lat"])), 0.0)
+		if not (cr.grow(30.0).has_point(p1) or cr.grow(30.0).has_point(p2)):
+			continue
+		var dv := p2 - p1
+		var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
+		map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
 
 	var vlist := _villages_for_view(cr)
 	var links := 0
@@ -1156,8 +1171,8 @@ func _clamp_map_center() -> void:
 	# 保证地图始终覆盖内容区（否则会出现黑边）；缩放到整幅可见时自动居中
 	var vs2 := get_viewport().get_visible_rect().size
 	var sc4 := _map_scale()
-	var half_lon2 := (vs2.x * 0.52 * 0.5) / sc4.x
-	var half_lat2 := (vs2.y * 0.50 * 0.5) / sc4.y
+	var half_lon2 := (_content_w * 0.5) / sc4.x
+	var half_lat2 := (_content_h * 0.5) / sc4.y
 	map_center.x = 0.0 if half_lon2 >= 180.0 else clampf(map_center.x, -180.0 + half_lon2, 180.0 - half_lon2)
 	map_center.y = 0.0 if half_lat2 >= 90.0 else clampf(map_center.y, -90.0 + half_lat2, 90.0 - half_lat2)
 
@@ -1178,14 +1193,16 @@ func _draw_map() -> void:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
 	# 卷轴版式：内容居中，布帛左右宽、上下窄
-	var pad_y := 22.0
-	var content_w: float = vs.x * 0.52
-	var content_h: float = vs.y * 0.50
-	var pad_x: float = maxf((vs.x - content_w) * 0.5 - 34.0, 60.0)
-	var content_rect := Rect2(Vector2((vs.x - content_w) * 0.5, (vs.y - content_h) * 0.5),
+	# 卷轴几乎铺满屏幕，地图镶嵌其上，布帛是细边框
+	var pad_x := 46.0
+	var pad_y := 26.0
+	var scroll_rect := Rect2(26.0, 30.0, vs.x - 52.0, vs.y - 60.0)
+	var content_w: float = scroll_rect.size.x - pad_x * 2.0
+	var content_h: float = scroll_rect.size.y - pad_y * 2.0
+	var content_rect := Rect2(scroll_rect.position + Vector2(pad_x, pad_y),
 			Vector2(content_w, content_h))
-	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y),
-			content_rect.size + Vector2(pad_x, pad_y) * 2.0)
+	_content_w = content_w
+	_content_h = content_h
 	map_view.position = content_rect.position
 	map_view.size = content_rect.size
 
@@ -1193,6 +1210,10 @@ func _draw_map() -> void:
 	var ppd := sc.x
 	var w := ppd * 360.0
 	var h := sc.y * 180.0
+	_c_ppd = ppd
+	_c_ppy = sc.y
+	_c_cx = map_center.x
+	_c_cy = map_center.y
 
 	# 一张完整地图（不再左右复制）
 	var x0 := vs.x * 0.5 + (-180.0 - map_center.x) * ppd
@@ -1228,8 +1249,6 @@ func _draw_map() -> void:
 					Color(0.34, 0.27, 0.17, 0.18), 1.0)
 
 	# 标题与缩放读数
-	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x * 0.5 - 44, 44), "天下舆图",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(0.86, 0.78, 0.60))
 	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x - 132, vs.y - 36), "×%s" % _zoom_text(),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
 
@@ -1261,18 +1280,16 @@ func _draw_map() -> void:
 ## 经纬度 -> 屏幕（off 用于三份副本：-360 / 0 / +360）
 ## 地图缩放基准：内容区宽度 × 缩放倍数（1 倍 = 整幅世界图可见）
 func _map_scale() -> Vector2:
-	var vs := get_viewport().get_visible_rect().size
-	var w: float = vs.x * 0.52 * map_zoom
+	var w: float = _content_w * map_zoom
 	return Vector2(w / 360.0, (w * 0.5) / 180.0)
 
 
 func _lonlat_to_screen_off(ll: Vector2, off: float) -> Vector2:
 	var vs := get_viewport().get_visible_rect().size
-	var sc := _map_scale()
-	var ppd := sc.x
-	var ppy := sc.y
-	return Vector2(vs.x * 0.5 + (ll.x + off - map_center.x) * ppd,
-			vs.y * 0.5 - (ll.y - map_center.y) * ppy)
+	var ppd := _c_ppd
+	var ppy := _c_ppy
+	return Vector2(vs.x * 0.5 + (ll.x + off - _c_cx) * ppd,
+			vs.y * 0.5 - (ll.y - _c_cy) * ppy)
 
 
 ## 经纬度 -> 屏幕（以地图中心为基准）
