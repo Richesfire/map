@@ -964,10 +964,14 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if h < -8.0:
 		return LF_COAST
 	var alat := absf(lat)
-	# 极地整片冰盖（南极内陆高、格陵兰也高，不能只看低海拔）
-	if lat < -58.0:
+	# 极地冰盖：边界按经度起伏（真实冰缘受洋流影响，大西洋侧更北、太平洋侧更南）
+	var edge_n := _vnoise(lon * 0.28 + 11.0, 0.0, 4242) - 0.5
+	var edge_n2 := _vnoise(lon * 0.9 - 3.0, 1.7, 5151) - 0.5
+	var ice_north := 71.0 + edge_n * 9.0 + edge_n2 * 3.0
+	var ice_south := -59.0 + edge_n * 7.0 + edge_n2 * 3.0
+	if lat > ice_north:
 		return LF_ICE
-	if lat > 72.0:
+	if lat < ice_south:
 		return LF_ICE
 	if alat > 73.0 and h < 500.0:
 		return LF_ICE
