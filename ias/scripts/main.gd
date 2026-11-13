@@ -971,8 +971,33 @@ func _draw_roads(cr: Rect2) -> void:
 	var cities := TG.cities()
 	if cities.is_empty():
 		return
-	var vlist := _villages_for_view(cr)
 	var col := Color(0.42, 0.27, 0.14, 0.55 * fade)
+	# 城际官道：每座城连最近的 2 座（去重）
+	var links_c: Array = []
+	for i in cities.size():
+		var a := Vector2(float(cities[i]["lon"]), float(cities[i]["lat"]))
+		var ds: Array = []
+		for j in cities.size():
+			if i == j:
+				continue
+			var b := Vector2(float(cities[j]["lon"]), float(cities[j]["lat"]))
+			ds.append([a.distance_to(b), j])
+		ds.sort_custom(func(x, y): return x[0] < y[0])
+		for k in mini(2, ds.size()):
+			var key := Vector2i(mini(i, int(ds[k][1])), maxi(i, int(ds[k][1])))
+			if links_c.has(key):
+				continue
+			links_c.append(key)
+			var p1 := _lonlat_to_screen_off(a, 0.0)
+			var b2 := Vector2(float(cities[int(ds[k][1])]["lon"]), float(cities[int(ds[k][1])]["lat"]))
+			var p2 := _lonlat_to_screen_off(b2, 0.0)
+			if not (cr.grow(30.0).has_point(p1) or cr.grow(30.0).has_point(p2)):
+				continue
+			var dv := p2 - p1
+			var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
+			map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
+
+	var vlist := _villages_for_view(cr)
 	var links := 0
 	for v in vlist:
 		if links >= 90:

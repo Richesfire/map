@@ -353,6 +353,12 @@ static func _load_cities() -> void:
 			"height": float(c.get("height", 0.0)),
 			"coslat": maxf(cos(deg_to_rad(float(c.get("lat", 0.0)))), 0.05),
 		})
+	# height 为 0 的按底图自动取（dem_at 不依赖城市，不会递归）
+	for i in _cities.size():
+		var c2: Dictionary = _cities[i]
+		if float(c2["height"]) <= 0.001:
+			c2["height"] = dem_at(float(c2["lon"]), float(c2["lat"])) + 3.0
+			_cities[i] = c2
 	if not _cities.is_empty():
 		print("[地形] 手工城市 %d 座" % _cities.size())
 
