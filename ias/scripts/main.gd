@@ -970,7 +970,7 @@ func _draw_settlements(sr: Rect2) -> void:
 		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.30, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 
 	# 村庄：放大后才出现
-	var vfade := clampf((map_zoom - 3.2) / 3.0, 0.0, 1.0)
+	var vfade := clampf((map_zoom - 12.0) / 6.0, 0.0, 1.0)
 	if vfade <= 0.02:
 		return
 	var vlist := _villages_for_view(sr)
@@ -1000,10 +1000,10 @@ func _villages_for_view(sr: Rect2) -> Array:
 		var lon1 := map_center.x + half_lon
 		var lat0 := map_center.y - half_lat
 		var lat1 := map_center.y + half_lat
-		var thr := clampf(0.55 + (lon1 - lon0) / 70.0, 0.62, 0.93)
+		var thr := clampf(0.72 + (lon1 - lon0) / 90.0, 0.78, 0.965)
 		var lon := lon0
 		var row := 0
-		while lon < lon1 and _vil_cache.size() < 260:
+		while lon < lon1 and _vil_cache.size() < 60:
 			var lat := lat0 + (step * 0.5 if row % 2 == 1 else 0.0)
 			while lat < lat1:
 				var hv := TG._vnoise(lon * 9.7 + 3.1, lat * 9.7 - 1.7, 4711)
@@ -1130,7 +1130,7 @@ func _village_name(ll: Vector2) -> String:
 
 ## 点选村庄
 func _village_hit(pos: Vector2) -> Dictionary:
-	if map_zoom < 3.0:
+	if map_zoom < 12.0:
 		return {}
 	for v in _villages_for_view(Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)):
 		var p := _lonlat_to_screen_off(v, 0.0)
@@ -1206,7 +1206,7 @@ func _draw_roads(cr: Rect2) -> void:
 		var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
 		map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
 
-	var vlist := _villages_for_view(cr) if map_zoom >= 6.0 else []
+	var vlist := _villages_for_view(cr) if map_zoom >= 14.0 else []
 	var links := 0
 	for v in vlist:
 		if links >= 55:
