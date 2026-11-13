@@ -671,12 +671,10 @@ func _map_input(e: InputEvent) -> void:
 			else:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			map_zoom = clampf(map_zoom * 1.25, _zoom_min(), 4000.0)
-			_clamp_map_center()
+			_zoom_at(map_zoom * 1.25)
 			map_root.queue_redraw()
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			map_zoom = clampf(map_zoom / 1.25, _zoom_min(), 4000.0)
-			_clamp_map_center()
+			_zoom_at(map_zoom / 1.25)
 			map_root.queue_redraw()
 	elif e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
@@ -800,8 +798,8 @@ func _draw_compass() -> void:
 
 ## 左右轴杆：接到布帛两侧
 func _draw_scroll_rollers(sr: Rect2) -> void:
-	var rod_w := 20.0
-	var over := 10.0
+	var rod_w: float = clampf(20.0 * map_zoom, 12.0, 120.0)
+	var over: float = clampf(10.0 * map_zoom, 6.0, 70.0)
 	for side in 2:
 		var x: float = sr.position.x - rod_w if side == 0 else sr.position.x + sr.size.x
 		var top := sr.position.y - over
@@ -1171,8 +1169,9 @@ func _clamp_map_center() -> void:
 	# 保证地图始终覆盖内容区（否则会出现黑边）；缩放到整幅可见时自动居中
 	var vs2 := get_viewport().get_visible_rect().size
 	var sc4 := _map_scale()
-	var half_lon2 := (_content_w * 0.5) / sc4.x
-	var half_lat2 := (_content_h * 0.5) / sc4.y
+	# 用屏幕半宽判断：整幅可见时居中，放大后允许拖到地图边界贴屏幕边
+	var half_lon2 := (vs2.x * 0.5) / sc4.x
+	var half_lat2 := (vs2.y * 0.5) / sc4.y
 	map_center.x = 0.0 if half_lon2 >= 180.0 else clampf(map_center.x, -180.0 + half_lon2, 180.0 - half_lon2)
 	map_center.y = 0.0 if half_lat2 >= 90.0 else clampf(map_center.y, -90.0 + half_lat2, 90.0 - half_lat2)
 
@@ -1187,20 +1186,42 @@ func _zoom_text() -> String:
 	return "%.1f" % map_zoom
 
 
+## 以鼠标位置为轴心缩放
+func _zoom_at(target_zoom: float) -> void:
+	var vs := get_viewport().get_visible_rect().size
+	var mp := get_viewport().get_mouse_position()
+	# 先记下鼠标下的经纬度（用旧缩放）
+	var sc0 := _map_scale()
+	var before := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc0.x,
+			map_center.y - (mp.y - vs.y * 0.5) / sc0.y)
+	map_zoom = clampf(target_zoom, _zoom_min(), 4000.0)
+	var sc1 := _map_scale()
+	var after := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc1.x,
+			map_center.y - (mp.y - vs.y * 0.5) / sc1.y)
+	map_center.x += before.x - after.x
+	map_center.y += before.y - after.y
+	_clamp_map_center()
+	map_root.queue_redraw()
+
+
 func _draw_map() -> void:
 	var vs := get_viewport().get_visible_rect().size
+	_clamp_map_center()
 	if not _map_shader_ok:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
 	# 卷轴版式：内容居中，布帛左右宽、上下窄
-	# 卷轴几乎铺满屏幕，地图镶嵌其上，布帛是细边框
-	var pad_x := 46.0
-	var pad_y := 26.0
-	var scroll_rect := Rect2(26.0, 30.0, vs.x - 52.0, vs.y - 60.0)
-	var content_w: float = scroll_rect.size.x - pad_x * 2.0
-	var content_h: float = scroll_rect.size.y - pad_y * 2.0
-	var content_rect := Rect2(scroll_rect.position + Vector2(pad_x, pad_y),
+	# 整张卷轴按 map_zoom 一起缩放，内容恒为 2:1
+	var base := _sheet_base(vs)
+	var content_w: float = base.x * 0.76 * map_zoom
+	var content_h: float = content_w * 0.5
+	var sheet_w: float = content_w / 0.76
+	var sheet_h: float = content_h / 0.92
+	var pad_x: float = (sheet_w - content_w) * 0.5
+	var pad_y: float = (sheet_h - content_h) * 0.5
+	var content_rect := Rect2(Vector2((vs.x - content_w) * 0.5, (vs.y - content_h) * 0.5),
 			Vector2(content_w, content_h))
+	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
 	_content_h = content_h
 	map_view.position = content_rect.position
@@ -1279,9 +1300,26 @@ func _draw_map() -> void:
 
 ## 经纬度 -> 屏幕（off 用于三份副本：-360 / 0 / +360）
 ## 地图缩放基准：内容区宽度 × 缩放倍数（1 倍 = 整幅世界图可见）
+## sheet 基准：左右布帛各 12%、上下 4%，地图内容 2:1，整体适配屏幕 92%x86%
+func _sheet_base(vs: Vector2) -> Vector2:
+	var sheet_w := vs.x * 0.92
+	var content_w := sheet_w * 0.76
+	var content_h := content_w * 0.5
+	var sheet_h := content_h / 0.92
+	if sheet_h > vs.y * 0.86:
+		var k := (vs.y * 0.86) / sheet_h
+		sheet_w *= k
+		content_w *= k
+		content_h *= k
+		sheet_h *= k
+	return Vector2(sheet_w, sheet_h)
+
+
 func _map_scale() -> Vector2:
-	var w: float = _content_w * map_zoom
-	return Vector2(w / 360.0, (w * 0.5) / 180.0)
+	var vs := get_viewport().get_visible_rect().size
+	var base := _sheet_base(vs)
+	var content_w: float = base.x * 0.76 * map_zoom
+	return Vector2(content_w / 360.0, content_w / 360.0)
 
 
 func _lonlat_to_screen_off(ll: Vector2, off: float) -> Vector2:
