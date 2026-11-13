@@ -106,9 +106,6 @@ var _pin_probed := false
 var map_backdrop: TextureRect
 var _map_shader_ok := false
 var _map_mat: ShaderMaterial
-var _lf_thread: Thread
-var _lf_hi: Image
-var _lf_done := false
 var _dead := false
 
 var tab_held := false
@@ -512,6 +509,7 @@ func _build_ui() -> void:
 	map_hydro.clip_contents = true
 	map_hydro.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_hydro.draw.connect(_draw_hydro_layer)
+	map_hydro.visible = false
 	ui_layer.add_child(map_hydro)
 
 	# 卷轴内容区（裁剪，超出部分不显示）
@@ -744,6 +742,8 @@ func _open_map() -> void:
 	map_open = true
 	if compass != null:
 		compass.visible = false
+	if map_hydro != null:
+		map_hydro.visible = true
 	map_root.visible = true
 	if map_backdrop != null:
 		map_backdrop.visible = true
@@ -759,6 +759,8 @@ func _open_map() -> void:
 func _close_map() -> void:
 	if city_panel != null:
 		city_panel.visible = false
+	if map_hydro != null:
+		map_hydro.visible = false
 	if not map_open:
 		return
 	map_open = false
@@ -2003,11 +2005,6 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("dem_size", Vector2(8192.0, 4096.0))
 	_map_mat.set_shader_parameter("noise_tex", nt)
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
-	# 地貌配色图：先 512x256 快速出图，再在线程里烘 1024x512 替换
-	var bimg := _bake_landform_color(512, 256)
-	_map_mat.set_shader_parameter("biome_tex", ImageTexture.create_from_image(bimg))
-	_lf_thread = Thread.new()
-	_lf_thread.start(func() -> void: _lf_hi = _bake_landform_color(1024, 512))
 	map_surface.material = _map_mat
 	_map_shader_ok = true
 	print("[地图] 着色器直绘就绪（%d MB 高程纹理）" % int(bytes.size() / 1048576))
@@ -2038,41 +2035,6 @@ func _build_world_tex() -> void:
 		var t1 := Time.get_ticks_msec()
 		_map_hi = TG.bake_map(MAP_HI_W, MAP_HI_H)
 		print("[地图] 高清烘焙耗时 %d ms" % (Time.get_ticks_msec() - t1)))
-
-
-## 按地貌类型烘焙配色图（地图用）
-func _bake_landform_color(bw: int, bh: int) -> Image:
-	var cbuf := PackedByteArray()
-	cbuf.resize(bw * bh * 3)
-	for by in bh:
-		var blat: float = 90.0 - (float(by) + 0.5) / float(bh) * 180.0
-		for bx in bw:
-			var blon: float = -180.0 + (float(bx) + 0.5) / float(bw) * 360.0
-			var bhgt: float = TG.macro_height(blon, blat)
-			var c: Color
-			if bhgt < -8.0:
-				c = Color(0.26, 0.33, 0.40)
-			else:
-				c = TG.landform_color(TG.landform_kind(blon, blat, bhgt))
-			var i3 := (by * bw + bx) * 3
-			cbuf[i3] = int(clampf(c.r, 0.0, 1.0) * 255.0)
-			cbuf[i3 + 1] = int(clampf(c.g, 0.0, 1.0) * 255.0)
-			cbuf[i3 + 2] = int(clampf(c.b, 0.0, 1.0) * 255.0)
-	return Image.create_from_data(bw, bh, false, Image.FORMAT_RGB8, cbuf)
-
-
-func _poll_lf_thread() -> void:
-	if _lf_thread == null or _lf_done:
-		return
-	if _lf_thread.is_alive():
-		return
-	_lf_thread.wait_to_finish()
-	_lf_done = true
-	if _lf_hi != null and not _lf_hi.is_empty() and _map_mat != null:
-		_map_mat.set_shader_parameter("biome_tex", ImageTexture.create_from_image(_lf_hi))
-		if map_open:
-			map_root.queue_redraw()
-		print("[地图] 高清地貌配色就绪")
 
 
 func _poll_map_thread() -> void:
@@ -2244,7 +2206,6 @@ func _process(delta: float) -> void:
 		_boot_spin += delta * 3.4
 		boot_bar.queue_redraw()
 	_poll_map_thread()
-	_poll_lf_thread()
 	if state != St.GAME:
 		return
 	if compass != null and player != null:
@@ -2958,7 +2919,5 @@ func _probe() -> void:
 
 
 func _exit_tree() -> void:
-	if _lf_thread != null and _lf_thread.is_alive():
-		_lf_thread.wait_to_finish()
 	if _map_thread != null and _map_thread.is_alive():
 		_map_thread.wait_to_finish()

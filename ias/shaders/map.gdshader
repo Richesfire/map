@@ -4,7 +4,6 @@ render_mode unshaded;
 // 世界地图：逐像素从高程纹理算地貌配色 + 地势阴影，放大到任意倍数都不会出现色块。
 uniform sampler2D dem_tex : filter_linear, repeat_disable;
 uniform sampler2D noise_tex : filter_linear, repeat_enable;
-uniform sampler2D biome_tex : filter_linear, repeat_disable;
 uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
