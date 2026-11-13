@@ -964,6 +964,11 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if h < -8.0:
 		return LF_COAST
 	var alat := absf(lat)
+	# 极地整片冰盖（南极内陆高、格陵兰也高，不能只看低海拔）
+	if lat < -58.0:
+		return LF_ICE
+	if lat > 72.0:
+		return LF_ICE
 	if alat > 73.0 and h < 500.0:
 		return LF_ICE
 	if h > 5800.0 - maxf(alat - 30.0, 0.0) * 110.0:
