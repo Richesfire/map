@@ -961,6 +961,9 @@ const LF_NAMES := ["平原", "丘陵", "山地", "高原", "盆地", "河谷",
 ## 地貌形态：由海拔、坡度、相对起伏和气候代理共同决定。
 ## 只用于选近景资源，不参与宏观高度。
 static func landform_kind(lon: float, lat: float, h: float) -> int:
+	# 极端纬度：等距圆柱投影在这里把整行拉成一条线，统一按冰盖处理，避免出现拉伸色块
+	if lat > 84.0 or lat < -84.0:
+		return LF_ICE
 	if h < -8.0:
 		return LF_COAST
 	var alat := absf(lat)
