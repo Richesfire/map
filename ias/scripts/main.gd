@@ -4,6 +4,7 @@ extends Node3D
 const TG := preload("res://scripts/terrain_gen.gd")
 
 ## 世界地图逻辑尺寸（屏幕矩形按它算；纹理可以更高清地拉伸上去）
+const LAT_LIMIT := 85.0      # 裁掉极区（等距圆柱在极点会拉伸）
 const MAP_W := 2048
 const MAP_H := 1024
 ## 启动先用这个分辨率快速出图，再在后台线程烘高清版
@@ -1608,18 +1609,9 @@ func _draw_cross() -> void:
 ## 缩放下限：地图至少要占屏幕一半高
 ## 地图边界最多停在屏幕中心：中心不能越出 [-180+半屏, 180-半屏]
 func _clamp_map_center() -> void:
-	var vs := get_viewport().get_visible_rect().size
-	var sc := _map_scale()
-	var half_lon := (vs.x * 0.5) / sc.x
-	var half_lat := (vs.y * 0.5) / sc.y
-	if half_lon >= 180.0:
-		map_center.x = 0.0
-	else:
-		map_center.x = clampf(map_center.x, -180.0 + half_lon, 180.0 - half_lon)
-	if half_lat >= 90.0:
-		map_center.y = 0.0
-	else:
-		map_center.y = clampf(map_center.y, -90.0 + half_lat, 90.0 - half_lat)
+	# 地图内容边界最多移动到屏幕中心：中心只能落在裁剪后的世界范围内
+	map_center.x = clampf(map_center.x, -180.0, 180.0)
+	map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
 
 
 func _zoom_min() -> float:
@@ -1769,7 +1761,7 @@ func _draw_map() -> void:
 	# 整张卷轴按 map_zoom 一起缩放，内容恒为 2:1
 	var base := _sheet_base(vs)
 	var content_w: float = base.x * 0.76 * map_zoom
-	var content_h: float = content_w * 0.5
+	var content_h: float = content_w * (LAT_LIMIT * 2.0) / 360.0
 	var sheet_w: float = content_w / 0.76
 	var sheet_h: float = content_h / 0.92
 	var pad_x: float = (sheet_w - content_w) * 0.5
@@ -1777,9 +1769,10 @@ func _draw_map() -> void:
 	# 整张卷轴按世界坐标摆放：平移时布帛/轴杆/地图一起走
 	var ppd2: float = content_w / 360.0
 	var ppy2: float = content_h / 180.0
+	# 可见纬度范围是 ±LAT_LIMIT，所以内容区上边界对应 LAT_LIMIT
 	var content_rect := Rect2(
 			Vector2(vs.x * 0.5 - (map_center.x + 180.0) * ppd2,
-					vs.y * 0.5 - (90.0 - map_center.y) * ppy2),
+					vs.y * 0.5 - (LAT_LIMIT - map_center.y) * ppy2),
 			Vector2(content_w, content_h))
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
@@ -1814,8 +1807,8 @@ func _draw_map() -> void:
 	if _map_shader_ok:
 		map_surface.visible = true
 		# 相对裁剪容器定位
-		map_surface.position = rect.position - content_rect.position
-		map_surface.size = rect.size
+		map_surface.position = rect.position - content_rect.position + Vector2(0.0, -(90.0 - LAT_LIMIT) * ppy2)
+		map_surface.size = Vector2(content_w, content_w * 0.5)
 		_map_mat.set_shader_parameter("shade_alpha",
 				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.42)
 	else:
