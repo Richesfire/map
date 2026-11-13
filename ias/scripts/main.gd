@@ -924,6 +924,8 @@ func _villages_for_view(sr: Rect2) -> Array:
 
 ## 江河湖泊：加载时预处理，绘制时按可见范围逐条画
 func _draw_hydro_layer() -> void:
+	if OS.get_cmdline_user_args().has("--nohydro"):
+		return
 	if not _hydro_loaded:
 		_hydro_loaded = true
 		var f := FileAccess.open("res://data/hydro.json", FileAccess.READ)
@@ -1189,9 +1191,17 @@ func _clamp_map_center() -> void:
 	var half_lon := (vs.x * 0.5) / sc.x
 	var half_lat := (vs.y * 0.5) / sc.y
 	# 保证地图始终覆盖内容区（否则会出现黑边）；缩放到整幅可见时自动居中
-	# 以地图内容区域为准：地图边界最多到屏幕中心（半张内容移出屏幕）
-	map_center.x = clampf(map_center.x, -180.0, 180.0)
-	map_center.y = clampf(map_center.y, -90.0, 90.0)
+	# 地图必须铺满内容区（不能露背景）：内容区边界即地图可移动的极限
+	var vs2 := get_viewport().get_visible_rect().size
+	var sc5 := _map_scale()
+	var lim_lon: float = clampf(180.0 - (vs2.x * 0.5) / sc5.x, 0.0, 180.0)
+	var lim_lat: float = clampf(90.0 - (vs2.y * 0.5) / sc5.y, 0.0, 90.0)
+	if _content_w * 0.5 < vs2.x * 0.5:
+		lim_lon = 0.0
+	if _content_h * 0.5 < vs2.y * 0.5:
+		lim_lat = 0.0
+	map_center.x = clampf(map_center.x, -lim_lon, lim_lon)
+	map_center.y = clampf(map_center.y, -lim_lat, lim_lat)
 
 
 func _zoom_min() -> float:
@@ -1253,6 +1263,10 @@ func _draw_map() -> void:
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
 	_content_h = content_h
+	if OS.get_cmdline_user_args().has("--mapsize"):
+		print("[尺寸] vs=%.0fx%.0f content=%.0fx%.0f at (%.0f,%.0f) sheet=%.0fx%.0f zoom=%.2f"
+				% [vs.x, vs.y, content_w, content_h, content_rect.position.x, content_rect.position.y,
+					sheet_w, sheet_h, map_zoom])
 	map_view.position = content_rect.position
 	map_view.size = content_rect.size
 	if map_hydro != null:
