@@ -7,6 +7,7 @@ uniform sampler2D noise_tex : filter_linear, repeat_enable;
 uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
+uniform float pat_period = 4.0;   // 符号间距（公里），由缩放决定
 uniform float lat_limit = 85.0;
 uniform sampler2D palette_tex : filter_nearest, repeat_disable;
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
@@ -67,6 +68,46 @@ void fragment() {
 	// 地貌配色：直接取预烘焙的地貌编号 → 游戏同一套 29 色
 	float lid = floor(texture(landform_tex, uv).r * 255.0 + 0.5);
 	vec3 c = (lid > 10.5 && lid < 11.5) ? vec3(0.26, 0.33, 0.40) : pal(lid);
+
+	// —— 地貌符号（舆图风格）：按类别画不同的纹理，密度随缩放调整 ——
+	{
+		float slope_p = length(vec2(sx, sy));
+		float kmx = uv.x * 360.0 * 111.32 * cos(radians(lat));
+		float kmy = uv.y * 180.0 * 110.54;
+		float px = pat_period;
+		// 沙丘：斜向弧形条纹
+		float dune = abs(fract((kmx * 0.71 + kmy * 0.41 - 0.35 * sin(kmx * 0.13)) / px) - 0.5);
+		float dune_line = 1.0 - smoothstep(0.03, 0.10, dune);
+		// 戈壁/砾石：点阵
+		vec2 cell = fract(vec2(kmx / px, kmy / px)) - 0.5;
+		float dot_p = 1.0 - smoothstep(0.10, 0.20, length(cell));
+		// 山地：顺坡短划（晕滃），密度随坡度
+		float ang = atan(sy, sx);
+		float hach = abs(fract((kmx * cos(ang) + kmy * sin(ang)) / (px * 0.8)) - 0.5);
+		float hach_line = (1.0 - smoothstep(0.04, 0.12, hach)) * clamp(slope_p * 1.6, 0.0, 1.0);
+		// 平地：极淡横划
+		float dash = abs(fract((kmy) / (px * 1.6)) - 0.5);
+		float dash_line = (1.0 - smoothstep(0.01, 0.05, dash)) * 0.35;
+
+		float ink = 0.0;
+		if (lid > 5.5 && lid < 6.5) ink = dune_line * 0.55;            // 荒漠
+		else if (lid > 14.5 && lid < 15.5) ink = dune_line * 0.70;     // 沙丘
+		else if (lid > 25.5 && lid < 26.5) ink = dune_line * 0.65;     // 沙质荒漠
+		else if (lid > 26.5 && lid < 27.5) ink = dot_p * 0.55;         // 砾质荒漠
+		else if (lid > 12.5 && lid < 13.5) ink = dot_p * 0.45;         // 雅丹
+		else if (lid > 27.5 && lid < 28.5) ink = dot_p * 0.35;         // 盐碱
+		else if (lid > 11.5 && lid < 12.5) ink = dot_p * 0.75;         // 喀斯特（峰丛）
+		else if (lid > 18.5 && lid < 19.5) ink = dot_p * 0.55;         // 喀斯特山地
+		else if (lid > 1.5 && lid < 2.5) ink = hach_line * 0.55;       // 山地
+		else if (lid > 17.5 && lid < 18.5) ink = hach_line * 0.60;     // 花岗岩山地
+		else if (lid > 19.5 && lid < 20.5) ink = hach_line * 0.45;     // 黄土山地
+		else if (lid > 20.5 && lid < 21.5) ink = hach_line * 0.45;     // 火山山地
+		else if (lid > 21.5 && lid < 22.5) ink = hach_line * 0.40;     // 冰蚀山地
+		else if (lid > -0.5 && lid < 1.5) ink = dash_line * 0.30;      // 平原/丘陵
+		else if (lid > 6.5 && lid < 9.5) ink = dash_line * 0.22;       // 草原/森林/湿地
+		else if (lid > 13.5 && lid < 14.5) ink = dot_p * 0.30;         // 黄土
+		c *= 1.0 - ink * 0.35;
+	}
 
 	// 古地图纸色
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));

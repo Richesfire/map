@@ -1822,7 +1822,10 @@ func _draw_map() -> void:
 		map_surface.position = Vector2(-2, -2)
 		map_surface.size = content_rect.size + Vector2(4, 4)
 		_map_mat.set_shader_parameter("shade_alpha",
-				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.42)
+				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.50)
+		# 符号间距：屏幕上约 12 像素
+		_map_mat.set_shader_parameter("pat_period",
+				clampf(12.0 * 111.0 / maxf(ppd, 0.01), 0.12, 60.0))
 	else:
 		if _world_tex != null:
 			map_root.draw_texture_rect(_world_tex, rect, false)
