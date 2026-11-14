@@ -10,9 +10,7 @@ uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
 uniform float pat_period = 4.0;   // 符号间距（公里），由缩放决定
 uniform float lat_limit = 85.0;
-uniform sampler2D palette_tex : filter_nearest, repeat_disable;
-uniform sampler2D palette_fine_tex : filter_nearest, repeat_disable;   // 29 类本色（高倍用）
-uniform float pal_fine = 0.0;                 // 0=分组色（世界尺度）1=一地形一色（高倍）
+uniform sampler2D palette_tex : filter_nearest, repeat_disable;   // 29 类本色（唯一一套调色板）
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。
@@ -29,20 +27,14 @@ uniform float water_ink = 1.0;               // 水线浓度
 uniform float zoom = 1.0;                    // 当前缩放倍率（符号在高倍减淡）
 uniform float dbg2 = 0.0;                    // 1 = 输出细节层覆盖率，2 = 输出 duv（对位排查）
 
-vec3 pal(float i) {
-	return texture(palette_tex, vec2((i + 0.5) / 32.0, 0.5)).rgb;
-}
-
-vec3 pal2(float i) {
-	return texture(palette_fine_tex, vec2((i + 0.5) / 32.0, 0.5)).rgb;
-}
-
 // 一个地貌号对应的颜色（水单独一色）
+// 只有一套调色板（29 类本色，由 main.gd 的 TG.landform_color 生成）：
+// 编号图路径和细节层路径都走这里，所以跨 60 倍不会变色。
 vec3 lf_color(float id) {
 	if (id > 10.5 && id < 11.5) {
 		return vec3(0.26, 0.33, 0.40);
 	}
-	return mix(pal(id), pal2(id), pal_fine);
+	return texture(palette_tex, vec2((id + 0.5) / 32.0, 0.5)).rgb;
 }
 
 float h_at(vec2 uv) {

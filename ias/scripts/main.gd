@@ -57,7 +57,9 @@ var city_panel: Control
 var city_tip: Control
 var _panel_city: Dictionary = {}
 var _panel_village: Dictionary = {}
+var _panel_site: Dictionary = {}
 var _debug_citypanel := ""
+var _debug_sitepanel := ""
 var _debug_mapcenter := Vector2(INF, INF)
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
@@ -95,6 +97,7 @@ var _settle: Array = []
 var _settle_thin: Array = []
 var _settle_idx: Dictionary = {}
 var _settle_loaded := false
+var _settle_water: Array = []
 var _city_links: Array = []
 var _tm := {}
 var _tm_n := 0
@@ -157,6 +160,9 @@ func _ready() -> void:
 		return
 	if OS.get_cmdline_user_args().has("--maptest"):
 		_map_test()
+		return
+	if OS.get_cmdline_user_args().has("--sitestats"):
+		_site_stats()
 		return
 	if OS.get_cmdline_user_args().has("--hash"):
 		TG.ensure_loaded()
@@ -237,6 +243,8 @@ func _parse_args() -> void:
 				_debug_mapcenter = Vector2(float(mc[0]), float(mc[1]))
 		elif a.begins_with("--citypanel="):
 			_debug_citypanel = a.substr(12)
+		elif a.begins_with("--sitepanel="):
+			_debug_sitepanel = a.substr(12)
 		elif a.begins_with("--preview="):
 			var pp := a.substr(10).split(",")
 			if pp.size() == 5:
@@ -398,6 +406,16 @@ func _build_ui() -> void:
 	cp_title.add_theme_font_size_override("font_size", 22)
 	cp_title.add_theme_color_override("font_color", Color(0.94, 0.84, 0.58))
 	city_panel.add_child(cp_title)
+	# 副标题：关城/邑的类别与年代（城市与村庄留空）
+	var cp_sub := Label.new()
+	cp_sub.name = "Sub"
+	cp_sub.position = Vector2(0, 46)
+	cp_sub.size = Vector2(300, 16)
+	cp_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cp_sub.clip_text = true
+	cp_sub.add_theme_font_size_override("font_size", 12)
+	cp_sub.add_theme_color_override("font_color", Color(0.74, 0.66, 0.50))
+	city_panel.add_child(cp_sub)
 	for i in 2:
 		var b := Button.new()
 		b.name = "Opt%d" % i
@@ -685,6 +703,12 @@ func _start_game() -> void:
 		var cs := TG.cities()
 		if idx >= 0 and idx < cs.size():
 			_open_city_panel(cs[idx])
+	if _debug_sitepanel != "":
+		var si := int(_debug_sitepanel)
+		var ss := TG.sites()
+		if si >= 0 and si < ss.size():
+			_open_site_panel({"ll": Vector2(float(ss[si]["lon"]), float(ss[si]["lat"])),
+					"site": ss[si]})
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
 	if sv.has("soul"):
@@ -832,6 +856,11 @@ func _map_input(e: InputEvent) -> void:
 				if not hit.is_empty():
 					_open_city_panel(hit)
 					return
+				# 关城/邑的点位优先于现代聚落（同一处常有 GeoNames 的现代村镇）
+				var sh := _site_hit(mb.position)
+				if not sh.is_empty():
+					_open_site_panel(sh)
+					return
 				var vh := _village_hit(mb.position)
 				if not vh.is_empty():
 					_open_village_panel(vh)
@@ -863,9 +892,13 @@ func _map_input(e: InputEvent) -> void:
 			if not hc.is_empty():
 				hv = {"kind": "city", "ll": Vector2(float(hc["lon"]), float(hc["lat"]))}
 			else:
-				var vs_hit := _village_hit(mm.position)
-				if not vs_hit.is_empty():
-					hv = {"kind": "settle", "ll": vs_hit["ll"]}
+				var sh := _site_hit(mm.position)
+				if not sh.is_empty():
+					hv = {"kind": "site", "ll": sh["ll"]}
+				else:
+					var vs_hit := _village_hit(mm.position)
+					if not vs_hit.is_empty():
+						hv = {"kind": "settle", "ll": vs_hit["ll"]}
 			var same: bool = hv.is_empty() == _hover.is_empty()
 			if same and not hv.is_empty():
 				same = (hv["ll"] as Vector2).is_equal_approx(_hover["ll"])
@@ -1120,6 +1153,151 @@ func _draw_settlements(sr: Rect2) -> void:
 			map_root.draw_circle(p2, maxf(s2 * 0.5, 1.0), ink)
 
 
+## 秦汉关城 / 邑 / 要地（data/sites_han.json，史书点名的第三层点位）
+## 和 GeoNames 的现代城镇分两层画：这一层是朱砂色 + 米色描边的舆图符号，
+## 在满是褐色村庄方块的底图上能一眼认出来。低倍只留符号，放大才写地名。
+func _draw_sites(cr: Rect2) -> void:
+	var list := TG.sites()
+	if list.is_empty():
+		return
+	var fade := clampf((map_zoom - 2.0) / 4.0, 0.0, 1.0)
+	if fade <= 0.01:
+		return
+	var font := ThemeDB.fallback_font
+	var fs := 11 if map_zoom < 60.0 else 12
+	var sz := clampf(3.0 + map_zoom * 0.05, 3.0, 7.5)
+	# 先算一遍屏幕位置：写地名时要避开**别的**符号，不然字会压在关门的图例上
+	var vis: Array = []
+	for s in list:
+		var ll := Vector2(float(s["lon"]), float(s["lat"]))
+		var p := _lonlat_to_screen_off(ll, 0.0)
+		if not cr.grow(12.0).has_point(p):
+			continue
+		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "site" \
+				and (_hover["ll"] as Vector2).is_equal_approx(ll)
+		vis.append({"s": s, "ll": ll, "p": p, "hov": hov, "kind": String(s.get("kind", "要地"))})
+	var blocks: Array = []
+	for it in vis:
+		var p2: Vector2 = it["p"]
+		blocks.append(Rect2(p2 - Vector2(sz + 2.5, sz + 2.5), Vector2(sz + 2.5, sz + 2.5) * 2.0))
+	for it in vis:
+		var p3: Vector2 = it["p"]
+		if bool(it["hov"]):
+			map_root.draw_circle(p3, sz + 6.0, Color(0.96, 0.82, 0.42, 0.85 * fade))
+		_site_marker(p3, String(it["kind"]), sz, fade)
+	# 写地名：城/关才写；邑和要地只留符号（悬停时才出名字）
+	# 悬停的那一个先排（它有优先挑位置的权利），其余按数据顺序
+	var order: Array = []
+	for i0 in vis.size():
+		order.append(i0)
+	for i1 in vis.size():
+		if bool(vis[i1]["hov"]):
+			order.erase(i1)
+			order.push_front(i1)
+			break
+	for i in order:
+		var it2: Dictionary = vis[i]
+		var kind2 := String(it2["kind"])
+		var hov2: bool = it2["hov"]
+		if not (hov2 or (map_zoom >= 12.0 and (kind2 == "城" or kind2 == "关"))):
+			continue
+		var p4: Vector2 = it2["p"]
+		var txt := String((it2["s"] as Dictionary).get("name", ""))
+		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		var bw := tw + 3.0
+		var dx := sz + 6.0
+		# 长平那一片关城挤在不到 0.5° 里：绕着符号试一圈位置，实在放不下就不写
+		var cands := [
+			Vector2(dx, 4.0), Vector2(dx, -13.0), Vector2(-dx - bw, 4.0), Vector2(-dx - bw, -13.0),
+			Vector2(dx, 21.0), Vector2(dx, -30.0), Vector2(-dx - bw, 21.0), Vector2(-dx - bw, -30.0),
+			Vector2(dx + 26.0, 4.0), Vector2(-dx - bw - 26.0, 4.0),
+			Vector2(dx + 26.0, -21.0), Vector2(-dx - bw - 26.0, -21.0),
+		]
+		var pos := p4 + Vector2(dx, 4.0)
+		var ok := false
+		for c in cands:
+			var q: Vector2 = p4 + (c as Vector2)
+			if q.x < cr.position.x + 2.0 or q.x + bw > cr.end.x - 2.0:
+				continue
+			var r := Rect2(q + Vector2(-1.0, -11.0), Vector2(bw, 15.0))
+			var clash := false
+			for k in blocks.size():
+				if k == i:
+					continue
+				if (blocks[k] as Rect2).intersects(r):
+					clash = true
+					break
+			if clash:
+				continue
+			pos = q
+			ok = true
+			break
+		if not ok and not hov2:
+			continue
+		var lr := Rect2(pos + Vector2(-1.0, -11.0), Vector2(bw, 15.0))
+		blocks.append(lr)
+		# 离符号远了就拉一条细引线，免得看不出这个地名是哪一处
+		var ap := Vector2(clampf(p4.x, lr.position.x, lr.end.x), clampf(p4.y, lr.position.y, lr.end.y))
+		if p4.distance_to(ap) > sz + 9.0:
+			map_root.draw_line(p4, ap, Color(0.44, 0.15, 0.11, 0.45 * fade), 1.0)
+		var halo := Color(0.94, 0.90, 0.79, 0.70 * fade)
+		for o in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
+			map_root.draw_string(font, pos + o, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, halo)
+		map_root.draw_string(font, pos, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
+				Color(0.44, 0.15, 0.11, 0.95 * fade))
+
+
+## 关 / 城 / 邑 / 要地的舆图符号（画在屏幕坐标 p 上，s 为半径像素）
+## 朱砂底 + 米色描边：底图上的村庄是褐色小方块/圆环，只靠颜色深浅分不开。
+func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
+	var ink := Color(0.44, 0.15, 0.11, 0.95 * a)
+	var cream := Color(0.93, 0.89, 0.76, 0.80 * a)
+	match kind:
+		"城":
+			var r2 := Rect2(p - Vector2(s, s), Vector2(s, s) * 2.0)
+			map_root.draw_rect(Rect2(r2.position - Vector2(1.2, 1.2), r2.size + Vector2(2.4, 2.4)),
+					cream, false, 2.4)
+			map_root.draw_rect(r2, ink)
+		"关":
+			# 关门：两根立柱 + 门楣 + 一道横挡
+			var w := s * 0.85
+			var hh := s * 1.05
+			var seg := [
+				[Vector2(-w, hh), Vector2(-w, -hh)], [Vector2(w, hh), Vector2(w, -hh)],
+				[Vector2(-w, -hh), Vector2(w, -hh)],
+				[Vector2(-w * 0.45, -hh * 0.35), Vector2(w * 0.45, -hh * 0.35)],
+			]
+			for g in seg:
+				map_root.draw_line(p + (g[0] as Vector2), p + (g[1] as Vector2), cream, 3.4)
+			for g in seg:
+				map_root.draw_line(p + (g[0] as Vector2), p + (g[1] as Vector2), ink, 1.7)
+		"邑":
+			map_root.draw_arc(p, s, 0.0, TAU, 16, cream, 3.6)
+			map_root.draw_arc(p, s, 0.0, TAU, 16, ink, 1.6)
+			map_root.draw_circle(p, maxf(s * 0.30, 0.8), ink)
+		_:
+			# 要地：实心三角（先用放大的米色三角描边）
+			var big := PackedVector2Array([
+				p + Vector2(0.0, -s * 1.1), p + Vector2(s, s * 0.85), p + Vector2(-s, s * 0.85)])
+			var under := PackedVector2Array([
+				p + Vector2(0.0, -s * 1.45), p + Vector2(s * 1.35, s * 1.15),
+				p + Vector2(-s * 1.35, s * 1.15)])
+			map_root.draw_colored_polygon(under, cream)
+			map_root.draw_colored_polygon(big, ink)
+
+
+## 点选关城/邑/要地
+func _site_hit(pos: Vector2) -> Dictionary:
+	if map_zoom < 2.0:
+		return {}
+	for s in TG.sites():
+		var ll := Vector2(float(s["lon"]), float(s["lat"]))
+		var p := _lonlat_to_screen_off(ll, 0.0)
+		if p.distance_to(pos) < 12.0:
+			return {"ll": ll, "site": s}
+	return {}
+
+
 ## 当前视野内的村庄（确定性生成 + 缓存）
 ## 加载真实聚落（GeoNames 中国，县城及以上 + 人口>3000 的镇）
 func _ensure_settlements() -> void:
@@ -1133,6 +1311,9 @@ func _ensure_settlements() -> void:
 	if d == null:
 		return
 	var thin_cells: Dictionary = {}
+	# 海陆校验要用掩膜/底图高程，先确保真源已加载（不然 is_water 恒为 false）
+	TG.ensure_loaded()
+	var dropped_water := 0
 	for p in d.get("places", []):
 		var lon := float(p["lon"])
 		var lat := float(p["lat"])
@@ -1151,6 +1332,13 @@ func _ensure_settlements() -> void:
 				var push: float = lim * 1.15
 				lon = clon + (cos(ang) * push) / maxf(cos(deg_to_rad(clat)), 0.05)
 				lat = clat + sin(ang) * push
+		# 海陆校验：GeoNames 里有落在海面的点（离岸/坐标误差），推到城外之后也要复查
+		if _on_water(lon, lat):
+			dropped_water += 1
+			if _settle_water.size() < 200:
+				_settle_water.append({"ll": Vector2(lon, lat), "name": String(p["n"]),
+						"h": TG.dem_at(lon, lat)})
+			continue
 		var item := {"ll": Vector2(lon, lat), "name": String(p["n"]),
 				"lvl": int(p["l"]), "pop": int(p["p"])}
 		_settle.append(item)
@@ -1172,7 +1360,20 @@ func _ensure_settlements() -> void:
 		if not _settle_idx.has(key):
 			_settle_idx[key] = []
 		(_settle_idx[key] as Array).append(item)
-	print("[地图] 真实聚落 %d 处（抽稀 %d）" % [_settle.size(), _settle_thin.size()])
+	print("[地图] 真实聚落 %d 处（抽稀 %d，海陆校验剔除 %d）"
+			% [_settle.size(), _settle_thin.size(), dropped_water])
+
+
+## 海陆校验：两份数据互相印证，单看任一份都会误杀。
+##   · 高程 < -20 m：深水，掩膜再粗也够判了；
+##   · 高程 < 0.5 m 且掩膜判水：浅海/河口（掩膜是 4096，约 10 km 一格，
+##     会把崇明、长山这种小岛整格判成水，所以必须让高程同意）。
+## 珠三角这种低洼地高程会到 -5 m 上下，但掩膜是陆地，按这条规则不会被误删。
+func _on_water(lon: float, lat: float) -> bool:
+	var h := TG.dem_at(lon, lat)
+	if h < -20.0:
+		return true
+	return h < 0.5 and TG.is_water(lon, lat)
 
 
 ## 视野内的真实聚落（按分数级别过滤）
@@ -2011,6 +2212,7 @@ func _open_city_panel(c: Dictionary) -> void:
 	var b1 := city_panel.get_node("Opt1") as Button
 	b1.text = "府衙"
 	b1.visible = true
+	(city_panel.get_node("Sub") as Label).text = ""
 	# 面板必须在地图图层之上
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
@@ -2026,6 +2228,7 @@ func _open_village_panel(v: Dictionary) -> void:
 	title.text = String(v["name"])
 	(city_panel.get_node("Opt0") as Button).text = "进村"
 	(city_panel.get_node("Opt1") as Button).visible = false
+	(city_panel.get_node("Sub") as Label).text = ""
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
 	city_panel.visible = true
@@ -2036,12 +2239,41 @@ func _close_city_panel() -> void:
 	city_panel.visible = false
 	_panel_city = {}
 	_panel_village = {}
+	_panel_site = {}
 	if city_panel != null:
 		(city_panel.get_node("Opt1") as Button).visible = true
+		(city_panel.get_node("Sub") as Label).text = ""
+
+
+## 打开关城/邑/要地面板（史料点名的点位，只提供“前往”）
+func _open_site_panel(hit: Dictionary) -> void:
+	var s: Dictionary = hit["site"]
+	_panel_city = {}
+	_panel_village = {}
+	_panel_site = s
+	var title: Label = city_panel.get_node("Title")
+	title.text = String(s.get("name", ""))
+	var era := int(s.get("era", 0))
+	var era_txt := ("前%d年" % -era) if era < 0 else ("%d 年" % era)
+	var sub: Label = city_panel.get_node("Sub")
+	sub.text = "%s · %s" % [String(s.get("kind", "要地")), era_txt]
+	(city_panel.get_node("Opt0") as Button).text = "前往"
+	(city_panel.get_node("Opt1") as Button).visible = false
+	if ui_layer != null and city_panel.get_parent() == ui_layer:
+		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.visible = true
+	map_root.queue_redraw()
 
 
 ## 街道 = 城中心；府衙 = 城北偏内
 func _city_go(what: String) -> void:
+	if not _panel_site.is_empty():
+		var sll := Vector2(float(_panel_site["lon"]), float(_panel_site["lat"]))
+		var sn := String(_panel_site["name"])
+		_close_city_panel()
+		toast("前往 %s" % sn)
+		_travel_ll(sll)
+		return
 	if not _panel_village.is_empty():
 		var vll: Vector2 = _panel_village["ll"]
 		var vn := String(_panel_village["name"])
@@ -2179,8 +2411,6 @@ func _draw_map() -> void:
 				clampf(12.0 * 111.0 / maxf(ppd, 0.01), 0.12, 60.0))
 		_map_mat.set_shader_parameter("zoom", map_zoom)
 		_map_mat.set_shader_parameter("dbg2", float(_detail_dbg))
-		# 配色不再随倍率渐变（放大缩小画面不再变色）
-		_map_mat.set_shader_parameter("pal_fine", 1.0)
 	else:
 		if _world_tex != null:
 			map_root.draw_texture_rect(_world_tex, rect, false)
@@ -2218,6 +2448,7 @@ func _draw_map() -> void:
 	var _t2 := Time.get_ticks_usec()
 	var _t3 := Time.get_ticks_usec()
 	_draw_settlements(content_rect)
+	_draw_sites(content_rect)
 	if map_hydro != null:
 		map_hydro.queue_redraw()
 	var _t4 := Time.get_ticks_usec()
@@ -2402,69 +2633,18 @@ func _setup_map_shader() -> void:
 	else:
 		print("[地图] 缺少 landform_id.bin，配色退回气候带")
 
-	# 把游戏里的 29 种地貌配色做成 32x1 调色板，地图直接按类别取色
+	# 地图只有一套调色板：29 类本色（TG.landform_color）。
+	# 编号图路径和细节层路径都按同一个地貌号取色，跨 60 倍不会变色。
 	var pal := PackedByteArray()
 	pal.resize(32 * 3)
-	# 地图只用“地形分组”色：平原/丘陵/山地/高原/盆地/荒漠/冰雪/水
-	var GROUP := {
-		# —— 平地（平原 / 草原 / 森林 / 湿地 / 三角洲，不按干湿区分）——
-		0: Color(0.52, 0.58, 0.36),
-		7: Color(0.52, 0.58, 0.36),
-		8: Color(0.52, 0.58, 0.36),
-		9: Color(0.52, 0.58, 0.36),
-		17: Color(0.52, 0.58, 0.36),
-		# —— 低地（河谷 / 盆地）——
-		4: Color(0.58, 0.58, 0.40),
-		5: Color(0.58, 0.58, 0.40),
-		# —— 丘陵（含红壤 / 丹霞）——
-		1: Color(0.62, 0.58, 0.34),
-		23: Color(0.62, 0.58, 0.34),
-		24: Color(0.66, 0.60, 0.38),
-		25: Color(0.62, 0.58, 0.34),
-		# —— 山地（含花岗岩 / 喀斯特 / 火山 / 冰蚀）——
-		2: Color(0.46, 0.44, 0.41),
-		18: Color(0.46, 0.44, 0.41),
-		19: Color(0.46, 0.44, 0.41),
-		21: Color(0.46, 0.44, 0.41),
-		22: Color(0.46, 0.44, 0.41),
-		# —— 黄土山地：比纯山地暖一点，和黄土低地同族但能看出起伏 ——
-		20: Color(0.60, 0.55, 0.42),
-		# —— 高原 ——
-		3: Color(0.64, 0.56, 0.38),
-		# —— 风成地貌（荒漠 / 沙丘 / 砾质 / 沙质 / 盐碱 / 雅丹 / 黄土）——
-		6: Color(0.82, 0.74, 0.52),
-		13: Color(0.82, 0.74, 0.52),
-		14: Color(0.80, 0.73, 0.50),
-		15: Color(0.82, 0.74, 0.52),
-		26: Color(0.82, 0.74, 0.52),
-		27: Color(0.82, 0.74, 0.52),
-		28: Color(0.82, 0.74, 0.52),
-		# —— 喀斯特 ——
-		12: Color(0.56, 0.54, 0.46),
-		# —— 冰雪 ——
-		10: Color(0.90, 0.92, 0.93),
-		16: Color(0.90, 0.92, 0.93),
-		# —— 水 ——
-		11: Color(0.26, 0.33, 0.40),
-	}
-	for i in 32:
-		var col: Color = GROUP.get(i, Color(0.55, 0.55, 0.35))
-		pal[i * 3] = int(clampf(col.r, 0.0, 1.0) * 255.0)
-		pal[i * 3 + 1] = int(clampf(col.g, 0.0, 1.0) * 255.0)
-		pal[i * 3 + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
-	var pal_img := Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)
-	_map_mat.set_shader_parameter("palette_tex", ImageTexture.create_from_image(pal_img))
-	# 29 类本色：高倍时用（分组色在这个尺度上会把不同地貌并成一整片）
-	var pal2 := PackedByteArray()
-	pal2.resize(32 * 3)
 	for i in 32:
 		var c2: Color = TG.landform_color(i)
-		pal2[i * 3] = int(clampf(c2.r, 0.0, 1.0) * 255.0)
-		pal2[i * 3 + 1] = int(clampf(c2.g, 0.0, 1.0) * 255.0)
-		pal2[i * 3 + 2] = int(clampf(c2.b, 0.0, 1.0) * 255.0)
-	_map_mat.set_shader_parameter("palette_fine_tex",
+		pal[i * 3] = int(clampf(c2.r, 0.0, 1.0) * 255.0)
+		pal[i * 3 + 1] = int(clampf(c2.g, 0.0, 1.0) * 255.0)
+		pal[i * 3 + 2] = int(clampf(c2.b, 0.0, 1.0) * 255.0)
+	_map_mat.set_shader_parameter("palette_tex",
 			ImageTexture.create_from_image(
-					Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal2)))
+					Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	_map_mat.set_shader_parameter("lat_limit", LAT_LIMIT)
 	# 细节层占位（1×1），就绪前 detail_on=0 走编号图
@@ -3077,6 +3257,44 @@ func _map_test() -> void:
 		print("  %-12s 相关系数 %.4f   平均绝对差 %5.0f m" % [nm, r, sum_abs / nf])
 	print("  （地图按点采样、地形含细节噪声，平均差主要来自 39km 采样）")
 	print("================================")
+	get_tree().quit()
+
+
+## 关城点位与聚落海陆校验（headless，几秒出结果，不用开图）
+func _site_stats() -> void:
+	TG.ensure_loaded()
+	print("======== 关城 / 邑 / 要地 ========")
+	for s in TG.sites():
+		var ll := Vector2(float(s["lon"]), float(s["lat"]))
+		var h := TG.dem_at(ll.x, ll.y)
+		var lf := TG.landform_kind(ll.x, ll.y, h)
+		print("  %-6s %-3s (%.3f,%.3f) 高程 %5.0f m  %-6s  %s"
+				% [String(s.get("name", "")), String(s.get("kind", "")), ll.x, ll.y, h,
+					TG.LF_NAMES[lf], "落水!" if _on_water(ll.x, ll.y) else "陆地"])
+	_ensure_settlements()
+	print("======== 聚落海陆校验 ========")
+	print("  保留 %d / 剔除 %d（原始 %d）"
+			% [_settle.size(), _settle_water.size(), _settle.size() + _settle_water.size()])
+	var n := 0
+	for w in _settle_water:
+		if n >= 15:
+			break
+		print("  剔除 %-10s (%.3f,%.3f) 高程 %.0f m"
+				% [String(w["name"]), (w["ll"] as Vector2).x, (w["ll"] as Vector2).y, float(w["h"])])
+		n += 1
+	print("===============================")
+	# 反向检查：留下来的点里还有多少在高程上是水面（判断规则有没有漏）
+	var left_water: Array = []
+	for it in _settle_thin:
+		var h2 := TG.dem_at((it["ll"] as Vector2).x, (it["ll"] as Vector2).y)
+		if h2 < 0.0:
+			left_water.append([it, h2])
+	print("  抽稀后仍在水面的点 %d 处" % left_water.size())
+	for k in mini(10, left_water.size()):
+		var it2: Dictionary = left_water[k][0]
+		print("    遗留 %-10s (%.3f,%.3f) 高程 %.0f m"
+				% [String(it2["name"]), (it2["ll"] as Vector2).x, (it2["ll"] as Vector2).y,
+					float(left_water[k][1])])
 	get_tree().quit()
 
 
