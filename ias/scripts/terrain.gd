@@ -1,4 +1,4 @@
-﻿extends Node3D
+extends Node3D
 ## 地形：极坐标 Clipmap + 最终地形（底图 + 山体特征 + 细节噪声）
 ## 所有高度都向 terrain_gen.gd 取，渲染/碰撞/植被/小地图是同一套数据。
 
@@ -59,20 +59,20 @@ func height_xyz(x: float, z: float, spacing: float = -1.0) -> float:
 const BUILD_FRAME_MS := 16
 
 
-func build(progress: Callable = Callable()) -> void:
-	if _mesh != null:
-		_mesh.queue_free()
-		_mesh = null
-	if _body != null:
-		_body.queue_free()
-		_body = null
+func build(progress: Callable = Callable(), q_ratio: float = Q) -> void:
+	# 旧网格先留着：第二遍重建时玩家已经在跑了，不能让他站在空气里。
+	# 新网格挂上去之后再释放旧的。
+	var old_mesh := _mesh
+	var old_body := _body
+	_mesh = null
+	_body = null
 
 	var t0 := Time.get_ticks_msec()
 	var radii: Array[float] = []
 	var r := R_MIN
 	while r < R_MAX:
 		radii.append(r)
-		r *= Q
+		r *= q_ratio
 	radii.append(R_MAX)
 
 	var verts := PackedVector3Array()
@@ -93,6 +93,15 @@ func build(progress: Callable = Callable()) -> void:
 
 	var total := radii.size()
 	var _frame_t0 := Time.get_ticks_msec()
+	# 分类（群区/地貌/材质）按 2.4 km 底图算，本来就比顶点粗得多：
+	# 相邻顶点相距不到 60 m、高差不到 15 m 时直接沿用上一个顶点的分类，
+	# 省掉每顶点 100 µs 左右的 landform_kind + landform_material（结果几乎不变）
+	var memo_lon := 1.0e9
+	var memo_lat := 1.0e9
+	var memo_h := 1.0e9
+	var memo_biome := 0
+	var memo_lf := 0
+	var memo_mat := 0
 	for ri in total:
 		var rr: float = radii[ri]
 		var sp := spacing_at(rr)
@@ -102,12 +111,18 @@ func build(progress: Callable = Callable()) -> void:
 			var z := sin(a) * rr
 			var h := TG.height_xyz(x, z, center_lon, center_lat, sp)
 			var ll := lonlat_of(x, z)
-			var biome := TG.biome_at(ll.x, ll.y, h)
-			var c := TG.biome_color(biome)
+			var dl := (ll.x - memo_lon) * 111320.0 * cos(deg_to_rad(center_lat))
+			var dp := (ll.y - memo_lat) * 110540.0
+			if dl * dl + dp * dp > 3600.0 or absf(h - memo_h) > 15.0:
+				memo_biome = TG.biome_at(ll.x, ll.y, h)
+				memo_lf = TG.landform_kind(ll.x, ll.y, h)
+				memo_mat = TG.landform_material(ll.x, ll.y)
+				memo_lon = ll.x
+				memo_lat = ll.y
+				memo_h = h
+			var c := TG.biome_color(memo_biome)
 			var k := 0.90 + 0.20 * TG._vnoise(x * 0.0025, z * 0.0025, 771)
-			var lf := TG.landform_kind(ll.x, ll.y, h)
-			var mat := TG.landform_material(ll.x, ll.y)
-			pid.append(lf + mat * 32)
+			pid.append(memo_lf + memo_mat * 32)
 			verts.append(Vector3(x, h, z))
 			cols.append(Color(c.r * k, c.g * k, c.b * k, 0.0))
 
@@ -229,6 +244,11 @@ func build(progress: Callable = Callable()) -> void:
 	await get_tree().process_frame
 
 	_build_collision(verts, idx, radii)
+	# 新网格和新碰撞都挂上了，这时才释放旧的一套
+	if old_mesh != null:
+		old_mesh.queue_free()
+	if old_body != null:
+		old_body.queue_free()
 
 	# 手工城市：跟着地形一起重建（位置按当前中心换算）
 	if _city_root == null:
@@ -947,7 +967,7 @@ func _build_props(progress: Callable = Callable()) -> void:
 			"mesh": _make_grass_card(float(g[1]), float(g[2]), float(g[3])),
 			"tint": Color(g[4], g[5], g[6]),
 		})
-	_veg.add_child(await _scatter_multi(grass_specs, GRASS_BY_LF, 45000, 130.0, 7001,
+	_veg.add_child(await _scatter_multi(grass_specs, GRASS_BY_LF, 38000, 160.0, 7001,
 			0.85, 1.35, "grass", gmat))
 	if progress.is_valid():
 		progress.call(0.95)
@@ -1342,8 +1362,8 @@ func _build_vegetation(progress: Callable = Callable()) -> void:
 	var buckets := {}
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20290
-	var radius := 2600.0
-	var count := 11000
+	var radius := 3400.0
+	var count := 11500
 	var placed := 0
 	var guard := 0
 	var ft := Time.get_ticks_msec()
@@ -1366,8 +1386,9 @@ func _build_vegetation(progress: Callable = Callable()) -> void:
 		var density := TG.tree_density(biome)
 		if density <= 0.0 or rng.randf() > density:
 			continue
-		# 按距离稀疏：近处密、远处疏（树木 LOD）
-		var lod := clampf(1.0 - rad / radius * 0.55, 0.45, 1.0)
+		# 按距离稀疏：近处密、远处疏。三次方收尾让边缘密度真正归零，
+		# 否则最外圈还剩 45% 的树，从高空看是"一块圆盘树林"
+		var lod := clampf(1.0 - pow(rad / radius, 3.0) * 1.15, 0.0, 1.0)
 		if rng.randf() > lod:
 			continue
 		# 群落：温度带 × 湿度带 × 海拔 × 地貌 → 带优势度的树种组成

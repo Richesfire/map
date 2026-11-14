@@ -1,4 +1,4 @@
-﻿extends Node3D
+extends Node3D
 ## 主控：主菜单 → 游戏；小地图 + TAB 十字 + 大地图 + 世界时间
 
 const TG := preload("res://scripts/terrain_gen.gd")
@@ -125,26 +125,33 @@ var _world_tex: ImageTexture = null
 var _shade_tex: ImageTexture = null
 
 # —— 高倍细节层：zoom 大时按真源现烘“可见屏幕+外扩”，分块流式填进来 ——
-const DETAIL_ZOOM := 40.0     # 到这个倍率才启用（编号图一格约 5.5 px 以上）
-const DETAIL_SCALE := 4       # 屏幕像素 / 细节像素
-const DETAIL_PAD := 0.35      # 四周各多烘 35%，拖动在这个范围内不用重烘
+const DETAIL_ZOOM := 60.0     # 到这个倍率才启用（编号图一格约 5.5 px 以上）
+const DETAIL_SCALE := 2.0     # 细档：2 屏幕像素 / texel（90 倍以上用，基本不糊）
+const DETAIL_SCALE_CO := 2.0  # 粗档也用 2 屏幕像素 / texel
 const DETAIL_KEEP := 4        # 缓存几个窗口（拖回去直接命中）
 const DETAIL_MARGIN := 8.0    # 边缘多烘几像素，避免采样到边界
 var _detail: MapDetail = null       # 正在烘/最近烘好的窗口
-var _detail_cache: Array = []       # 已烘好的窗口（最多 DETAIL_KEEP 个）
-var _detail_req: MapDetail = null   # 当前显示着的窗口
 var _detail_shown := false
 var _detail_off := false
 var _detail_dbg := 0
 var _pan_test := Vector2.ZERO       # --pan=dx,dy：开图 5 秒后平移这么多像素（测流式）
 var _zoom_test := 0.0               # --zoomto=Z：开图 5 秒后切到这个倍率
 var _pan_acc := 0.0
+var _vel_px := Vector2.ZERO
+var _prev_center := Vector2(1e9, 1e9)
 var _prof_t := 0.0
+var _bb_d = null
+var _bb_t0 := 0
 var _prof_max := 0.0
 
 
 func _ready() -> void:
 	_parse_args()
+	if OS.get_cmdline_user_args().has("--bakebench"):
+		_bb_d = MapDetail.new()
+		_bb_d.setup(100.0, 27.0, 106.0, 23.0, 920, 570)
+		_bb_t0 = Time.get_ticks_msec()
+		return
 	if OS.get_cmdline_user_args().has("--citytest"):
 		_city_test()
 		return
@@ -628,6 +635,9 @@ func _start_game() -> void:
 		terrain.center_lat = _debug_center.y
 		need_rebuild = true
 		print("[调试] 地形中心 -> %.3f, %.3f" % [terrain.center_lon, terrain.center_lat])
+	# 加载完再进游戏：地形和植被都就位之后才把玩家放进去。
+	# （试过"先粗后细"的渐进加载，能操作时间压到 2.8 s，但进游戏那几秒是半成品画面，
+	#   反而更难受 —— 玩家看到的应该是一个完整的世界，宁可等加载条。）
 	await terrain.build(_on_build_progress)
 	_boot_text("正在布置植被……")
 	_boot_set(0.88)
@@ -1437,7 +1447,7 @@ func _village_hit(pos: Vector2) -> Dictionary:
 	for v in _villages_for_view(Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)):
 		var p := _lonlat_to_screen_off(v["ll"], 0.0)
 		if p.distance_to(pos) < 14.0:
-			return {"ll": v["ll"], "name": String(v["name"]), "kind": String(v["kind"])}
+			return {"ll": v["ll"], "name": String(v["name"]), "kind": String(v.get("kind", "village"))}
 	return {}
 
 
@@ -1674,19 +1684,12 @@ func _draw_cross() -> void:
 
 ## 缩放下限：地图至少要占屏幕一半高
 ## 地图边界最多停在屏幕中心：中心不能越出 [-180+半屏, 180-半屏]
+## 拖动限制：只有一条 —— 屏幕中心必须落在地图内容区里。
+## 换成人话：地图内容区的四条边界，最多只能拉到屏幕正中，再往里就停住。
+## 不设"回到中心"、不设倍率阈值，0.7 倍和 120 倍用的是同一条规则。
 func _clamp_map_center() -> void:
-	var vs := get_viewport().get_visible_rect().size
-	var sc := _map_scale()
-	# 接近整幅可见时自动回到世界中心
-	var span_lon := vs.x / sc.x
-	if span_lon >= 300.0:
-		map_center.x = 0.0
-	else:
-		map_center.x = clampf(map_center.x, -180.0, 180.0)
-	if span_lon * (LAT_LIMIT * 2.0) / 360.0 >= 120.0:
-		map_center.y = 0.0
-	else:
-		map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
+	map_center.x = clampf(map_center.x, -180.0, 180.0)
+	map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
 
 
 func _zoom_min() -> float:
@@ -1717,17 +1720,33 @@ func _zoom_at(target_zoom: float) -> void:
 	map_root.queue_redraw()
 
 
-## 细节层覆盖范围：可见屏幕四角换算成经纬度（四周多烘 DETAIL_PAD）
+
+## 扩散范围：屏幕四周各外扩 120 px（超出不扩散）
+func _zoom_rect() -> Vector4:
+	var vs := get_viewport().get_visible_rect().size
+	var sc := _map_scale()
+	var hw := vs.x * 0.5 + 120.0
+	var hh := vs.y * 0.5 + 120.0
+	return Vector4(
+			map_center.x - hw / sc.x,
+			map_center.y + hh / sc.y,
+			map_center.x + hw / sc.x,
+			map_center.y - hh / sc.y)
+
+## 细节层覆盖范围：可见屏幕四角换算成经纬度，四周各外扩「一屏」。
+## 超出这个范围的既不烘也不扩散。
+const DETAIL_OUT_PAD := 1.0
+
 func _detail_view() -> Vector4:
 	var vs := get_viewport().get_visible_rect().size
 	var sc := _map_scale()
-	var hw := vs.x * (0.5 + DETAIL_PAD)
-	var hh := vs.y * (0.5 + DETAIL_PAD)
+	var hw := vs.x * 0.5 + 120.0
+	var hh := vs.y * 0.5 + 120.0
 	return Vector4(
-			map_center.x + (-DETAIL_MARGIN - hw) / sc.x,
-			map_center.y + (DETAIL_MARGIN + hh) / sc.y,
-			map_center.x + (DETAIL_MARGIN + hw) / sc.x,
-			map_center.y - (DETAIL_MARGIN + hh) / sc.y)
+			map_center.x + (-hw) / sc.x,
+			map_center.y + hh / sc.y,
+			map_center.x + hw / sc.x,
+			map_center.y - hh / sc.y)
 
 
 ## 屏幕实际可见范围（不含外扩），用来判断“够不够覆盖”
@@ -1741,23 +1760,45 @@ func _detail_core() -> Vector4:
 			map_center.y - (DETAIL_MARGIN + vs.y * 0.5) / sc.y)
 
 
-## 高倍细节层（流式 + 由屏幕中心向外揭开）：
-## - 一次烘「可见屏幕 + 35% 外扩」，切 96×96 texel 的块，**永远从当前屏幕中心往外**；
-## - 揭开半径 R 以 450 px/s 从屏幕中心向外扫，环带 40 px 软过渡 → 细节是“扩散”出来的，不是一块块跳；
-## - R 被“已烘半径”夹住，没烘到的地方面积不会被提前揭开；
-## - 视野仍在窗口内（小幅拖动）→ 不重烘，只把剩余块按**新**中心重排；
-## - 视野出窗或缩放变了 → 旧图**渐隐退回粗图**（0.18 s），然后新窗口从新中心揭开（不做新旧混合）。
+## ── 高倍细节层：一块“跟着视野走的画布”（新实现，旧的在下面标了 legacy）──
+## 状态只有两个：按倍率缓存的画布（最近 4 个）+ 每块画布自己的 reveal_r。
+## 不变量：
+##   I1 画布永远覆盖当前屏幕：同倍率下不够大就当场长大（旧内容整块搬，不重烘、不淡出）
+##   I2 同一倍率的 texel 网格永不改变，只有换倍率才换画布
+##   I3 已烘好的 texel 永不丢弃（只在整屏烘完后裁回一屏）
+##   I4 reveal_r 只跟“当前屏幕中心 + 已烘前沿”有关，前沿每次现算
+## ── 高倍细节层：只有"实时屏幕中心 + 阈值 + 一个半径" ────────────────────
+## 规则（就这几条，没有别的分支）：
+##   1. zoom < 45：细版整体渐隐，粗版渐显，淡完释放画布
+##   2. zoom >= 45：从**实时屏幕中心**开始，R 以 450 px/s 向外扩散
+##   3. 拖动：中心每帧现算，烘的优先级跟着变，R 继续推进（不重置）
+##   4. 换倍率 / 换地方：一律 R = 0 重新从中心扩散 —— **即使那块地已经烘过**
+##      （缓存只用来省烘，绝不影响"看到的永远是扩散"，保证一致性）
+##   5. 画布只为一件事长大：覆盖当前屏幕（已烘好的块整块搬过来，不重烘）
 const REVEAL_PX_S := 450.0
-const REVEAL_BAND := 90.0
+const CLOUD_CX_PX_S := 1200.0   # 云雾中心追赶屏幕中心的速度（够快，不会露出没烘的地方）
+const REVEAL_BAND := 280.0    # >= 2/3 块（384px），把块的硬边吃掉
 const REVEAL_TRAIL := 150.0
 const DETAIL_FADE_S := 0.18
-const DETAIL_FADE_IN_S := 0.12
+const DETAIL_KEEP_ZOOM := 3         # 缓存几个倍率的烘焙结果（只省烘）
 
+var _canvas: MapDetail = null       # 当前显示的画布
+var _canvases := {}                 # zoom_key -> MapDetail（烘焙缓存）
+var _canvas_order: Array = []
+var _cur_zk := -1
+var _canvas_zoom := 0.0
+var _canvas_ds := 8.0     # 当前画布用的 texel 尺寸（4 或 8）
+var _pending_zk := -1               # 防抖：等待停稳的目标倍率
+var _zk_settle := 0.0
 var _reveal_r := 0.0
+var _fade := 0.0                    # 0 = 粗版，1 = 细版
+var _cloud_ll := Vector2.ZERO     # 云雾中心（地图经纬度）
+var _ring_c := Vector2.ZERO         # 揭开圆心（屏幕像素，带路径预估）
+var _detail_vel := Vector2.ZERO     # 屏幕中心的移动速度（像素/秒，平滑后）
+var _pred_lon := 0.0
+var _pred_lat := 0.0
+var _last_center := Vector2(1e9, 1e9)
 var _st_dbg := 0.0
-var _fade_out := 1.0
-var _fade_in := 1.0
-var _detail_fading := false
 
 
 func _detail_tick(delta: float) -> void:
@@ -1767,182 +1808,174 @@ func _detail_tick(delta: float) -> void:
 		_st_dbg += delta
 		if _st_dbg > 0.5:
 			_st_dbg = 0.0
-			print("[状态] fade=%s fading=%s req=%s bake=%s tiles=%d/%d R=%.0f zoom=%.1f"
-					% [_fade_out, _detail_fading, str(_detail_req != null),
-					str(_detail != null),
-					-1 if _detail == null else _detail.tiles_done,
-					-1 if _detail == null else _detail.tiles_total, _reveal_r, map_zoom])
-	# 淡出中
-	if _detail_fading:
-		_fade_out = maxf(_fade_out - delta / DETAIL_FADE_S, 0.0)
-		# 淡出期间就把新窗口开起来烘，淡完立刻能揭（不浪费这 0.18 s）
-		if _detail == null:
-			_spawn_window()
-		if _detail != null:
-			_detail.poll()
-		if _fade_out <= 0.0:
-			_detail_fading = false
-			_unbind_detail()
-		_advance_reveal(delta)
-		_push_detail_uniforms()
-		return
-
+			print("[状态] fade=%.2f R=%.0f zk=%d canvas=%s tiles=%d/%d zoom=%.1f"
+					% [_fade, _reveal_r, _cur_zk, str(_canvas != null),
+					-1 if _canvas == null else _canvas.tiles_done,
+					-1 if _canvas == null else _canvas.tiles_total, map_zoom])
+	# 屏幕中心的移动速度（平滑）+ 往前探的预测中心：
+	# 不直接拿每一帧的 map_center 去用，否则扩散会跟着鼠标一跳一跳
+	var sc0 := _map_scale()
+	if _last_center.x > 1e8:
+		_last_center = map_center
+		_pred_lon = map_center.x
+		_pred_lat = map_center.y
+	var dvx := (map_center.x - _last_center.x) * sc0.x / maxf(delta, 0.001)
+	var dvy := -(map_center.y - _last_center.y) * sc0.y / maxf(delta, 0.001)
+	_detail_vel = _detail_vel.lerp(Vector2(dvx, dvy), clampf(delta * 12.0, 0.0, 1.0))
+	_last_center = map_center
+	_pred_lon = map_center.x + _detail_vel.x * 0.18 / maxf(sc0.x, 0.0001)
+	_pred_lat = map_center.y - _detail_vel.y * 0.18 / maxf(sc0.y, 0.0001)
+	# 阈值以下：细版渐隐，粗版渐显
 	if not map_open or map_zoom < DETAIL_ZOOM:
-		if _detail_shown:
-			_start_fade()
+		if _fade > 0.0:
+			_fade = maxf(0.0, _fade - delta / DETAIL_FADE_S)
+			_push_detail_uniforms()
+			if _fade <= 0.0:
+				_map_mat.set_shader_parameter("detail_on", 0.0)
+				_canvas = null
+				_cur_zk = -1
+				_reveal_r = 0.0
 		return
-
-	var core := _detail_core()
-	# A) 已绑窗口仍覆盖当前视野且缩放没变 → 只推进揭开
-	if _detail_req != null and _scale_ok(_detail_req) and _detail_req.geom_covers(core):
-		_detail_req.poll()
-		_detail_req.retarget(map_center.x, map_center.y)
-		_advance_reveal(delta)
-		_push_detail_uniforms()
-		return
-	# B) 正在烘的窗口覆盖当前视野（还没绑上去）
-	if _detail != null and _detail != _detail_req and _scale_ok(_detail) \
-			and _detail.geom_covers(core):
-		_detail.poll()
-		_detail.retarget(map_center.x, map_center.y)
-		if _detail.first_ready and _detail_req == null:
-			_bind_detail(_detail)
-		_advance_reveal(delta)
-		_push_detail_uniforms()
-		return
-	# C) 当前窗口不能用了：渐隐退回粗图；同时把正在烘的窗口作废
-	if _detail_req != null:
-		_start_fade()
-		return
-	# D) 缓存里有同缩放、能盖住视野的窗口 → 直接命中（仍从中心揭开）
-	var hit := _detail_cached(core)
-	if hit != null:
-		_bind_detail(hit)
-		_push_detail_uniforms()
-		return
-	# E) 起新窗口（同一时刻只允许一个在烘）
-	_spawn_window()
+	# 阈值以上：换倍率（或刚跨过阈值）→ 一律 R=0 重新扩散
+	# 两套固定数据：45-90 倍用 8px/texel 的粗档，90 倍以上用 4px/texel 的细档。
+	# 带内缩放永不重建（只换用另一套），跨 60 才首次建。
+	var zk := int(round(map_zoom * 10.0))
+	var want_ds := DETAIL_SCALE if map_zoom >= 90.0 else DETAIL_SCALE_CO
+	if _canvas == null:
+		_canvas_ds = want_ds
+		_canvas = _canvas_for(zk)
+		_cur_zk = zk
+		_canvas_zoom = map_zoom
+		_fade = 0.0
+		_bind_canvas(_canvas)
+	elif want_ds != _canvas_ds:
+		# 否则继续显示旧的（最多被拉伸），避免"切过去一片空"的回退
+		var cand := _canvas_for(zk)
+		if cand.first_ready:
+			_canvas_ds = want_ds
+			_canvas = cand
+			_cur_zk = zk
+			_canvas_zoom = map_zoom
+			_bind_canvas(_canvas)
+	# 画布只长大、不重建：保留所有已烘 texel，只补烘新露出的条带
+	# 流式预烘：把要烘的区域按移动方向往前推 0.4 秒位移（最多半屏），
+	# 屏幕到达前数据已经烘好，移动时看不到粗版边界。
+	var scv := _map_scale()
+	if _prev_center.x > 1e8:
+		_prev_center = map_center
+	var vpx := Vector2((map_center.x - _prev_center.x) * scv.x,
+			-(map_center.y - _prev_center.y) * scv.y) / maxf(delta, 0.001)
+	_vel_px = _vel_px.lerp(vpx, clampf(delta * 8.0, 0.0, 1.0))
+	_prev_center = map_center
+	var vsv := get_viewport().get_visible_rect().size
+	var ahead := _vel_px * 0.4
+	ahead.x = clampf(ahead.x, -vsv.x * 0.5, vsv.x * 0.5)
+	ahead.y = clampf(ahead.y, -vsv.y * 0.5, vsv.y * 0.5)
+	var base := _detail_view()
+	var core := Vector4(base.x + ahead.x / scv.x, base.y - ahead.y / scv.y,
+			base.z + ahead.x / scv.x, base.w - ahead.y / scv.y)
+	# 只有超出画布 16 texel 以上才长大，避免拖动时每帧重建（重建瞬间会闪粗版）
+	var pad16: float = (_canvas.lon_per_texel() * 16.0) if _canvas != null else 0.0
+	var core_in := Vector4(core.x + pad16, core.y - pad16, core.z - pad16, core.w + pad16)
+	if not _canvas.geom_covers(core_in):
+		_grow_canvas(core)
+	if not _canvas.done():
+		_canvas.reorder_from(map_center.x + ahead.x / scv.x,
+				map_center.y - ahead.y / scv.y, core)
+		_canvas.poll()
+	# 云雾中心存**地图坐标**，只在推 uniform 时换算成屏幕像素：
+	# 窗口变了它也不会跳到新中心，而是接着旧位置继续长。
+	var sc_c := _map_scale()
+	if _reveal_r <= 0.5:
+		_cloud_ll = map_center                 # 首次跨过阈值：直接落在屏幕中心
+	else:
+		var dl := map_center.x - _cloud_ll.x
+		var dp := map_center.y - _cloud_ll.y
+		var dpix := Vector2(dl * sc_c.x, -dp * sc_c.y)
+		var step := CLOUD_CX_PX_S * delta
+		if dpix.length() <= maxf(step, 0.001):
+			_cloud_ll = map_center
+		elif dpix.length() > 0.0001:
+			var k2 := step / dpix.length()
+			_cloud_ll.x += dl * k2
+			_cloud_ll.y += dp * k2
+	_pred_lon = _cloud_ll.x
+	_pred_lat = _cloud_ll.y
+	var vs := get_viewport().get_visible_rect().size
+	_ring_c = vs * 0.5 + Vector2((_cloud_ll.x - map_center.x) * sc_c.x,
+			-(_cloud_ll.y - map_center.y) * sc_c.y)
+	# 不做云雾、不做半径、不做区域限制：烘好一块就整块显示，速度只取决于烘焙吞吐
+	_fade = minf(1.0, _fade + delta / DETAIL_FADE_S)
 	_push_detail_uniforms()
 
 
-func _spawn_window() -> void:
-	if _detail != null:
-		return
+## 把矩形按倍数向外扩（画布长大时留出余量）
+func _expand_rect(r: Vector4, k: float) -> Vector4:
+	var cx := (r.x + r.z) * 0.5
+	var cy := (r.y + r.w) * 0.5
+	var hw := (r.z - r.x) * 0.5 * k
+	var hh := (r.y - r.w) * 0.5 * k
+	return Vector4(cx - hw, cy + hh, cx + hw, cy - hh)
+
+
+func _canvas_for(zk: int) -> MapDetail:
+	if _canvases.has(zk):
+		_canvas_order.erase(zk)
+		_canvas_order.push_front(zk)
+		return _canvases[zk]
 	var vr := _detail_view()
-	var vs := get_viewport().get_visible_rect().size
-	# 上一块（已经烘好的、或刚显示过的）同缩放窗口：重叠区直接搬，省掉重算
-	var adopt: MapDetail = null
-	if _detail_req != null and _detail_req.done():
-		adopt = _detail_req
-	for d in _detail_cache:
-		if adopt != null:
-			break
-		adopt = d as MapDetail
-	var w := MapDetail.new()
-	w.setup(vr.x, vr.y, vr.z, vr.w,
-			int(ceil(vs.x * (1.0 + DETAIL_PAD * 2.0) / float(DETAIL_SCALE))),
-			int(ceil(vs.y * (1.0 + DETAIL_PAD * 2.0) / float(DETAIL_SCALE))), adopt)
-	_detail = w
+	var sc := _map_scale()
+	# texel 数按"区域大小"算（不是按屏幕），保证每个 texel 恒为 DETAIL_SCALE 屏幕像素
+	var wpx: float = (vr.z - vr.x) * sc.x
+	var hpx: float = (vr.y - vr.w) * sc.y
+	var c := MapDetail.new()
+	c.setup(vr.x, vr.y, vr.z, vr.w,
+			int(ceil(wpx / float(_canvas_ds))),
+			int(ceil(hpx / float(_canvas_ds))), _canvas)
+	_canvases[zk] = c
+	_canvas_order.push_front(zk)
+	while _canvas_order.size() > DETAIL_KEEP_ZOOM:
+		var old: int = _canvas_order.pop_back()
+		if _canvases.has(old) and _canvases[old] != _canvas:
+			_canvases.erase(old)
+	return c
 
 
-func _scale_ok(w: MapDetail) -> bool:
-	var cur := float(DETAIL_SCALE) / maxf(_map_scale().x, 0.0001)
-	return absf(w.lon_per_texel() / cur - 1.0) < 0.02
+## 把画布长大到能盖住 core：新画布照抄旧画布已烘好的块（blit，不重烘），R 不变
+func _grow_canvas(core: Vector4) -> void:
+	var u0 := minf(_canvas.lon0, core.x)
+	var u1 := maxf(_canvas.lon1, core.z)
+	var v0 := maxf(_canvas.lat0, core.y)      # 北
+	var v1 := minf(_canvas.lat1, core.w)      # 南
+	# 像素数用画布自己的 dlon 算（不能用当前缩放，否则尺度会被带偏）
+	var dlon: float = _canvas.lon_per_texel()
+	var pw := int(ceil((u1 - u0) / dlon))
+	var ph := int(ceil((v0 - v1) / dlon))
+	# 画布长大：R 不动（只增不减），新条带从旧边界接着往外长
+	var c := MapDetail.new()
+	c.setup(u0, v0, u1, v1, pw, ph, _canvas)
+	if not c.geom_covers(core):
+		# 继承后没盖住请求区域：退化成精确画布（不继承），避免每帧反复长大
+		c = MapDetail.new()
+		c.setup(core.x, core.y, core.z, core.w, pw, ph)
+	_canvases[_cur_zk] = c
+	_canvas = c
+	_bind_canvas(c)
 
 
-func _advance_reveal(delta: float) -> void:
-	_fade_in = minf(1.0, _fade_in + delta / DETAIL_FADE_IN_S)
-	var lim := 1e9
-	var w: MapDetail = _detail_req if _detail_req != null else _detail
-	if w != null and not w.done():
-		# 揭开半径永远落后烘焙前沿一段（约 1.5 块），保证不会露出还没烘的地方
-		lim = w.baked_radius() * float(DETAIL_SCALE) - REVEAL_TRAIL
-	_reveal_r = minf(_reveal_r + delta * REVEAL_PX_S, maxf(lim, 0.0))
+func _bind_canvas(c: MapDetail) -> void:
+	_map_mat.set_shader_parameter("detail_tex", c.tex)
+	_map_mat.set_shader_parameter("detail_org", Vector2(c.ox, c.oy))
+	_map_mat.set_shader_parameter("detail_span", Vector2(c.sx, c.sy))
+	_map_mat.set_shader_parameter("detail_on", 1.0)
+	_detail_shown = true
+	_push_detail_uniforms()
 
 
 func _push_detail_uniforms() -> void:
 	_map_mat.set_shader_parameter("detail_reveal", _reveal_r)
 	_map_mat.set_shader_parameter("detail_band", REVEAL_BAND)
-	_map_mat.set_shader_parameter("detail_fade", _fade_in * _fade_out)
-
-
-func _start_fade() -> void:
-	if _detail_fading:
-		return
-	_detail_fading = true
-	# 正在烘的窗口腾出来：淡出这 0.18 s 里就能把新窗口开起来烘
-	if _detail != null:
-		if _detail == _detail_req:
-			_detail = null        # 旧的还要显示（淡出用），只是腾出烘焙槽位
-		else:
-			if _detail.done():
-				_push_cache(_detail)
-			else:
-				_detail.cancel()
-			_detail = null
-
-
-func _bind_detail(d: MapDetail) -> void:
-	_detail_req = d
-	_detail_shown = true
-	_fade_out = 1.0
-	_fade_in = 0.0
-	_reveal_r = 0.0
-	_map_mat.set_shader_parameter("detail_tex", d.tex)
-	_map_mat.set_shader_parameter("detail_org", Vector2(d.ox, d.oy))
-	_map_mat.set_shader_parameter("detail_span", Vector2(d.sx, d.sy))
-	_map_mat.set_shader_parameter("detail_on", 1.0)
-	_push_detail_uniforms()
-	if OS.get_cmdline_user_args().has("--maptime") or OS.get_cmdline_user_args().has("--mapsize"):
-		print("[细节] 绑定 %dx%d（%d/%d 块）%d ms @%d" % [d.px_w, d.px_h,
-				d.tiles_done, d.tiles_total, Time.get_ticks_msec() - d.started, Time.get_ticks_msec()])
-	for a in OS.get_cmdline_user_args():
-		if a.begins_with("--dumpdetail="):
-			d.tex.get_image().save_png(a.substr(13))
-			print("[细节] 已存 %s" % a.substr(13))
-
-
-func _unbind_detail() -> void:
-	_map_mat.set_shader_parameter("detail_on", 0.0)
-	_detail_shown = false
-	if _detail_req != null:
-		if _detail_req.done():
-			_push_cache(_detail_req)
-		else:
-			_detail_req.cancel()      # 半截的窗口没用，别再占线程
-		if _detail == _detail_req:
-			_detail = null
-		_detail_req = null
-	_reveal_r = 0.0
-	_fade_out = 1.0
-	_fade_in = 0.0
-	_push_detail_uniforms()
-
-
-## 缓存里找一块“同缩放 + 能盖住视野 + 已烘部分够用”的窗口
-func _detail_cached(core: Vector4) -> MapDetail:
-	for d in _detail_cache:
-		var m: MapDetail = d
-		if not _scale_ok(m):
-			continue
-		if not m.geom_covers(core):
-			continue
-		if not m.area_done(m.texel_rect(core)):
-			continue
-		return m
-	return null
-
-
-func _push_cache(d: MapDetail) -> void:
-	if d == null:
-		return
-	for i in _detail_cache.size():
-		if _detail_cache[i] == d:
-			return
-	_detail_cache.push_front(d)
-	while _detail_cache.size() > DETAIL_KEEP:
-		_detail_cache.pop_back()
-
+	_map_mat.set_shader_parameter("detail_fade", _fade)
 
 ## 调试：--pan=dx,dy / --zoomto=Z 开图 5 秒后动一次（测流式重烘 / 缩放降级）
 func _pan_probe(delta: float) -> void:
@@ -2146,9 +2179,8 @@ func _draw_map() -> void:
 				clampf(12.0 * 111.0 / maxf(ppd, 0.01), 0.12, 60.0))
 		_map_mat.set_shader_parameter("zoom", map_zoom)
 		_map_mat.set_shader_parameter("dbg2", float(_detail_dbg))
-		# 高倍换成一地形一色：分组色在 300 km 视野里会把整块黄土并成一片
-		_map_mat.set_shader_parameter("pal_fine",
-				clampf((map_zoom - 16.0) / 14.0, 0.0, 1.0))
+		# 配色不再随倍率渐变（放大缩小画面不再变色）
+		_map_mat.set_shader_parameter("pal_fine", 1.0)
 	else:
 		if _world_tex != null:
 			map_root.draw_texture_rect(_world_tex, rect, false)
@@ -2643,6 +2675,16 @@ func _clock_text() -> String:
 
 
 func _process(delta: float) -> void:
+	if _bb_d != null:
+		_bb_d.poll()
+		if _bb_d.done() or Time.get_ticks_msec() - _bb_t0 > 120000:
+			var ms := Time.get_ticks_msec() - _bb_t0
+			print("[bench] bake_ms=", ms,
+					"  texel/s=", int(524400.0 * 1000.0 / maxf(float(ms), 1.0)),
+					"  tiles=", _bb_d.tiles_done, "/", _bb_d.tiles_total)
+			_bb_d = null
+			get_tree().quit()
+		return
 	if OS.get_cmdline_user_args().has("--prof"):
 		_prof_t += delta
 		_prof_max = maxf(_prof_max, delta)
@@ -3391,5 +3433,7 @@ func _exit_tree() -> void:
 		_map_thread.wait_to_finish()
 	if _detail != null:
 		_detail.wait()
-	if _detail_req != null:
-		_detail_req.wait()
+	if _canvas != null:
+		_canvas.wait()
+	for k in _canvases:
+		(_canvases[k] as MapDetail).wait()

@@ -111,8 +111,8 @@ void fragment() {
 	// 干湿仍然大范围地影响枯/绿比例
 	ground = mix(ground, dry, smoothstep(0.60, 0.82, dryness) * 0.6);
 	// 陡坡露岩、碎石
-	ground = mix(ground, mix(gravel, rock, smoothstep(0.45, 0.80, slope)),
-			smoothstep(0.30, 0.56, slope));
+	ground = mix(ground, mix(gravel, rock, smoothstep(0.38, 0.72, slope)),
+			smoothstep(0.24, 0.50, slope));
 	ground = mix(ground, snowt, snow);
 
 	vec3 c = COLOR.rgb;
@@ -120,13 +120,28 @@ void fragment() {
 	c *= 0.94 + 0.12 * mid;
 	c = mix(c * tint_b, c * tint_a, macro * 0.85);
 
+	// 中景纹理：细节层（13 m 重复）在 60 m 外就采不出东西了，100–500 m 只剩纯色。
+	// 这里补一层约 95 m 重复的采样，两个不同尺度交叉，远处才不会糊成一块。
+	vec2 uv_mid = uv * 0.145 + vec2(7.1, 3.9);
+	vec3 mid_a = tile_at(uv_mid, t0);
+	vec3 mid_b = tile_at(uv_mid * 1.37 + vec2(19.3, 8.7), t1);
+	vec3 ground_mid = mix(mid_a, mid_b, p_big);
+	float near_w = 1.0 - smoothstep(60.0, 300.0, distance(wpos, CAMERA_POSITION_WORLD));
+	ground = mix(ground_mid, ground, near_w);
+
 	// 远处淡出纹理（否则重复贴图在掠射角会产生同心摩尔纹）
-	float dfade = 1.0 - smoothstep(120.0, 520.0, distance(wpos, CAMERA_POSITION_WORLD));
+	float dfade = 1.0 - smoothstep(250.0, 900.0, distance(wpos, CAMERA_POSITION_WORLD));
 	float ts = tex_strength * dfade;
 	// 3m 级微颗粒，近看才有的细节
 	float micro = texture(noise_tex, wpos.xz * 0.32).r;
 	ground *= 0.92 + 0.16 * micro;
-	ALBEDO = mix(c, ground * (0.85 + 0.30 * dot(c, vec3(0.33))), ts);
+	// 远处不能"没纹理"：520 m 外贴图淡完了，改喂一层约 900 m 的大尺度色差，
+	// 否则远山就是一整片均匀的顶点色，看着像云、也看不出形状
+	float far_n = texture(noise_tex, wpos.xz * 0.0011 + vec2(0.21, 0.63)).r;
+	vec3 ground_far = c * (0.88 + 0.26 * far_n);
+	ALBEDO = mix(ground_far, ground * (0.85 + 0.30 * dot(c, vec3(0.33))), ts);
+	// 坡越陡越暗：没有这一步，沟壁和沟底一个颜色，远看就只剩"平"
+	ALBEDO *= 1.0 - 0.32 * smoothstep(0.30, 0.72, slope);
 	float hump = texture(noise_tex, wpos.xz * 0.021).r - texture(noise_tex, wpos.xz * 0.047 + vec2(5.7, 2.3)).r;
 	vec3 bump_n = vec3(hump * 0.55, 0.0, hump * 0.55) * (1.0 - smoothstep(80.0, 300.0, distance(wpos, CAMERA_POSITION_WORLD)));
 	NORMAL = normalize(wnrm + vec3(tn.x, 0.0, tn.y) * 0.55 * nstr + bump_n);

@@ -394,6 +394,21 @@ static func _load_cities() -> void:
 		print("[地形] 手工城市 %d 座" % _cities.size())
 
 
+## 秦汉关城/邑/要地表（sites_han.json）
+static var _sites: Array = []
+static var _sites_loaded := false
+
+static func sites() -> Array:
+	if not _sites_loaded:
+		_sites_loaded = true
+		var f := FileAccess.open("res://data/sites_han.json", FileAccess.READ)
+		if f != null:
+			var j = JSON.parse_string(f.get_as_text())
+			if j is Dictionary and j.has("sites"):
+				_sites = j["sites"]
+	return _sites
+
+
 static func cities() -> Array:
 	ensure_loaded()
 	return _cities
@@ -1293,67 +1308,98 @@ static func _feature_of(cell: Vector2i) -> Dictionary:
 
 
 ## 特征带来的高度增量（米）。spacing 为采样间距：远场淡出，避免混叠。
+## 注意：不要在这里加"当前格"静态缓存 —— 地形网格是分线程算的，静态量会被别的线程串掉。
+## _feature_of() 的格子缓存由主线程 prewarm_features() 预热，worker 只读。
+static func prewarm_features(lon: float, lat: float, radius_m: float) -> void:
+	var row0 := int(floor((lat - radius_m / 110540.0) * 110540.0 / FEAT_CELL))
+	var row1 := int(floor((lat + radius_m / 110540.0) * 110540.0 / FEAT_CELL))
+	for row in range(row0, row1 + 1):
+		var lat_c := (float(row) + 0.5) * FEAT_CELL / 110540.0
+		var w := FEAT_CELL / (111320.0 * maxf(cos(deg_to_rad(lat_c)), 0.05))
+		var dlon := radius_m / (111320.0 * maxf(cos(deg_to_rad(lat_c)), 0.05))
+		var col0 := int(floor((lon - dlon) / w))
+		var col1 := int(floor((lon + dlon) / w))
+		for col in range(col0, col1 + 1):
+			_feature_of(Vector2i(col, row))
+
+
 static func feat_delta(lon: float, lat: float, h: float, spacing: float) -> float:
 	if h < 1.0:
 		return 0.0            # 水面/海底不放特征（海床不需要沟壑）
 	var amp := 1.0
-	if spacing > 0.0:
-		amp = 1.0 - smoothstep(90.0, 260.0, spacing)
-		if amp <= 0.002:
-			return 0.0
 	var cell := _feat_cell(lon, lat)
 	var d := _feature_of(cell)
 	if d.is_empty():
 		return 0.0
-	var g := _feat_geom(cell)
-	var ca := cos(deg_to_rad(lat))
-	var mx := (lon - g.x) * 111320.0 * ca
-	var mz := (g.y - lat) * 110540.0
-	var du := mx - float(d["ox"])
-	var dv := mz - float(d["oz"])
-	var u := du * float(d["c"]) + dv * float(d["s"])
-	var v := -du * float(d["s"]) + dv * float(d["c"])
 	var H: float = float(d["H"])
 	var W: float = float(d["W"])
 	var L: float = float(d["L"])
 	var ph: float = float(d["ph"])
+	if spacing > 0.0:
+		# 大特征（高 >10 m 或长 >240 m）撑到 3–6 km，小特征 1.5 km 淡掉：
+		# 否则远山上一片 20 m 的坎在网格间距 150 m 时闪成噪点
+		var big := 1.0 if (H > 10.0 or L > 240.0) else 0.0
+		amp = 1.0 - smoothstep(lerpf(90.0, 230.0, big), lerpf(260.0, 560.0, big), spacing)
+		if amp <= 0.002:
+			return 0.0
+	var ca := cos(deg_to_rad(lat))
+	var g := _feat_geom(cell)
+	var mx := (lon - g.x) * 111320.0 * ca
+	var mz := (g.y - lat) * 110540.0
+	var c_ang: float = float(d["c"])
+	var s_ang: float = float(d["s"])
+	var du := mx - float(d["ox"])
+	var dv := mz - float(d["oz"])
+	var u := du * c_ang + dv * s_ang
+	var v := -du * s_ang + dv * c_ang
+	var plateau: float = float(d["plateau"])
 	var r := 0.0
 	match int(d["t"]):
 		0:
-			# 山脊：脊线摆动 + 两侧支脊，端部收细
+			# 山脊：脊线摆动 + 两侧支脊，端部收细（用乘法代替 pow/exp，GDScript 里这些都是函数调用）
 			var w2 := W * (1.0 + 0.35 * sin(u * 0.012 + ph))
-			var core := pow(maxf(1.0 - absf(v) / w2, 0.0), 1.6)
+			var q := 1.0 - absf(v) / w2
+			var core := 0.0
+			if q > 0.0:
+				core = q * q * sqrt(q)
 			var spur := 0.0
 			for i in 2:
-				var uu := u - (float(i) * 2.0 - 1.0) * L * 0.45
-				var vv := absf(v) - W * (0.55 + 0.25 * float(i))
-				spur = maxf(spur, 0.55 * core * exp(-pow(vv / (W * 0.45), 2.0)) \
-						* exp(-pow(uu / (L * 0.22), 2.0)))
+				var uu := (u - (float(i) * 2.0 - 1.0) * L * 0.45) / (L * 0.22)
+				if absf(uu) > 3.0:
+					continue
+				var vv := (absf(v) - W * (0.55 + 0.25 * float(i))) / (W * 0.45)
+				spur = maxf(spur, 0.55 * core / ((1.0 + vv * vv) * (1.0 + uu * uu)))
 			r = H * maxf(core, spur) * (1.0 - smoothstep(L * 0.7, L, absf(u)))
 		1:
 			# 断崖：崖面 + 崖顶平台 + 崖脚倒石堆
 			var step := smoothstep(-W * 0.5, W * 0.5, v)
 			var mask := (1.0 - smoothstep(L * 0.7, L, absf(u))) \
 					* (1.0 - smoothstep(W * 2.5, W * 7.0, absf(v)))
-			var talus := 0.22 * exp(-pow(maxf(-v - W * 1.2, 0.0) / (W * 2.2), 2.0))
+			var tz2 := maxf(-v - W * 1.2, 0.0) / (W * 2.2)
+			var talus := 0.22 / (1.0 + tz2 * tz2)
 			r = ((step - 0.5) + talus) * H * mask
 		2:
 			# 冲沟：越往下游越深越宽（汇水），沟口带冲积扇
 			var tp := clampf(u / L * 0.5 + 0.5, 0.0, 1.0)      # 0 沟头 1 沟口
 			var ww := W * (0.45 + 0.9 * tp)
 			var v0 := 0.9 * ww * sin(u * 0.014 + ph)
-			var dd := absf(v - v0) / ww
+			var dd := (v - v0) / ww
 			var depth := H * (0.35 + 0.75 * tp)
-			var fan := 0.5 * depth * exp(-pow((u - L * 0.72) / (L * 0.30), 2.0)) \
-					* exp(-pow(v / (W * 3.2), 2.0))
-			r = (-depth * exp(-dd * dd) + fan) \
+			var fu := (u - L * 0.72) / (L * 0.30)
+			var fv := v / (W * 3.2)
+			var fan := 0.0
+			if absf(fu) < 3.5 and absf(fv) < 3.5:
+				fan = 0.5 * depth / ((1.0 + fu * fu) * (1.0 + fv * fv))
+			r = (-depth / (1.0 + dd * dd * 1.4427) + fan) \
 					* (1.0 - smoothstep(L * 0.75, L * 1.05, absf(u)))
 		3:
 			var rr := sqrt(u * u + v * v) / W
 			var m3 := 1.0 - smoothstep(0.55, 1.0, rr)
-			r = (float(d["plateau"]) - h) * m3 * 0.60
+			r = (plateau - h) * m3 * 0.60
 		4:
-			var r4 := sqrt(pow(u / W, 2.0) + pow(v / (W * 0.75), 2.0))
+			var au := u / W
+			var av := v / (W * 0.75)
+			var r4 := sqrt(au * au + av * av)
 			r = H * (1.0 - smoothstep(0.55, 1.0, r4)) * (0.85 + 0.15 * sin(u * 0.25))
 		5:
 			var r5 := sqrt(u * u + v * v) / W

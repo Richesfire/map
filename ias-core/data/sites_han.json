@@ -1,0 +1,18 @@
+{
+  "_comment": "秦汉时期关城/邑/要地（第三层：史料点名、坐标考订）。坐标多为近似值，用于地图点位与地形保护范围。",
+  "version": 1,
+  "sites": [
+    { "id": "guanglang", "name": "光狼城", "lon": 112.860, "lat": 35.830, "kind": "城",
+      "era": -260, "radius_km": 0.6, "src": "史记·赵世家；光绪山西通志" },
+    { "id": "changping_guan", "name": "长平关", "lon": 112.930, "lat": 35.910, "kind": "关",
+      "era": -260, "radius_km": 0.4, "src": "史记·白起王翦列传；读史方舆纪要" },
+    { "id": "gaoping_guan", "name": "高平关", "lon": 112.800, "lat": 35.720, "kind": "关",
+      "era": -260, "radius_km": 0.4, "src": "读史方舆纪要；光绪山西通志" },
+    { "id": "guguan", "name": "故关", "lon": 113.020, "lat": 35.900, "kind": "关",
+      "era": -260, "radius_km": 0.4, "src": "读史方舆纪要" },
+    { "id": "jinmen", "name": "金门", "lon": 112.990, "lat": 35.770, "kind": "要地",
+      "era": -260, "radius_km": 0.5, "src": "史记·赵世家（金门山）" },
+    { "id": "duanshi", "name": "端氏", "lon": 112.550, "lat": 35.680, "kind": "邑",
+      "era": -300, "radius_km": 0.5, "src": "汉书·地理志 河东郡 端氏" }
+  ]
+}
