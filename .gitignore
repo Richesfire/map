@@ -8,8 +8,7 @@ __pycache__/
 *.tmp
 *.log
 
-# 瓦片缓存、原始压缩包（体积大，可重新下载）
-_tiles_cache/
+# 原始压缩包（体积大，可重新下载）
 *.zip
 C:/Users/12980/Downloads/acg_cache/
 
@@ -27,8 +26,3 @@ ias/data/
 # 大型高程数据（可用 scripts 重新生成，见 DATA.md）
 ias-core/data/*.bin
 data/*.bin
-
-# 瓦片缓存/原始下载
-_tiles_z6/
-ias-core/data/_tiles_z6/
-ias-core/data/_tiles_cache/

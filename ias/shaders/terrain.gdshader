@@ -5,6 +5,8 @@ render_mode diffuse_burley, specular_schlick_ggx;
 uniform sampler2D noise_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D ground_atlas : source_color, filter_linear, repeat_enable;
 uniform sampler2D ground_normal : hint_normal, filter_linear, repeat_enable;
+// 地貌 → 4 张贴图索引的查表（128x1，索引 = lf + mat*32）
+uniform sampler2D kind_tex : filter_nearest, repeat_disable;
 uniform float normal_strength = 1.55;
 uniform float atlas_n = 4.0;
 uniform float tex_scale = 0.075;     // 1/米：贴图重复尺度（约 13m 一次）
@@ -26,6 +28,12 @@ vec3 tile_at(vec2 uv, int idx) {
 	vec2 cell = vec2(ix, iy) * t;
 	// 收缩半个像素级别，避免采样到图集相邻格（会在每 13m 出现一条亮线）
 	return texture(ground_atlas, cell + (fract(uv) * 0.985 + 0.0075) * t).rgb;
+}
+
+// 查表：(t0,t1,t2,t3) 存成 index*17，读回时还原成 0..15
+vec4 lf_tiles(float pid) {
+	vec4 v = texture(kind_tex, vec2((pid + 0.5) / 128.0, 0.5));
+	return floor(v * 255.0 / 17.0 + 0.5);
 }
 
 void vertex() {
@@ -50,71 +58,21 @@ void fragment() {
 	// 干湿：低频噪声，直接拿来决定草地/枯草/裸土
 	float dryness = texture(noise_tex, wpos.xz * 0.0011).r;
 
-	// 地貌 id 从顶点色 alpha 传进来（0..11），每组地貌从自己的纹理堆取图
-	int packed = int(floor(COLOR.a * 64.0 + 0.5));
-	int lf = packed % 32;
-	int mat = packed / 32;
-	int t0 = 0;
-	int t1 = 2;
-	int t2 = 1;
-	int t3 = 3;
-	if (lf == 1) {          // 丘陵
-		t0 = 0; t1 = 2; t2 = 3; t3 = 3;
-	} else if (lf == 2) {   // 山地
-		t0 = 5; t1 = 6; t2 = 11; t3 = 3;
-	} else if (lf == 3) {   // 高原
-		t0 = 1; t1 = 3; t2 = 0; t3 = 2;
-	} else if (lf == 4) {   // 盆地
-		t0 = 0; t1 = 3; t2 = 1; t3 = 2;
-	} else if (lf == 5) {   // 河谷
-		t0 = 2; t1 = 9; t2 = 0; t3 = 3;
-	} else if (lf == 6) {   // 荒漠
-		t0 = 7; t1 = 3; t2 = 4; t3 = 11;
-	} else if (lf == 7) {   // 草原
-		t0 = 1; t1 = 13; t2 = 0; t3 = 3;
-	} else if (lf == 8) {   // 森林
-		t0 = 14; t1 = 2; t2 = 3; t3 = 10;
-	} else if (lf == 9) {   // 湿地
-		t0 = 9; t1 = 10; t2 = 2; t3 = 3;
-	} else if (lf == 10) {  // 冰雪
-		t0 = 8; t1 = 5; t2 = 6; t3 = 11;
-	} else if (lf == 11) {  // 海岸
-		t0 = 15; t1 = 7; t2 = 4; t3 = 3;
-	} else if (lf == 12) {  // 喀斯特
-		t0 = 5; t1 = 10; t2 = 3; t3 = 11;
-	} else if (lf == 13) {  // 雅丹
-		t0 = 7; t1 = 4; t2 = 3; t3 = 11;
-	} else if (lf == 14) {  // 黄土
-		t0 = 1; t1 = 3; t2 = 0; t3 = 4;
-	} else if (lf == 15) {  // 沙丘
-		t0 = 7; t1 = 7; t2 = 3; t3 = 4;
-	} else if (lf == 16) {  // 冰川谷
-		t0 = 8; t1 = 5; t2 = 6; t3 = 11;
-	} else if (lf == 17) {  // 三角洲
-		t0 = 9; t1 = 10; t2 = 2; t3 = 15;
-	} else if (lf == 18) {  // 花岗岩山地
-		t0 = 5; t1 = 6; t2 = 11; t3 = 3;
-	} else if (lf == 19) {  // 喀斯特山地
-		t0 = 5; t1 = 10; t2 = 6; t3 = 11;
-	} else if (lf == 20) {  // 黄土山地
-		t0 = 1; t1 = 3; t2 = 4; t3 = 0;
-	} else if (lf == 21) {  // 火山山地
-		t0 = 6; t1 = 11; t2 = 5; t3 = 3;
-	} else if (lf == 22) {  // 冰蚀山地
-		t0 = 8; t1 = 5; t2 = 6; t3 = 11;
-	} else if (lf == 23) {  // 红壤丘陵
-		t0 = 13; t1 = 3; t2 = 0; t3 = 10;
-	} else if (lf == 24) {  // 黄土丘陵
-		t0 = 1; t1 = 3; t2 = 4; t3 = 0;
-	} else if (lf == 25) {  // 丹霞丘陵
-		t0 = 12; t1 = 6; t2 = 11; t3 = 3;
-	} else if (lf == 26) {  // 沙质荒漠
-		t0 = 7; t1 = 7; t2 = 3; t3 = 4;
-	} else if (lf == 27) {  // 砾质荒漠
-		t0 = 4; t1 = 7; t2 = 11; t3 = 3;
-	} else if (lf == 28) {  // 盐碱地
-		t0 = 15; t1 = 3; t2 = 9; t3 = 11;
-	}
+	// 地貌 id 从顶点色 alpha 传进来（lf + mat*32），第二个 id 与权重走 UV2：
+	// 相邻两顶点用同一对 id（min/max），插值不会串类别，权重负责把硬边过渡开
+	float pa = floor(COLOR.a * 128.0 + 0.5);
+	float pb = floor(UV2.x * 128.0 + 0.5);
+	float wb = clamp(UV2.y, 0.0, 1.0);
+	vec4 ta = lf_tiles(pa);
+	vec4 tb = lf_tiles(pb);
+	int t0 = int(ta.x);
+	int t1 = int(ta.y);
+	int t2 = int(ta.z);
+	int t3 = int(ta.w);
+	int b0 = int(tb.x);
+	int b1 = int(tb.y);
+	int b2 = int(tb.z);
+	int b3 = int(tb.w);
 
 	// 法线：取主纹理的法线贴图，按世界 XZ 近似扰动
 	vec2 tuv = fract(uv) * 0.985 + 0.0075;
@@ -124,20 +82,19 @@ void fragment() {
 
 	// 两套尺度混合：近尺度 13m、远尺度 78m，压掉重复感
 	vec2 uv_big = uv * 0.17 + vec2(13.7, 5.3);
-	// 材质偏置：砂质地表更偏沙/砾，岩质地表更偏碎石/岩石
-	if (mat == 1) {
-		t0 = 7;
-		t1 = 4;
-	} else if (mat == 2) {
-		t0 = 5;
-		t1 = 6;
-	}
 	// 旋转 + 缩放的第二层，专门用来打散贴图重复感
 	vec2 uv_rot = vec2(uv.x * 0.82 + uv.y * 0.57, -uv.x * 0.57 + uv.y * 0.82) * 1.63 + vec2(41.3, 17.9);
 	vec3 grass = mix(mix(tile_at(uv, t0), tile_at(uv_big, t0), 0.30), tile_at(uv_rot, t0), 0.34);
 	vec3 lush = mix(mix(tile_at(uv, t1), tile_at(uv_big, t1), 0.30), tile_at(uv_rot, t1), 0.34);
 	vec3 dry = mix(mix(tile_at(uv, t2), tile_at(uv_big, t2), 0.30), tile_at(uv_rot, t2), 0.34);
 	vec3 soil = mix(mix(tile_at(uv, t3), tile_at(uv_big, t3), 0.30), tile_at(uv_rot, t3), 0.34);
+	// 第二套贴图只在近尺度取一次：权重最大 0.75，远尺度看不出来
+	if (wb > 0.002) {
+		grass = mix(grass, tile_at(uv, b0), wb);
+		lush = mix(lush, tile_at(uv, b1), wb);
+		dry = mix(dry, tile_at(uv, b2), wb);
+		soil = mix(soil, tile_at(uv, b3), wb);
+	}
 	vec3 gravel = tile_at(uv, 5);
 	vec3 rock = tile_at(uv, 6);
 	vec3 snowt = tile_at(uv, 8);

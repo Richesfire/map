@@ -46,7 +46,7 @@ $results = @()
 foreach ($t in $tests) {
     Write-Host ("== {0} ==" -f $t.Name) -ForegroundColor Cyan
     $argList = @('--path', $proj)
-    if (-not $t.Window) { $argList += @('--headless', '--quit-after', '900') }
+    if (-not $t.Window) { $argList += @('--headless', '--quit-after', '4000') }
     $argList += '--'
     $argList += @('--start', '--fresh')
     $argList += $t.Args

@@ -21,7 +21,14 @@ void vertex() {
 }
 
 void fragment() {
-	if (use_tex) {
+	if (mode == 2) {
+		// 针叶/柱状树冠：用树皮贴图取细节，但压成针叶绿（不再是一块褐色锥）
+		vec2 auv2 = vec2(UV.x * 0.5, UV.y);
+		vec4 c2 = texture(albedo_tex, auv2);
+		float g = dot(c2.rgb, vec3(0.33, 0.5, 0.17));
+		vec3 needle = COLOR.rgb * vec3(0.62, 1.00, 0.60) * (0.75 + 0.55 * g);
+		ALBEDO = mix(needle, COLOR.rgb, 0.15);
+	} else if (use_tex) {
 		vec2 auv = vec2(mode == 0 ? UV.x * 0.5 : 0.5 + UV.x * 0.5, UV.y);
 		vec4 c = texture(albedo_tex, auv);
 		ALBEDO = c.rgb * COLOR.rgb * 1.45;

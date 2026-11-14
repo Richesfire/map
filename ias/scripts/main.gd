@@ -1,7 +1,8 @@
-extends Node3D
+﻿extends Node3D
 ## 主控：主菜单 → 游戏；小地图 + TAB 十字 + 大地图 + 世界时间
 
 const TG := preload("res://scripts/terrain_gen.gd")
+const MapDetail := preload("res://scripts/map_detail.gd")
 
 ## 世界地图逻辑尺寸（屏幕矩形按它算；纹理可以更高清地拉伸上去）
 const LAT_LIMIT := 85.0      # 裁掉极区（等距圆柱在极点会拉伸）
@@ -61,6 +62,8 @@ var _debug_mapcenter := Vector2(INF, INF)
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
 var _debug_air := 0.0
+var _debug_air_y := 0.0
+var _debug_pitch := 0.0
 var _debug_hour := -1.0
 var _debug_demtest := PackedStringArray()
 var city_labels: Array = []
@@ -121,6 +124,24 @@ var pin_drag := false
 var _world_tex: ImageTexture = null
 var _shade_tex: ImageTexture = null
 
+# —— 高倍细节层：zoom 大时按真源现烘“可见屏幕+外扩”，分块流式填进来 ——
+const DETAIL_ZOOM := 40.0     # 到这个倍率才启用（编号图一格约 5.5 px 以上）
+const DETAIL_SCALE := 4       # 屏幕像素 / 细节像素
+const DETAIL_PAD := 0.35      # 四周各多烘 35%，拖动在这个范围内不用重烘
+const DETAIL_KEEP := 4        # 缓存几个窗口（拖回去直接命中）
+const DETAIL_MARGIN := 8.0    # 边缘多烘几像素，避免采样到边界
+var _detail: MapDetail = null       # 正在烘/最近烘好的窗口
+var _detail_cache: Array = []       # 已烘好的窗口（最多 DETAIL_KEEP 个）
+var _detail_req: MapDetail = null   # 当前显示着的窗口
+var _detail_shown := false
+var _detail_off := false
+var _detail_dbg := 0
+var _pan_test := Vector2.ZERO       # --pan=dx,dy：开图 5 秒后平移这么多像素（测流式）
+var _zoom_test := 0.0               # --zoomto=Z：开图 5 秒后切到这个倍率
+var _pan_acc := 0.0
+var _prof_t := 0.0
+var _prof_max := 0.0
+
 
 func _ready() -> void:
 	_parse_args()
@@ -170,6 +191,7 @@ func _ready() -> void:
 		await get_tree().process_frame
 		await get_tree().process_frame
 		await _start_game()
+		print("[启动] 世界就绪 %d ms" % Time.get_ticks_msec())
 		if uargs.has("--bugtest"):
 			_bug_test()
 		elif _debug_shot != "":
@@ -219,14 +241,26 @@ func _parse_args() -> void:
 					_debug_shots.append([bits[0], float(bits[1])])
 		elif a.begins_with("--mapzoom="):
 			_debug_mapzoom = float(a.substr(10))
+		elif a == "--nodetail":
+			_detail_off = true
+		elif a.begins_with("--dbgdetail="):
+			_detail_dbg = int(a.substr(12))
 		elif a.begins_with("--yaw="):
 			_debug_yaw = float(a.substr(6))
 		elif a.begins_with("--air="):
 			_debug_air = float(a.substr(6))
+		elif a.begins_with("--pitch="):
+			_debug_pitch = float(a.substr(8))
 		elif a.begins_with("--hour="):
 			_debug_hour = float(a.substr(7))
 		elif a.begins_with("--demtest="):
 			_debug_demtest = a.substr(10).split(",")
+		elif a.begins_with("--pan="):
+			var pp := a.substr(6).split(",")
+			if pp.size() == 2:
+				_pan_test = Vector2(float(pp[0]), float(pp[1]))
+		elif a.begins_with("--zoomto="):
+			_zoom_test = float(a.substr(9))
 		i += 1
 
 
@@ -530,6 +564,7 @@ func _build_ui() -> void:
 	map_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	map_root.visible = false
 	map_root.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+	map_root.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED   # 布纹用平铺贴图画
 	ui_layer.add_child(map_root)
 	map_root.draw.connect(_draw_map)
 	for c in TG.cities():
@@ -597,8 +632,8 @@ func _start_game() -> void:
 	_boot_text("正在布置植被……")
 	_boot_set(0.88)
 	await get_tree().process_frame
-	terrain._build_vegetation()
-	_boot_set(0.96)
+	await terrain._build_vegetation(_on_build_progress)
+	_boot_set(0.98)
 	await get_tree().process_frame
 
 	player = load("res://scripts/player.gd").new()
@@ -609,8 +644,11 @@ func _start_game() -> void:
 	if _debug_yaw != INF:
 		player.yaw = _debug_yaw
 	if _debug_air > 0.0:
-		player.global_position.y += _debug_air
-		player.set_physics_process(false)   # 调试悬停：不落地
+		_debug_air_y = player.global_position.y + _debug_air   # 调试悬停目标高度
+		# 不能关 physics_process：相机跟随在 _update_cam 里，关了就成了固定机位
+		if _debug_pitch > 0.0:
+			player.pitch = -deg_to_rad(_debug_pitch)   # 俯视看地形结构（度）
+			player.soul_pitch = -deg_to_rad(_debug_pitch)
 	if _debug_hour >= 0.0:
 		clock_min = _debug_hour * 60.0
 	if _debug_mapzoom > 0.0:
@@ -864,7 +902,7 @@ func _travel_ll(ll: Vector2) -> void:
 	_boot_text("正在布置植被……")
 	_boot_set(0.9)
 	await get_tree().process_frame
-	terrain._build_vegetation()
+	await terrain._build_vegetation(_on_build_progress)
 	player.soul = false
 	player.global_position = Vector3(0, terrain.height_xyz(0, 0) + 3.0, 0)
 	_update_hud()
@@ -957,6 +995,33 @@ func _draw_scroll_rollers(sr: Rect2) -> void:
 			map_root.draw_rect(Rect2(x - 3, yy, rod_w + 6, 11), Color(0.58, 0.46, 0.26), false, 1.4)
 
 
+## 布纹平铺纹理（1 格 = 8px，只画一条线）。以前用 while 循环每 7px 画一条线，
+## 高倍时卷轴宽 17 万像素 → 两万五千条线 → 开图首帧 48 ms。
+static var _brocade_v: ImageTexture
+static var _brocade_h: ImageTexture
+
+
+func _brocade_tex(vertical: bool) -> ImageTexture:
+	if vertical and _brocade_v != null:
+		return _brocade_v
+	if not vertical and _brocade_h != null:
+		return _brocade_h
+	var img := Image.create(8, 8, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var c := Color(0.54, 0.43, 0.27, 0.42) if vertical else Color(0.70, 0.58, 0.40, 0.22)
+	for i in 8:
+		if vertical:
+			img.set_pixel(0, i, c)
+		else:
+			img.set_pixel(i, 0, c)
+	var t := ImageTexture.create_from_image(img)
+	if vertical:
+		_brocade_v = t
+	else:
+		_brocade_h = t
+	return t
+
+
 ## 布帛：左右宽、上下窄，四块拼接，不加内框
 func _draw_brocade(sr: Rect2, pad_x: float, pad_y: float) -> void:
 	var cloth := Color(0.60, 0.49, 0.32)
@@ -965,16 +1030,16 @@ func _draw_brocade(sr: Rect2, pad_x: float, pad_y: float) -> void:
 	map_root.draw_rect(Rect2(sr.position + Vector2(0, pad_y), Vector2(pad_x, sr.size.y - pad_y * 2.0)), cloth)
 	map_root.draw_rect(Rect2(sr.position + Vector2(sr.size.x - pad_x, pad_y), Vector2(pad_x, sr.size.y - pad_y * 2.0)), cloth)
 
-	var x := sr.position.x
-	while x < sr.position.x + sr.size.x:
-		map_root.draw_line(Vector2(x, sr.position.y), Vector2(x, sr.position.y + pad_y), Color(0.54, 0.43, 0.27, 0.42), 1.0)
-		map_root.draw_line(Vector2(x, sr.position.y + sr.size.y - pad_y), Vector2(x, sr.position.y + sr.size.y), Color(0.54, 0.43, 0.27, 0.42), 1.0)
-		x += 7.0
-	var y := sr.position.y
-	while y < sr.position.y + sr.size.y:
-		map_root.draw_line(Vector2(sr.position.x, y), Vector2(sr.position.x + pad_x, y), Color(0.70, 0.58, 0.40, 0.22), 1.0)
-		map_root.draw_line(Vector2(sr.position.x + sr.size.x - pad_x, y), Vector2(sr.position.x + sr.size.x, y), Color(0.70, 0.58, 0.40, 0.22), 1.0)
-		y += 7.0
+	# 上下两条布纹（竖线）+ 左右两条布纹（横线）
+	map_root.draw_texture_rect(_brocade_tex(true),
+			Rect2(sr.position, Vector2(sr.size.x, pad_y)), true)
+	map_root.draw_texture_rect(_brocade_tex(true),
+			Rect2(sr.position + Vector2(0, sr.size.y - pad_y), Vector2(sr.size.x, pad_y)), true)
+	map_root.draw_texture_rect(_brocade_tex(false),
+			Rect2(sr.position + Vector2(0, pad_y), Vector2(pad_x, sr.size.y - pad_y * 2.0)), true)
+	map_root.draw_texture_rect(_brocade_tex(false),
+			Rect2(sr.position + Vector2(sr.size.x - pad_x, pad_y),
+					Vector2(pad_x, sr.size.y - pad_y * 2.0)), true)
 
 	map_root.draw_rect(sr, Color(0.22, 0.16, 0.10, 0.9), false, 2.0)
 
@@ -1652,6 +1717,257 @@ func _zoom_at(target_zoom: float) -> void:
 	map_root.queue_redraw()
 
 
+## 细节层覆盖范围：可见屏幕四角换算成经纬度（四周多烘 DETAIL_PAD）
+func _detail_view() -> Vector4:
+	var vs := get_viewport().get_visible_rect().size
+	var sc := _map_scale()
+	var hw := vs.x * (0.5 + DETAIL_PAD)
+	var hh := vs.y * (0.5 + DETAIL_PAD)
+	return Vector4(
+			map_center.x + (-DETAIL_MARGIN - hw) / sc.x,
+			map_center.y + (DETAIL_MARGIN + hh) / sc.y,
+			map_center.x + (DETAIL_MARGIN + hw) / sc.x,
+			map_center.y - (DETAIL_MARGIN + hh) / sc.y)
+
+
+## 屏幕实际可见范围（不含外扩），用来判断“够不够覆盖”
+func _detail_core() -> Vector4:
+	var vs := get_viewport().get_visible_rect().size
+	var sc := _map_scale()
+	return Vector4(
+			map_center.x + (-DETAIL_MARGIN - vs.x * 0.5) / sc.x,
+			map_center.y + (DETAIL_MARGIN + vs.y * 0.5) / sc.y,
+			map_center.x + (DETAIL_MARGIN + vs.x * 0.5) / sc.x,
+			map_center.y - (DETAIL_MARGIN + vs.y * 0.5) / sc.y)
+
+
+## 高倍细节层（流式 + 由屏幕中心向外揭开）：
+## - 一次烘「可见屏幕 + 35% 外扩」，切 96×96 texel 的块，**永远从当前屏幕中心往外**；
+## - 揭开半径 R 以 450 px/s 从屏幕中心向外扫，环带 40 px 软过渡 → 细节是“扩散”出来的，不是一块块跳；
+## - R 被“已烘半径”夹住，没烘到的地方面积不会被提前揭开；
+## - 视野仍在窗口内（小幅拖动）→ 不重烘，只把剩余块按**新**中心重排；
+## - 视野出窗或缩放变了 → 旧图**渐隐退回粗图**（0.18 s），然后新窗口从新中心揭开（不做新旧混合）。
+const REVEAL_PX_S := 450.0
+const REVEAL_BAND := 90.0
+const REVEAL_TRAIL := 150.0
+const DETAIL_FADE_S := 0.18
+const DETAIL_FADE_IN_S := 0.12
+
+var _reveal_r := 0.0
+var _st_dbg := 0.0
+var _fade_out := 1.0
+var _fade_in := 1.0
+var _detail_fading := false
+
+
+func _detail_tick(delta: float) -> void:
+	if _map_mat == null or _detail_off:
+		return
+	if OS.get_cmdline_user_args().has("--dbgstate"):
+		_st_dbg += delta
+		if _st_dbg > 0.5:
+			_st_dbg = 0.0
+			print("[状态] fade=%s fading=%s req=%s bake=%s tiles=%d/%d R=%.0f zoom=%.1f"
+					% [_fade_out, _detail_fading, str(_detail_req != null),
+					str(_detail != null),
+					-1 if _detail == null else _detail.tiles_done,
+					-1 if _detail == null else _detail.tiles_total, _reveal_r, map_zoom])
+	# 淡出中
+	if _detail_fading:
+		_fade_out = maxf(_fade_out - delta / DETAIL_FADE_S, 0.0)
+		# 淡出期间就把新窗口开起来烘，淡完立刻能揭（不浪费这 0.18 s）
+		if _detail == null:
+			_spawn_window()
+		if _detail != null:
+			_detail.poll()
+		if _fade_out <= 0.0:
+			_detail_fading = false
+			_unbind_detail()
+		_advance_reveal(delta)
+		_push_detail_uniforms()
+		return
+
+	if not map_open or map_zoom < DETAIL_ZOOM:
+		if _detail_shown:
+			_start_fade()
+		return
+
+	var core := _detail_core()
+	# A) 已绑窗口仍覆盖当前视野且缩放没变 → 只推进揭开
+	if _detail_req != null and _scale_ok(_detail_req) and _detail_req.geom_covers(core):
+		_detail_req.poll()
+		_detail_req.retarget(map_center.x, map_center.y)
+		_advance_reveal(delta)
+		_push_detail_uniforms()
+		return
+	# B) 正在烘的窗口覆盖当前视野（还没绑上去）
+	if _detail != null and _detail != _detail_req and _scale_ok(_detail) \
+			and _detail.geom_covers(core):
+		_detail.poll()
+		_detail.retarget(map_center.x, map_center.y)
+		if _detail.first_ready and _detail_req == null:
+			_bind_detail(_detail)
+		_advance_reveal(delta)
+		_push_detail_uniforms()
+		return
+	# C) 当前窗口不能用了：渐隐退回粗图；同时把正在烘的窗口作废
+	if _detail_req != null:
+		_start_fade()
+		return
+	# D) 缓存里有同缩放、能盖住视野的窗口 → 直接命中（仍从中心揭开）
+	var hit := _detail_cached(core)
+	if hit != null:
+		_bind_detail(hit)
+		_push_detail_uniforms()
+		return
+	# E) 起新窗口（同一时刻只允许一个在烘）
+	_spawn_window()
+	_push_detail_uniforms()
+
+
+func _spawn_window() -> void:
+	if _detail != null:
+		return
+	var vr := _detail_view()
+	var vs := get_viewport().get_visible_rect().size
+	# 上一块（已经烘好的、或刚显示过的）同缩放窗口：重叠区直接搬，省掉重算
+	var adopt: MapDetail = null
+	if _detail_req != null and _detail_req.done():
+		adopt = _detail_req
+	for d in _detail_cache:
+		if adopt != null:
+			break
+		adopt = d as MapDetail
+	var w := MapDetail.new()
+	w.setup(vr.x, vr.y, vr.z, vr.w,
+			int(ceil(vs.x * (1.0 + DETAIL_PAD * 2.0) / float(DETAIL_SCALE))),
+			int(ceil(vs.y * (1.0 + DETAIL_PAD * 2.0) / float(DETAIL_SCALE))), adopt)
+	_detail = w
+
+
+func _scale_ok(w: MapDetail) -> bool:
+	var cur := float(DETAIL_SCALE) / maxf(_map_scale().x, 0.0001)
+	return absf(w.lon_per_texel() / cur - 1.0) < 0.02
+
+
+func _advance_reveal(delta: float) -> void:
+	_fade_in = minf(1.0, _fade_in + delta / DETAIL_FADE_IN_S)
+	var lim := 1e9
+	var w: MapDetail = _detail_req if _detail_req != null else _detail
+	if w != null and not w.done():
+		# 揭开半径永远落后烘焙前沿一段（约 1.5 块），保证不会露出还没烘的地方
+		lim = w.baked_radius() * float(DETAIL_SCALE) - REVEAL_TRAIL
+	_reveal_r = minf(_reveal_r + delta * REVEAL_PX_S, maxf(lim, 0.0))
+
+
+func _push_detail_uniforms() -> void:
+	_map_mat.set_shader_parameter("detail_reveal", _reveal_r)
+	_map_mat.set_shader_parameter("detail_band", REVEAL_BAND)
+	_map_mat.set_shader_parameter("detail_fade", _fade_in * _fade_out)
+
+
+func _start_fade() -> void:
+	if _detail_fading:
+		return
+	_detail_fading = true
+	# 正在烘的窗口腾出来：淡出这 0.18 s 里就能把新窗口开起来烘
+	if _detail != null:
+		if _detail == _detail_req:
+			_detail = null        # 旧的还要显示（淡出用），只是腾出烘焙槽位
+		else:
+			if _detail.done():
+				_push_cache(_detail)
+			else:
+				_detail.cancel()
+			_detail = null
+
+
+func _bind_detail(d: MapDetail) -> void:
+	_detail_req = d
+	_detail_shown = true
+	_fade_out = 1.0
+	_fade_in = 0.0
+	_reveal_r = 0.0
+	_map_mat.set_shader_parameter("detail_tex", d.tex)
+	_map_mat.set_shader_parameter("detail_org", Vector2(d.ox, d.oy))
+	_map_mat.set_shader_parameter("detail_span", Vector2(d.sx, d.sy))
+	_map_mat.set_shader_parameter("detail_on", 1.0)
+	_push_detail_uniforms()
+	if OS.get_cmdline_user_args().has("--maptime") or OS.get_cmdline_user_args().has("--mapsize"):
+		print("[细节] 绑定 %dx%d（%d/%d 块）%d ms @%d" % [d.px_w, d.px_h,
+				d.tiles_done, d.tiles_total, Time.get_ticks_msec() - d.started, Time.get_ticks_msec()])
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--dumpdetail="):
+			d.tex.get_image().save_png(a.substr(13))
+			print("[细节] 已存 %s" % a.substr(13))
+
+
+func _unbind_detail() -> void:
+	_map_mat.set_shader_parameter("detail_on", 0.0)
+	_detail_shown = false
+	if _detail_req != null:
+		if _detail_req.done():
+			_push_cache(_detail_req)
+		else:
+			_detail_req.cancel()      # 半截的窗口没用，别再占线程
+		if _detail == _detail_req:
+			_detail = null
+		_detail_req = null
+	_reveal_r = 0.0
+	_fade_out = 1.0
+	_fade_in = 0.0
+	_push_detail_uniforms()
+
+
+## 缓存里找一块“同缩放 + 能盖住视野 + 已烘部分够用”的窗口
+func _detail_cached(core: Vector4) -> MapDetail:
+	for d in _detail_cache:
+		var m: MapDetail = d
+		if not _scale_ok(m):
+			continue
+		if not m.geom_covers(core):
+			continue
+		if not m.area_done(m.texel_rect(core)):
+			continue
+		return m
+	return null
+
+
+func _push_cache(d: MapDetail) -> void:
+	if d == null:
+		return
+	for i in _detail_cache.size():
+		if _detail_cache[i] == d:
+			return
+	_detail_cache.push_front(d)
+	while _detail_cache.size() > DETAIL_KEEP:
+		_detail_cache.pop_back()
+
+
+## 调试：--pan=dx,dy / --zoomto=Z 开图 5 秒后动一次（测流式重烘 / 缩放降级）
+func _pan_probe(delta: float) -> void:
+	if not map_open:
+		return
+	if _pan_test == Vector2.ZERO and _zoom_test <= 0.0:
+		return
+	_pan_acc += delta
+	if _pan_acc < 5.0:
+		return
+	if _zoom_test > 0.0:
+		map_zoom = clampf(_zoom_test, _zoom_min(), 120.0)
+		_clamp_map_center()
+		print("[缩放] 切到 %.2f" % map_zoom)
+		_zoom_test = 0.0
+	if _pan_test != Vector2.ZERO:
+		var sc := _map_scale()
+		map_center.x += _pan_test.x / sc.x
+		map_center.y -= _pan_test.y / sc.y
+		_clamp_map_center()
+		print("[平移] 拖了 %.0f,%.0f 像素" % [_pan_test.x, _pan_test.y])
+		_pan_test = Vector2.ZERO
+	map_root.queue_redraw()
+
+
 ## 临时基准：连续重绘地图，测每帧耗时
 ## 打开城市目的地面板
 func _open_city_panel(c: Dictionary) -> void:
@@ -1778,7 +2094,9 @@ func _draw_map() -> void:
 	var pad_y: float = (sheet_h - content_h) * 0.5
 	# 整张卷轴按世界坐标摆放：平移时布帛/轴杆/地图一起走
 	var ppd2: float = content_w / 360.0
-	var ppy2: float = content_h / 180.0
+	# 内容区画的是 ±LAT_LIMIT（170°），不是 180°：按 180 算会让整幅地形相对水系/城池
+	# 上移（1 倍时几像素，120 倍时一千多像素）
+	var ppy2: float = content_h / (LAT_LIMIT * 2.0)
 	# 可见纬度范围是 ±LAT_LIMIT，所以内容区上边界对应 LAT_LIMIT
 	var content_rect := Rect2(
 			Vector2(vs.x * 0.5 - (map_center.x + 180.0) * ppd2,
@@ -1826,6 +2144,11 @@ func _draw_map() -> void:
 		# 符号间距：屏幕上约 12 像素
 		_map_mat.set_shader_parameter("pat_period",
 				clampf(12.0 * 111.0 / maxf(ppd, 0.01), 0.12, 60.0))
+		_map_mat.set_shader_parameter("zoom", map_zoom)
+		_map_mat.set_shader_parameter("dbg2", float(_detail_dbg))
+		# 高倍换成一地形一色：分组色在 300 km 视野里会把整块黄土并成一片
+		_map_mat.set_shader_parameter("pal_fine",
+				clampf((map_zoom - 16.0) / 14.0, 0.0, 1.0))
 	else:
 		if _world_tex != null:
 			map_root.draw_texture_rect(_world_tex, rect, false)
@@ -1916,7 +2239,10 @@ func _map_scale() -> Vector2:
 	var vs := get_viewport().get_visible_rect().size
 	var base := _sheet_base(vs)
 	var content_w: float = base.x * 0.76 * map_zoom
-	return Vector2(content_w / 360.0, content_w / 360.0)
+	var content_h: float = content_w * 0.5
+	# 内容区高度画的是 ±LAT_LIMIT（170°）而不是 180°，经纬每度像素数必须按 170 算，
+	# 否则水系/城池/旅行标会越往南越偏（以前一直差 6%，高倍才看得出来）
+	return Vector2(content_w / 360.0, content_h / (LAT_LIMIT * 2.0))
 
 
 ## 唯一的投影来源：返回 [经度像素, 纬度像素, 中心经度, 中心纬度]
@@ -2058,24 +2384,25 @@ func _setup_map_shader() -> void:
 		# —— 低地（河谷 / 盆地）——
 		4: Color(0.58, 0.58, 0.40),
 		5: Color(0.58, 0.58, 0.40),
-		# —— 丘陵（含红壤 / 黄土 / 丹霞）——
+		# —— 丘陵（含红壤 / 丹霞）——
 		1: Color(0.62, 0.58, 0.34),
 		23: Color(0.62, 0.58, 0.34),
-		24: Color(0.62, 0.58, 0.34),
+		24: Color(0.66, 0.60, 0.38),
 		25: Color(0.62, 0.58, 0.34),
-		# —— 山地（含花岗岩 / 喀斯特 / 黄土 / 火山 / 冰蚀）——
+		# —— 山地（含花岗岩 / 喀斯特 / 火山 / 冰蚀）——
 		2: Color(0.46, 0.44, 0.41),
 		18: Color(0.46, 0.44, 0.41),
 		19: Color(0.46, 0.44, 0.41),
-		20: Color(0.46, 0.44, 0.41),
 		21: Color(0.46, 0.44, 0.41),
 		22: Color(0.46, 0.44, 0.41),
+		# —— 黄土山地：比纯山地暖一点，和黄土低地同族但能看出起伏 ——
+		20: Color(0.60, 0.55, 0.42),
 		# —— 高原 ——
 		3: Color(0.64, 0.56, 0.38),
 		# —— 风成地貌（荒漠 / 沙丘 / 砾质 / 沙质 / 盐碱 / 雅丹 / 黄土）——
 		6: Color(0.82, 0.74, 0.52),
 		13: Color(0.82, 0.74, 0.52),
-		14: Color(0.82, 0.74, 0.52),
+		14: Color(0.80, 0.73, 0.50),
 		15: Color(0.82, 0.74, 0.52),
 		26: Color(0.82, 0.74, 0.52),
 		27: Color(0.82, 0.74, 0.52),
@@ -2095,14 +2422,39 @@ func _setup_map_shader() -> void:
 		pal[i * 3 + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
 	var pal_img := Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)
 	_map_mat.set_shader_parameter("palette_tex", ImageTexture.create_from_image(pal_img))
+	# 29 类本色：高倍时用（分组色在这个尺度上会把不同地貌并成一整片）
+	var pal2 := PackedByteArray()
+	pal2.resize(32 * 3)
+	for i in 32:
+		var c2: Color = TG.landform_color(i)
+		pal2[i * 3] = int(clampf(c2.r, 0.0, 1.0) * 255.0)
+		pal2[i * 3 + 1] = int(clampf(c2.g, 0.0, 1.0) * 255.0)
+		pal2[i * 3 + 2] = int(clampf(c2.b, 0.0, 1.0) * 255.0)
+	_map_mat.set_shader_parameter("palette_fine_tex",
+			ImageTexture.create_from_image(
+					Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal2)))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	_map_mat.set_shader_parameter("lat_limit", LAT_LIMIT)
+	# 细节层占位（1×1），就绪前 detail_on=0 走编号图
+	var blank := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	blank.fill(Color(0, 0, 0, 1))
+	_map_mat.set_shader_parameter("detail_tex", ImageTexture.create_from_image(blank))
+	_map_mat.set_shader_parameter("detail_on", 0.0)
+	_map_mat.set_shader_parameter("detail_org", Vector2.ZERO)
+	_map_mat.set_shader_parameter("detail_span", Vector2.ONE)
+	_map_mat.set_shader_parameter("detail_reveal", 0.0)
+	_map_mat.set_shader_parameter("detail_band", REVEAL_BAND)
+	_map_mat.set_shader_parameter("detail_fade", 1.0)
 	map_surface.material = _map_mat
 	_map_shader_ok = true
 	print("[地图] 着色器直绘就绪（%d MB 高程纹理）" % int(bytes.size() / 1048576))
 
 
 func _build_world_tex() -> void:
+	# 着色器直绘就绪时这张烘焙纹理根本用不到：别再白烘 1.2 秒
+	if _map_shader_ok:
+		print("[地图] 着色器直绘，跳过烘焙纹理")
+		return
 	var t0 := Time.get_ticks_msec()
 	var imgs: Array = TG.bake_map(MAP_BOOT_W, MAP_BOOT_H)
 	if imgs.is_empty():
@@ -2113,9 +2465,6 @@ func _build_world_tex() -> void:
 	_world_tex = ImageTexture.create_from_image(imgs[0])
 	_shade_tex = ImageTexture.create_from_image(imgs[1])
 	print("[地图] 快速版 %dx%d，用时 %d ms" % [MAP_BOOT_W, MAP_BOOT_H, Time.get_ticks_msec() - t0])
-	if _map_shader_ok:
-		print("[地图] 着色器直绘，跳过烘焙纹理")
-		return
 	# 高清版放后台线程烘，烘完替换；测试模式下不烘，保证回归计时稳定
 	var args := OS.get_cmdline_user_args()
 	if args.has("--bugtest") or args.has("--selftest") or args.has("--combattest") or args.has("--citytest"):
@@ -2237,7 +2586,7 @@ func _do_recenter(px: float, pz: float) -> void:
 	_boot_text("正在布置植被……")
 	_boot_set(0.9)
 	await get_tree().process_frame
-	terrain._build_vegetation()
+	await terrain._build_vegetation(_on_build_progress)
 	# 世界坐标整体平移：其它实体要跟玩家一起挪，否则会悬在半空/埋进地下
 	player.global_position = Vector3(0.0, terrain.height_xyz(0, 0) + 3.0, 0.0)
 	player.velocity = Vector3.ZERO
@@ -2294,10 +2643,26 @@ func _clock_text() -> String:
 
 
 func _process(delta: float) -> void:
+	if OS.get_cmdline_user_args().has("--prof"):
+		_prof_t += delta
+		_prof_max = maxf(_prof_max, delta)
+		if _prof_t >= 0.25:
+			print("[prof] %d ms 最长帧 %.1f ms（%.0f fps）" % [Time.get_ticks_msec(),
+					_prof_max * 1000.0, 1.0 / maxf(_prof_max, 0.001)])
+			_prof_t = 0.0
+			_prof_max = 0.0
 	if boot_bar != null:
 		_boot_spin += delta * 3.4
 		boot_bar.queue_redraw()
 	_poll_map_thread()
+	_detail_tick(delta)
+	_pan_probe(delta)
+	if _debug_air > 0.0 and player != null:
+		player.velocity = Vector3.ZERO
+		player.global_position = Vector3(player.global_position.x, _debug_air_y, player.global_position.z)
+	if _debug_pitch > 0.0 and player != null:
+		player.pitch = -deg_to_rad(_debug_pitch)
+		player.soul_pitch = -deg_to_rad(_debug_pitch)
 	if state != St.GAME:
 		return
 	if compass != null and player != null:
@@ -2324,6 +2689,10 @@ func _process(delta: float) -> void:
 
 
 func _update_hud() -> void:
+	if OS.get_cmdline_user_args().has("--fps"):
+		print("[帧率] %.1f fps  绘制调用 %d  三角形 %d" % [Engine.get_frames_per_second(),
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+				Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)])
 	if clock_label == null or terrain == null:
 		return
 	clock_label.text = _clock_text()
@@ -2833,6 +3202,13 @@ func _bug_test() -> void:
 	await get_tree().process_frame
 	var gh0: float = terrain.height_xyz(0.0, 0.0)
 	var dy0: float = absf(player.global_position.y - gh0)
+	# 旅行落地是“地面 +3 m 掉下来”，等它落到地面再量（最多 1 秒）
+	for i in 60:
+		if dy0 < 2.0:
+			break
+		await get_tree().process_frame
+		gh0 = terrain.height_xyz(0.0, 0.0)
+		dy0 = absf(player.global_position.y - gh0)
 	var b1d: bool = dy0 < 2.0 and absf(terrain.center_lon - l0) < 0.001
 	ok = ok and b1d
 	print("[回归] 旅行落点：高差 %.2f m，中心 %.3f → %s" % [dy0, terrain.center_lon, "OK" if b1d else "FAIL"])
@@ -3013,3 +3389,7 @@ func _probe() -> void:
 func _exit_tree() -> void:
 	if _map_thread != null and _map_thread.is_alive():
 		_map_thread.wait_to_finish()
+	if _detail != null:
+		_detail.wait()
+	if _detail_req != null:
+		_detail_req.wait()
