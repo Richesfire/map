@@ -57,9 +57,10 @@ var city_panel: Control
 var city_tip: Control
 var _panel_city: Dictionary = {}
 var _panel_village: Dictionary = {}
-var _panel_site: Dictionary = {}
+var _panel_place: Dictionary = {}
 var _debug_citypanel := ""
 var _debug_sitepanel := ""
+var _debug_countypanel := ""
 var _debug_mapcenter := Vector2(INF, INF)
 var _debug_mapzoom := 0.0
 var _debug_yaw := INF
@@ -245,6 +246,8 @@ func _parse_args() -> void:
 			_debug_citypanel = a.substr(12)
 		elif a.begins_with("--sitepanel="):
 			_debug_sitepanel = a.substr(12)
+		elif a.begins_with("--countypanel="):
+			_debug_countypanel = a.substr(14)
 		elif a.begins_with("--preview="):
 			var pp := a.substr(10).split(",")
 			if pp.size() == 5:
@@ -709,6 +712,11 @@ func _start_game() -> void:
 		if si >= 0 and si < ss.size():
 			_open_site_panel({"ll": Vector2(float(ss[si]["lon"]), float(ss[si]["lat"])),
 					"site": ss[si]})
+	if _debug_countypanel != "":
+		var ci := int(_debug_countypanel)
+		var cl := TG.counties()
+		if ci >= 0 and ci < cl.size():
+			_open_county_panel({"ll": cl[ci]["ll"], "county": cl[ci]})
 	if OS.get_cmdline_user_args().has("--selftest"):
 		_selftest()
 	if sv.has("soul"):
@@ -865,6 +873,10 @@ func _map_input(e: InputEvent) -> void:
 				if not vh.is_empty():
 					_open_village_panel(vh)
 					return
+				var ch := _county_hit(mb.position)
+				if not ch.is_empty():
+					_open_county_panel(ch)
+					return
 				_close_city_panel()
 			dragging = mb.pressed
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -899,6 +911,10 @@ func _map_input(e: InputEvent) -> void:
 					var vs_hit := _village_hit(mm.position)
 					if not vs_hit.is_empty():
 						hv = {"kind": "settle", "ll": vs_hit["ll"]}
+					else:
+						var cn_hit := _county_hit(mm.position)
+						if not cn_hit.is_empty():
+							hv = {"kind": "county", "ll": cn_hit["ll"]}
 			var same: bool = hv.is_empty() == _hover.is_empty()
 			if same and not hv.is_empty():
 				same = (hv["ll"] as Vector2).is_equal_approx(_hover["ll"])
@@ -1223,6 +1239,65 @@ func _site_hit(pos: Vector2) -> Dictionary:
 		if p.distance_to(pos) < 12.0:
 			return {"ll": ll, "site": s}
 	return {}
+
+
+## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
+## 只画图标不写文字；和聚落的实心方块/关城的朱砂方块分开，悬停才高亮。
+func _draw_counties(cr: Rect2) -> void:
+	var list := TG.counties()
+	if list.is_empty():
+		return
+	var fade := clampf((map_zoom - 20.0) / 10.0, 0.0, 1.0)
+	if fade <= 0.01:
+		return
+	var sc := _map_scale()
+	var half_lon: float = (cr.size.x * 0.5) / maxf(sc.x, 0.0001) + 1.0
+	var half_lat: float = (cr.size.y * 0.5) / maxf(sc.y, 0.0001) + 1.0
+	var cx := map_center.x
+	var cy := map_center.y
+	var r := clampf(1.0 + map_zoom * 0.012, 1.0, 2.4)
+	var ink := Color(0.36, 0.24, 0.14, 0.80 * fade)
+	var hov_ll: Vector2 = Vector2(INF, INF)
+	if not _hover.is_empty() and String(_hover.get("kind", "")) == "county":
+		hov_ll = _hover["ll"]
+	for it in list:
+		var ll: Vector2 = it["ll"]
+		# 视口外的点先按经纬度框掉（1134 个全画也不卡，但这层是每帧都跑的）
+		if absf(ll.x - cx) > half_lon or absf(ll.y - cy) > half_lat:
+			continue
+		var p := _lonlat_to_screen_off(ll, 0.0)
+		if not cr.has_point(p):
+			continue
+		if ll.is_equal_approx(hov_ll):
+			# 悬停：金盘 + 加粗的褐色空框（不改颜色，免得被当成关城那种朱砂点位）
+			map_root.draw_circle(p, r + 4.5, Color(0.96, 0.82, 0.42, 0.85 * fade))
+			map_root.draw_rect(Rect2(p - Vector2(r + 1.5, r + 1.5), Vector2(r + 1.5, r + 1.5) * 2.0),
+					Color(0.30, 0.19, 0.10, 0.95 * fade), false, 2.0)
+		else:
+			map_root.draw_rect(Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), ink, false, 1.0)
+
+
+## 点选汉书县（命中半径小一点，避免和聚落抢）
+## 1134 个点逐个算屏幕坐标太浪费：先把点击位置换成经纬度，只测附近 12 px 以内的几个。
+func _county_hit(pos: Vector2) -> Dictionary:
+	if map_zoom < 12.0:
+		return {}
+	var ll0 := _screen_to_lonlat(pos)
+	var sc := _map_scale()
+	var rl := 12.0 / maxf(sc.x, 0.0001)
+	var rb := 12.0 / maxf(sc.y, 0.0001)
+	var best: Dictionary = {}
+	var bd := 9.0
+	for it in TG.counties():
+		var ll: Vector2 = it["ll"]
+		if absf(ll.x - ll0.x) > rl or absf(ll.y - ll0.y) > rb:
+			continue
+		var p := _lonlat_to_screen_off(ll, 0.0)
+		var d := p.distance_to(pos)
+		if d < bd:
+			bd = d
+			best = {"ll": ll, "county": it}
+	return best
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
@@ -2167,24 +2242,20 @@ func _close_city_panel() -> void:
 	city_panel.visible = false
 	_panel_city = {}
 	_panel_village = {}
-	_panel_site = {}
+	_panel_place = {}
 	if city_panel != null:
 		(city_panel.get_node("Opt1") as Button).visible = true
 		(city_panel.get_node("Sub") as Label).text = ""
 
 
-## 打开关城/邑/要地面板（史料点名的点位，只提供“前往”）
-func _open_site_panel(hit: Dictionary) -> void:
-	var s: Dictionary = hit["site"]
+## 通用「点位面板」：关城/邑/要地、汉书县共用（标题 + 副标题 + 前往）
+func _open_place_panel(title_txt: String, sub_txt: String, ll: Vector2) -> void:
 	_panel_city = {}
 	_panel_village = {}
-	_panel_site = s
+	_panel_place = {"name": title_txt, "ll": ll}
 	var title: Label = city_panel.get_node("Title")
-	title.text = String(s.get("name", ""))
-	var era := int(s.get("era", 0))
-	var era_txt := ("前%d年" % -era) if era < 0 else ("%d 年" % era)
-	var sub: Label = city_panel.get_node("Sub")
-	sub.text = "%s · %s" % [String(s.get("kind", "要地")), era_txt]
+	title.text = title_txt
+	(city_panel.get_node("Sub") as Label).text = sub_txt
 	(city_panel.get_node("Opt0") as Button).text = "前往"
 	(city_panel.get_node("Opt1") as Button).visible = false
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
@@ -2193,14 +2264,33 @@ func _open_site_panel(hit: Dictionary) -> void:
 	map_root.queue_redraw()
 
 
+## 打开关城/邑/要地面板
+func _open_site_panel(hit: Dictionary) -> void:
+	var s: Dictionary = hit["site"]
+	var era := int(s.get("era", 0))
+	var era_txt := ("前%d年" % -era) if era < 0 else ("%d 年" % era)
+	_open_place_panel(String(s.get("name", "")),
+			"%s · %s" % [String(s.get("kind", "要地")), era_txt], hit["ll"])
+
+
+## 打开汉书县面板（副标题给类别 + 今地）
+func _open_county_panel(hit: Dictionary) -> void:
+	var c: Dictionary = hit["county"]
+	var sub := "汉%s" % String(c.get("t", "县"))
+	var loc := String(c.get("loc", ""))
+	if loc != "":
+		sub += " · " + loc
+	_open_place_panel(String(c.get("n", "")), sub, hit["ll"])
+
+
 ## 街道 = 城中心；府衙 = 城北偏内
 func _city_go(what: String) -> void:
-	if not _panel_site.is_empty():
-		var sll := Vector2(float(_panel_site["lon"]), float(_panel_site["lat"]))
-		var sn := String(_panel_site["name"])
+	if not _panel_place.is_empty():
+		var pll: Vector2 = _panel_place["ll"]
+		var pn := String(_panel_place["name"])
 		_close_city_panel()
-		toast("前往 %s" % sn)
-		_travel_ll(sll)
+		toast("前往 %s" % pn)
+		_travel_ll(pll)
 		return
 	if not _panel_village.is_empty():
 		var vll: Vector2 = _panel_village["ll"]
@@ -2375,6 +2465,7 @@ func _draw_map() -> void:
 	var _t1 := Time.get_ticks_usec()
 	var _t2 := Time.get_ticks_usec()
 	var _t3 := Time.get_ticks_usec()
+	_draw_counties(content_rect)
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)
 	if map_hydro != null:
@@ -3199,6 +3290,24 @@ func _site_stats() -> void:
 		print("  %-6s %-3s (%.3f,%.3f) 高程 %5.0f m  %-6s  %s"
 				% [String(s.get("name", "")), String(s.get("kind", "")), ll.x, ll.y, h,
 					TG.LF_NAMES[lf], "落水!" if _on_water(ll.x, ll.y) else "陆地"])
+	print("======== 汉书县（元始二年）========")
+	var cty := TG.counties()
+	var wet := 0
+	var lo := 999.0
+	var hi := -999.0
+	for c in cty:
+		var cll: Vector2 = c["ll"]
+		lo = minf(lo, cll.x)
+		hi = maxf(hi, cll.x)
+		if _on_water(cll.x, cll.y):
+			wet += 1
+	print("  共 %d 处，经度 %.1f..%.1f，落水 %d 处" % [cty.size(), lo, hi, wet])
+	for nm in ["长安县", "洛阳县", "雒阳县", "邯郸县", "成都县", "宛县", "临淄县", "番禺县"]:
+		for c in cty:
+			if String(c["n"]) == nm:
+				var l2: Vector2 = c["ll"]
+				print("  %-4s %.3f,%.3f  %s" % [nm, l2.x, l2.y, String(c["loc"])])
+				break
 	_ensure_settlements()
 	print("======== 聚落海陆校验 ========")
 	print("  保留 %d / 剔除 %d（原始 %d）"

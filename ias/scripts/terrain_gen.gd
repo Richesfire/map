@@ -1,4 +1,4 @@
-﻿extends RefCounted
+extends RefCounted
 ## 世界地形的唯一真源（single source of truth）。
 ##
 ## 策划案 3.2 的三层结构在这里落地：
@@ -407,6 +407,30 @@ static func sites() -> Array:
 			if j is Dictionary and j.has("sites"):
 				_sites = j["sites"]
 	return _sites
+
+
+## 汉书·地理志（元始二年，公元 2 年）县治点位。
+## 数据源 CHGIS V6 Time Series County Points（CC0），由 ias/tools/import_chgis_counties.py 生成。
+## 返回 [{ll: Vector2, n: 名称, t: 类型, loc: 今地}]
+static var _counties: Array = []
+static var _counties_loaded := false
+
+static func counties() -> Array:
+	if not _counties_loaded:
+		_counties_loaded = true
+		var f := FileAccess.open("res://data/counties_han.json", FileAccess.READ)
+		if f != null:
+			var j = JSON.parse_string(f.get_as_text())
+			if j is Dictionary and j.has("counties"):
+				for c in j["counties"]:
+					_counties.append({
+						"ll": Vector2(float(c["lon"]), float(c["lat"])),
+						"n": String(c["n"]),
+						"t": String(c.get("t", "县")),
+						"loc": String(c.get("loc", "")),
+					})
+				print("[地图] 汉书县 %d 处（元始二年）" % _counties.size())
+	return _counties
 
 
 static func cities() -> Array:
