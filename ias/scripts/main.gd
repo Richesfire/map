@@ -1890,14 +1890,9 @@ func _draw_cross() -> void:
 ## 拖动限制：只有一条 —— 屏幕中心必须落在地图内容区里。
 ## 换成人话：地图内容区的四条边界，最多只能拉到屏幕正中，再往里就停住。
 ## 不设"回到中心"、不设倍率阈值，0.7 倍和 120 倍用的是同一条规则。
-## 例外：可见跨度大于一整圈（300°）时地图已经塞不满屏幕，必须居中，
-## 否则 1 倍时整幅世界会偏在一边、右边露出一大块布帛。
+## 注意：**低倍不强制居中**（用户 2026-11-15 明确：1 倍居中不合适地图），
+## 所以 1 倍时整幅世界会偏在一边，这是刻意的，别再"修"。
 func _clamp_map_center() -> void:
-	var vs := get_viewport().get_visible_rect().size
-	var sc := _map_scale()
-	if vs.x / maxf(sc.x, 0.0001) >= 300.0:
-		map_center = Vector2.ZERO
-		return
 	map_center.x = clampf(map_center.x, -180.0, 180.0)
 	map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
 
@@ -2273,14 +2268,10 @@ func _open_site_panel(hit: Dictionary) -> void:
 			"%s · %s" % [String(s.get("kind", "要地")), era_txt], hit["ll"])
 
 
-## 打开汉书县面板（副标题给类别 + 今地）
+## 打开汉书县面板（只要县名 + 前往；"汉县·今地"那行用户不要，去掉）
 func _open_county_panel(hit: Dictionary) -> void:
 	var c: Dictionary = hit["county"]
-	var sub := "汉%s" % String(c.get("t", "县"))
-	var loc := String(c.get("loc", ""))
-	if loc != "":
-		sub += " · " + loc
-	_open_place_panel(String(c.get("n", "")), sub, hit["ll"])
+	_open_place_panel(String(c.get("n", "")), "", hit["ll"])
 
 
 ## 街道 = 城中心；府衙 = 城北偏内
@@ -2366,8 +2357,8 @@ func _draw_map() -> void:
 	if not _map_shader_ok:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
-	# 先夹取再排版：夹取可能把中心挪到 0（低倍强制居中），
-	# 排版用的 content_rect 必须用挪过之后的值，否则这一帧会画偏
+	# 先夹取再排版：夹取只夹 ±180/±85（低倍不强制居中），
+	# 放在排版前是为了拖动到边界时不用等下一帧才摆正
 	_clamp_map_center()
 	# 卷轴版式：内容居中，布帛左右宽、上下窄
 	# 整张卷轴按 map_zoom 一起缩放，内容恒为 2:1
