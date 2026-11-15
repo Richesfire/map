@@ -379,16 +379,18 @@ func _build_ui() -> void:
 	_compass_tex.fill_to = Vector2(1, 0)
 	compass.visible = false
 
-	# 目的地面板（点城市后弹出）
+	# 目的地面板（点城市/聚落/关城/汉县后弹出）：贴在地图内容区的左上角，
+	# 不是屏幕左上角（时间/坐标 HUD 在地图外，不会打架）。
+	# 位置每帧由 _place_map_panel() 按 content_rect 重算，所以拖动/缩放时它跟着地图走。
 	city_panel = Control.new()
-	city_panel.anchor_left = 0.5
-	city_panel.anchor_top = 0.5
-	city_panel.anchor_right = 0.5
-	city_panel.anchor_bottom = 0.5
-	city_panel.offset_left = -150.0
-	city_panel.offset_top = -86.0
-	city_panel.offset_right = 150.0
-	city_panel.offset_bottom = 86.0
+	city_panel.anchor_left = 0.0
+	city_panel.anchor_top = 0.0
+	city_panel.anchor_right = 0.0
+	city_panel.anchor_bottom = 0.0
+	city_panel.offset_left = 0.0
+	city_panel.offset_top = 0.0
+	city_panel.offset_right = 300.0
+	city_panel.offset_bottom = 172.0
 	city_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	city_panel.visible = false
 	ui_layer.add_child(city_panel)
@@ -1190,13 +1192,13 @@ func _draw_sites(cr: Rect2) -> void:
 			_site_marker(p, String(s.get("kind", "要地")), sz, fade)
 
 
-## 关 / 城 / 邑 / 要地的舆图符号（画在屏幕坐标 p 上，s 为半径像素）
+## 关 / 城（都） / 邑 / 津 / 要地（仓、战场）的舆图符号，画在屏幕坐标 p 上，s 为半径像素。
 ## 朱砂底 + 米色描边：底图上的村庄是褐色小方块/圆环，只靠颜色深浅分不开。
 func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
 	var ink := Color(0.44, 0.15, 0.11, 0.95 * a)
 	var cream := Color(0.93, 0.89, 0.76, 0.80 * a)
 	match kind:
-		"城":
+		"城", "都":
 			var r2 := Rect2(p - Vector2(s, s), Vector2(s, s) * 2.0)
 			map_root.draw_rect(Rect2(r2.position - Vector2(1.2, 1.2), r2.size + Vector2(2.4, 2.4)),
 					cream, false, 2.4)
@@ -1218,8 +1220,16 @@ func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
 			map_root.draw_arc(p, s, 0.0, TAU, 16, cream, 3.6)
 			map_root.draw_arc(p, s, 0.0, TAU, 16, ink, 1.6)
 			map_root.draw_circle(p, maxf(s * 0.30, 0.8), ink)
+		"津":
+			# 津渡：三道水纹（中间一道短一点）
+			var wy := s * 0.62
+			for k in 3:
+				var yy := (float(k) - 1.0) * wy
+				var ww: float = s * (0.95 if k != 1 else 0.62)
+				map_root.draw_line(p + Vector2(-ww, yy), p + Vector2(ww, yy), cream, 3.2)
+				map_root.draw_line(p + Vector2(-ww, yy), p + Vector2(ww, yy), ink, 1.6)
 		_:
-			# 要地：实心三角（先用放大的米色三角描边）
+			# 要地 / 仓 / 战场：实心三角（先用放大的米色三角描边）
 			var big := PackedVector2Array([
 				p + Vector2(0.0, -s * 1.1), p + Vector2(s, s * 0.85), p + Vector2(-s, s * 0.85)])
 			var under := PackedVector2Array([
@@ -1298,6 +1308,18 @@ func _county_hit(pos: Vector2) -> Dictionary:
 			bd = d
 			best = {"ll": ll, "county": it}
 	return best
+
+
+## 面板贴在地图内容区左上角（用户要求：窗口只出现在地图里）。
+## 内容区被拖出屏幕时退到屏幕左上角留 8 px，免得点完看不到面板。
+func _place_map_panel(cr: Rect2, vs: Vector2) -> void:
+	if city_panel == null or not city_panel.visible:
+		return
+	var sz := city_panel.size
+	var p := cr.position + Vector2(14, 14)
+	p.x = clampf(p.x, 8.0, maxf(8.0, vs.x - sz.x - 8.0))
+	p.y = clampf(p.y, 8.0, maxf(8.0, vs.y - sz.y - 8.0))
+	city_panel.position = p
 
 
 ## 当前视野内的村庄（确定性生成 + 缓存）
@@ -2459,6 +2481,7 @@ func _draw_map() -> void:
 	_draw_counties(content_rect)
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)
+	_place_map_panel(content_rect, vs)
 	if map_hydro != null:
 		map_hydro.queue_redraw()
 	var _t4 := Time.get_ticks_usec()
