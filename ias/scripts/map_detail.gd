@@ -76,6 +76,10 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 	var k: float = minf(1.0, float(MAX_PX) / float(maxi(pw, ph)))
 	px_w = maxi(MIN_PX, int(float(pw) * k))
 	px_h = maxi(MIN_PX, int(float(ph) * k))
+	if k < 0.999 and OS.get_cmdline_user_args().has("--dbgstate"):
+		# 静默降分辨率是大方块的直接原因，必须留痕
+		print("[细节] 画布超 MAX_PX 降分辨率：请求 %dx%d → %dx%d（texel 放大 %.1f 倍）"
+				% [pw, ph, px_w, px_h, 1.0 / maxf(k, 0.001)])
 
 	# 同缩放的旧窗口：把原点吸附到它的 texel 网格上，重叠区就能整块搬过来，
 	# 吸附量不到 1 个 texel（4 屏幕像素），看不出来
@@ -272,6 +276,61 @@ func lon_per_texel() -> float:
 	return _dlon
 
 
+## 从任意经纬度（一般传屏幕中心）量"已烘进度"：0 = 还没烘，1 = 铺满给定椭圆。
+## 椭圆半轴 hw/hh 用 texel 表示（= 窗口/2 + 120px，换算成 texel）。
+## 沿 64 个方向往外走，碰到未烘瓦片就停，把停点换算成椭圆坐标 t 取最小值 ——
+## 于是前沿永远落在已烘区域内部，且能一路推到四角（圆做不到这点）。
+func inset_norm_at(lon: float, lat: float, hw: float, hh: float) -> float:
+	var px: float = (lon - lon0) / maxf(_dlon, 1e-9)
+	var py: float = (lat0 - lat) / maxf(_dlat, 1e-9)
+	var dirs := 64
+	var step := float(TILE)
+	var best := 1e9
+	for k in dirs:
+		var a := TAU * float(k) / float(dirs)
+		var ca := cos(a)
+		var sa := sin(a)
+		var r := step
+		while r < 4000.0:
+			var tx := int((px + ca * r) / float(TILE))
+			var ty := int((py + sa * r) / float(TILE))
+			if tx < 0 or ty < 0 or tx >= _nx or ty >= _ny:
+				break
+			if tile_state[ty * _nx + tx] == 0:
+				break
+			r += step
+		var t: float = r - step
+		var qx: float = (ca * t) / maxf(hw, 1.0)
+		var qy: float = (sa * t) / maxf(hh, 1.0)
+		best = minf(best, sqrt(qx * qx + qy * qy))
+		if best <= 0.0:
+			break
+	return clampf(best, 0.0, 1.2)
+func inset_texel_at(lon: float, lat: float) -> float:
+	var px: float = (lon - lon0) / maxf(_dlon, 1e-9)
+	var py: float = (lat0 - lat) / maxf(_dlat, 1e-9)
+	var dirs := 64
+	var step := float(TILE)
+	var best := 1e9
+	for k in dirs:
+		var a := TAU * float(k) / float(dirs)
+		var ca := cos(a)
+		var sa := sin(a)
+		var r := step
+		while r < 4000.0:
+			var tx := int((px + ca * r) / float(TILE))
+			var ty := int((py + sa * r) / float(TILE))
+			if tx < 0 or ty < 0 or tx >= _nx or ty >= _ny:
+				break
+			if tile_state[ty * _nx + tx] == 0:
+				break
+			r += step
+		best = minf(best, r - step)
+		if best <= 0.0:
+			break
+	return maxf(best, 0.0)
+
+
 func done() -> bool:
 	return _all_done
 
@@ -436,9 +495,19 @@ func _commit_full() -> void:
 	var im := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, _out)
 	img.blit_rect(im, Rect2i(0, 0, w, h), Vector2i(_tx0, _ty0))
 	tex.update(img)
-	tile_state.fill(1)
-	_covered.fill(1)
-	tiles_done = tiles_total
+	# 只标记「这一块」覆盖的 tile —— 以前这里 fill(1) 把整张画布标成已烘，
+	# 导致第一块烘完前沿就满了（遮罩失效、tiles_done 从第一块起就是满值）。
+	var tx0 := _tx0 / TILE
+	var ty0 := _ty0 / TILE
+	var tx1 := int(ceil(float(_tx0 + w) / float(TILE)))
+	var ty1 := int(ceil(float(_ty0 + h) / float(TILE)))
+	for ty in range(ty0, mini(ty1, _ny)):
+		for tx in range(tx0, mini(tx1, _nx)):
+			var idx := ty * _nx + tx
+			if tile_state[idx] == 0:
+				tile_state[idx] = 1
+				tiles_done += 1
+			_covered[idx] = 1
 	first_ready = true
 
 
