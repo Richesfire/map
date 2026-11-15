@@ -2036,6 +2036,8 @@ func _detail_tick(delta: float) -> void:
 		_fade = 0.0
 		_bind_canvas(_canvas)
 	elif want_ds != _canvas_ds:
+		# 先定档位再取画布：_canvas_for 用 _canvas_ds 算 texel 数
+		_canvas_ds = want_ds
 		# 否则继续显示旧的（最多被拉伸），避免"切过去一片空"的回退
 		var cand := _canvas_for(zk)
 		if cand.first_ready:
@@ -2107,9 +2109,19 @@ func _expand_rect(r: Vector4, k: float) -> Vector4:
 
 func _canvas_for(zk: int) -> MapDetail:
 	if _canvases.has(zk):
+		var cached: MapDetail = _canvases[zk]
+		# 缓存命中必须同时满足：盖住当前视野 + texel 与当前档位一致。
+		# 否则中国那块画布会被当成欧洲的用，_grow_canvas 再做并集 → texel 暴涨。
+		var want_d: float = float(_canvas_ds) / maxf(_map_scale().x, 0.0001)
+		var texel_ok: bool = absf(cached.lon_per_texel() / want_d - 1.0) < 0.02
+		if texel_ok and cached.geom_covers(_detail_core()):
+			_canvas_order.erase(zk)
+			_canvas_order.push_front(zk)
+			return cached
+		_canvases.erase(zk)
 		_canvas_order.erase(zk)
-		_canvas_order.push_front(zk)
-		return _canvases[zk]
+		if OS.get_cmdline_user_args().has("--dbgstate"):
+			print("[细节] 缓存 zk=%d 不覆盖/texel 不符，丢弃重建" % zk)
 	var vr := _detail_view()
 	var sc := _map_scale()
 	# texel 数按"区域大小"算（不是按屏幕），保证每个 texel 恒为 DETAIL_SCALE 屏幕像素
@@ -2130,6 +2142,28 @@ func _canvas_for(zk: int) -> MapDetail:
 
 ## 把画布长大到能盖住 core：新画布照抄旧画布已烘好的块（blit，不重烘），R 不变
 func _grow_canvas(core: Vector4) -> void:
+	# 并集跨度超过 1.5 屏就说明跳区了：不做并集，按当前视野重建（texel 不变）。
+	# 并集会得到「中国∪欧洲」那种 110° 宽画布，被 MAX_PX 压完 texel 放大 20 倍。
+	var scg := _map_scale()
+	var vsg := get_viewport().get_visible_rect().size
+	var ok_lon: float = (vsg.x * 1.5) / maxf(scg.x, 0.0001)
+	var ok_lat: float = (vsg.y * 1.5) / maxf(scg.y, 0.0001)
+	var u0x := minf(_canvas.lon0, core.x)
+	var u1x := maxf(_canvas.lon1, core.z)
+	var v0x := maxf(_canvas.lat0, core.y)
+	var v1x := minf(_canvas.lat1, core.w)
+	if (u1x - u0x) > ok_lon or (v0x - v1x) > ok_lat:
+		var fresh := MapDetail.new()
+		fresh.setup(core.x, core.y, core.z, core.w,
+				int(ceil((core.z - core.x) * scg.x / float(_canvas_ds))),
+				int(ceil((core.y - core.w) * scg.y / float(_canvas_ds))))
+		_canvases[_cur_zk] = fresh
+		_canvas = fresh
+		_fade = 0.0
+		_bind_canvas(fresh)
+		if OS.get_cmdline_user_args().has("--dbgstate"):
+			print("[细节] 跨区：按当前视野重建画布（不并集）")
+		return
 	var u0 := minf(_canvas.lon0, core.x)
 	var u1 := maxf(_canvas.lon1, core.z)
 	var v0 := maxf(_canvas.lat0, core.y)      # 北

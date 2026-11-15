@@ -8,7 +8,7 @@ extends RefCounted
 const TG := preload("res://scripts/terrain_gen.gd")
 
 const MIN_PX := 32
-const MAX_PX := 1024      # 画布会长大（最多 2 屏面积），上限要够
+const MAX_PX := 4096      # 只做安全阀：正常窗口（含 4K）都不该触发；触发=texel 会变粗
 const TILE := 16          # 逻辑块边长（texel）：中心 1×1、中间 3×3、外围 6×6 一起烘
 const APRON := 8          # 阴影差分需要的四周余量（texel）
 
