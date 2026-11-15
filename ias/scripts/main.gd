@@ -871,10 +871,6 @@ func _map_input(e: InputEvent) -> void:
 				if not sh.is_empty():
 					_open_site_panel(sh)
 					return
-				var vh := _village_hit(mb.position)
-				if not vh.is_empty():
-					_open_village_panel(vh)
-					return
 				var ch := _county_hit(mb.position)
 				if not ch.is_empty():
 					_open_county_panel(ch)
@@ -910,13 +906,9 @@ func _map_input(e: InputEvent) -> void:
 				if not sh.is_empty():
 					hv = {"kind": "site", "ll": sh["ll"]}
 				else:
-					var vs_hit := _village_hit(mm.position)
-					if not vs_hit.is_empty():
-						hv = {"kind": "settle", "ll": vs_hit["ll"]}
-					else:
-						var cn_hit := _county_hit(mm.position)
-						if not cn_hit.is_empty():
-							hv = {"kind": "county", "ll": cn_hit["ll"]}
+					var cn_hit := _county_hit(mm.position)
+					if not cn_hit.is_empty():
+						hv = {"kind": "county", "ll": cn_hit["ll"]}
 			var same: bool = hv.is_empty() == _hover.is_empty()
 			if same and not hv.is_empty():
 				same = (hv["ll"] as Vector2).is_equal_approx(_hover["ll"])
@@ -1137,32 +1129,6 @@ func _draw_settlements(sr: Rect2) -> void:
 		map_root.draw_line(Vector2(p.x - half.x + 1.5, p.y), Vector2(p.x + half.x - 1.5, p.y), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 
-	# 村庄：放大后才出现
-	var vfade := clampf((map_zoom - 15.0) / 3.0, 0.0, 1.0)
-	if vfade <= 0.02:
-		return
-	var vlist := _villages_for_view(sr)
-	for v in vlist:
-		var p2 := _lonlat_to_screen_off(v["ll"], 0.0)
-		if not sr.has_point(p2):
-			continue
-		var lvl := int(v["lvl"])
-		var s2: float = [0.0, 5.0, 4.4, 4.0, 3.0][clampi(lvl, 1, 4)]
-		s2 *= clampf(0.8 + map_zoom * 0.02, 0.8, 1.4)
-		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "settle" \
-				and (_hover["ll"] as Vector2).is_equal_approx(v["ll"] as Vector2)
-		if hov:
-			map_root.draw_circle(p2, s2 + 3.5, Color(0.96, 0.82, 0.42, 0.95 * vfade))
-		var ink := Color(0.30, 0.20, 0.11, 0.92 * vfade)
-		var gold := Color(0.78, 0.64, 0.38, 0.85 * vfade)
-		if lvl <= 2:
-			map_root.draw_arc(p2, s2, 0.0, TAU, 16, ink, 1.6)
-			map_root.draw_circle(p2, maxf(s2 * 0.36, 1.2), ink)
-		elif lvl == 3:
-			var half := Vector2(s2 * 0.60, s2 * 0.60)
-			map_root.draw_rect(Rect2(p2 - half, half * 2.0), ink)
-		else:
-			map_root.draw_circle(p2, maxf(s2 * 0.5, 1.0), ink)
 
 
 ## 秦汉关城 / 邑 / 要地（data/sites_han.json，史书点名的第三层点位）
