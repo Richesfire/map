@@ -1108,19 +1108,13 @@ func _draw_settlements(sr: Rect2) -> void:
 		if not _hover.is_empty() and String(_hover.get("kind", "")) == "city" \
 				and (_hover["ll"] as Vector2).is_equal_approx(Vector2(float(ct["lon"]), float(ct["lat"]))):
 			map_root.draw_arc(p, sz * 0.85, 0.0, TAU, 24, Color(0.98, 0.84, 0.44, 0.95), 2.0)
-		# 城门（够大才画）
+		# 城门（够大才画；不写"南/东/北/西"，地图上不落文字）
 		if sz >= 40.0:
-			var gate_chars := ["南", "东", "北", "西"]
-			var k2 := 0
 			for g in _city_gates(ct):
 				var gp := _lonlat_to_screen_off(g["ll"], 0.0)
 				var gpix: float = clampf(sz * 0.09, 2.0, 5.0)
 				map_root.draw_rect(Rect2(gp - Vector2(gpix, gpix) * 0.5, Vector2(gpix, gpix) * 1.6),
 						Color(0.52, 0.34, 0.18))
-				if sz >= 90.0:
-					map_root.draw_string(ThemeDB.fallback_font, gp + Vector2(-6, -gpix - 4),
-							gate_chars[k2], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.42, 0.28, 0.14))
-				k2 += 1
 		# 十字街
 		map_root.draw_line(Vector2(p.x - half.x + 1.5, p.y), Vector2(p.x + half.x - 1.5, p.y), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
 		map_root.draw_line(Vector2(p.x, p.y - half.y + 1.5), Vector2(p.x, p.y + half.y - 1.5), Color(0.42, 0.21, 0.12, 0.85), maxf(sz * 0.06, 1.0))
@@ -1154,8 +1148,8 @@ func _draw_settlements(sr: Rect2) -> void:
 
 
 ## 秦汉关城 / 邑 / 要地（data/sites_han.json，史书点名的第三层点位）
-## 和 GeoNames 的现代城镇分两层画：这一层是朱砂色 + 米色描边的舆图符号，
-## 在满是褐色村庄方块的底图上能一眼认出来。低倍只留符号，放大才写地名。
+## 地图上**不落文字**，只画朱砂色 + 米色描边的舆图符号（底图村庄是褐色小方块/圆环，
+## 不带描边的话分不出来）；名字和年代走点击面板，悬停只用高亮表示"这个是可点的"。
 func _draw_sites(cr: Rect2) -> void:
 	var list := TG.sites()
 	if list.is_empty():
@@ -1163,11 +1157,7 @@ func _draw_sites(cr: Rect2) -> void:
 	var fade := clampf((map_zoom - 2.0) / 4.0, 0.0, 1.0)
 	if fade <= 0.01:
 		return
-	var font := ThemeDB.fallback_font
-	var fs := 11 if map_zoom < 60.0 else 12
 	var sz := clampf(3.0 + map_zoom * 0.05, 3.0, 7.5)
-	# 先算一遍屏幕位置：写地名时要避开**别的**符号，不然字会压在关门的图例上
-	var vis: Array = []
 	for s in list:
 		var ll := Vector2(float(s["lon"]), float(s["lat"]))
 		var p := _lonlat_to_screen_off(ll, 0.0)
@@ -1175,76 +1165,13 @@ func _draw_sites(cr: Rect2) -> void:
 			continue
 		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "site" \
 				and (_hover["ll"] as Vector2).is_equal_approx(ll)
-		vis.append({"s": s, "ll": ll, "p": p, "hov": hov, "kind": String(s.get("kind", "要地"))})
-	var blocks: Array = []
-	for it in vis:
-		var p2: Vector2 = it["p"]
-		blocks.append(Rect2(p2 - Vector2(sz + 2.5, sz + 2.5), Vector2(sz + 2.5, sz + 2.5) * 2.0))
-	for it in vis:
-		var p3: Vector2 = it["p"]
-		if bool(it["hov"]):
-			map_root.draw_circle(p3, sz + 6.0, Color(0.96, 0.82, 0.42, 0.85 * fade))
-		_site_marker(p3, String(it["kind"]), sz, fade)
-	# 写地名：城/关才写；邑和要地只留符号（悬停时才出名字）
-	# 悬停的那一个先排（它有优先挑位置的权利），其余按数据顺序
-	var order: Array = []
-	for i0 in vis.size():
-		order.append(i0)
-	for i1 in vis.size():
-		if bool(vis[i1]["hov"]):
-			order.erase(i1)
-			order.push_front(i1)
-			break
-	for i in order:
-		var it2: Dictionary = vis[i]
-		var kind2 := String(it2["kind"])
-		var hov2: bool = it2["hov"]
-		if not (hov2 or (map_zoom >= 12.0 and (kind2 == "城" or kind2 == "关"))):
-			continue
-		var p4: Vector2 = it2["p"]
-		var txt := String((it2["s"] as Dictionary).get("name", ""))
-		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var bw := tw + 3.0
-		var dx := sz + 6.0
-		# 长平那一片关城挤在不到 0.5° 里：绕着符号试一圈位置，实在放不下就不写
-		var cands := [
-			Vector2(dx, 4.0), Vector2(dx, -13.0), Vector2(-dx - bw, 4.0), Vector2(-dx - bw, -13.0),
-			Vector2(dx, 21.0), Vector2(dx, -30.0), Vector2(-dx - bw, 21.0), Vector2(-dx - bw, -30.0),
-			Vector2(dx + 26.0, 4.0), Vector2(-dx - bw - 26.0, 4.0),
-			Vector2(dx + 26.0, -21.0), Vector2(-dx - bw - 26.0, -21.0),
-		]
-		var pos := p4 + Vector2(dx, 4.0)
-		var ok := false
-		for c in cands:
-			var q: Vector2 = p4 + (c as Vector2)
-			if q.x < cr.position.x + 2.0 or q.x + bw > cr.end.x - 2.0:
-				continue
-			var r := Rect2(q + Vector2(-1.0, -11.0), Vector2(bw, 15.0))
-			var clash := false
-			for k in blocks.size():
-				if k == i:
-					continue
-				if (blocks[k] as Rect2).intersects(r):
-					clash = true
-					break
-			if clash:
-				continue
-			pos = q
-			ok = true
-			break
-		if not ok and not hov2:
-			continue
-		var lr := Rect2(pos + Vector2(-1.0, -11.0), Vector2(bw, 15.0))
-		blocks.append(lr)
-		# 离符号远了就拉一条细引线，免得看不出这个地名是哪一处
-		var ap := Vector2(clampf(p4.x, lr.position.x, lr.end.x), clampf(p4.y, lr.position.y, lr.end.y))
-		if p4.distance_to(ap) > sz + 9.0:
-			map_root.draw_line(p4, ap, Color(0.44, 0.15, 0.11, 0.45 * fade), 1.0)
-		var halo := Color(0.94, 0.90, 0.79, 0.70 * fade)
-		for o in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
-			map_root.draw_string(font, pos + o, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, halo)
-		map_root.draw_string(font, pos, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs,
-				Color(0.44, 0.15, 0.11, 0.95 * fade))
+		if hov:
+			# 悬停：金盘 + 一圈亮边，符号本身也放大一点（盘别太大，免得盖住旁边那一丛点位）
+			map_root.draw_circle(p, sz + 4.5, Color(0.96, 0.82, 0.42, 0.85 * fade))
+			map_root.draw_arc(p, sz + 6.5, 0.0, TAU, 20, Color(0.99, 0.90, 0.55, 0.90 * fade), 1.4)
+			_site_marker(p, String(s.get("kind", "要地")), sz * 1.2, fade)
+		else:
+			_site_marker(p, String(s.get("kind", "要地")), sz, fade)
 
 
 ## 关 / 城 / 邑 / 要地的舆图符号（画在屏幕坐标 p 上，s 为半径像素）
