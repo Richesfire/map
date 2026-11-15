@@ -2146,20 +2146,26 @@ func _grow_canvas(core: Vector4) -> void:
 	# 并集会得到「中国∪欧洲」那种 110° 宽画布，被 MAX_PX 压完 texel 放大 20 倍。
 	var scg := _map_scale()
 	var vsg := get_viewport().get_visible_rect().size
-	var ok_lon: float = (vsg.x * 1.5) / maxf(scg.x, 0.0001)
-	var ok_lat: float = (vsg.y * 1.5) / maxf(scg.y, 0.0001)
-	var u0x := minf(_canvas.lon0, core.x)
-	var u1x := maxf(_canvas.lon1, core.z)
-	var v0x := maxf(_canvas.lat0, core.y)
-	var v1x := minf(_canvas.lat1, core.w)
+	var ok_lon: float = (vsg.x * 2.2) / maxf(scg.x, 0.0001)
+	var ok_lat: float = (vsg.y * 2.2) / maxf(scg.y, 0.0001)
+	# 判定用「当前视野」而不是带速度预测的 core：拖动时 core 会往前冲半屏，
+	# 一冲就超过阈值 → 每帧重建 → 你看到的“一直重新烘焙”。
+	var vw0: Vector4 = _detail_view()
+	var u0x := minf(_canvas.lon0, vw0.x)
+	var u1x := maxf(_canvas.lon1, vw0.z)
+	var v0x := maxf(_canvas.lat0, vw0.y)
+	var v1x := minf(_canvas.lat1, vw0.w)
 	if (u1x - u0x) > ok_lon or (v0x - v1x) > ok_lat:
+		# 关键：仍然把旧画布传进去当 adopt —— 重叠部分直接 blit 复用，不重烘。
+		# 范围按「当前视野 + 120px」算（不用带预测的 core，避免拖动时每帧换窗口）。
+		var vw: Vector4 = _detail_view()
 		var fresh := MapDetail.new()
-		fresh.setup(core.x, core.y, core.z, core.w,
-				int(ceil((core.z - core.x) * scg.x / float(_canvas_ds))),
-				int(ceil((core.y - core.w) * scg.y / float(_canvas_ds))))
+		fresh.setup(vw.x, vw.y, vw.z, vw.w,
+				int(ceil((vw.z - vw.x) * scg.x / float(_canvas_ds))),
+				int(ceil((vw.y - vw.w) * scg.y / float(_canvas_ds))), _canvas)
 		_canvases[_cur_zk] = fresh
 		_canvas = fresh
-		_fade = 0.0
+		# 不要重置 _fade：重叠区是继承过来的，淡出到粗版会闪一下
 		_bind_canvas(fresh)
 		if OS.get_cmdline_user_args().has("--dbgstate"):
 			print("[细节] 跨区：按当前视野重建画布（不并集）")
