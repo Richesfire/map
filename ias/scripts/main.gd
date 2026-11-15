@@ -1815,19 +1815,20 @@ func _draw_cross() -> void:
 ## 拖动限制：只有一条 —— 屏幕中心必须落在地图内容区里。
 ## 换成人话：地图内容区的四条边界，最多只能拉到屏幕正中，再往里就停住。
 ## 不设"回到中心"、不设倍率阈值，0.7 倍和 120 倍用的是同一条规则。
+## 例外：可见跨度大于一整圈（300°）时地图已经塞不满屏幕，必须居中，
+## 否则 1 倍时整幅世界会偏在一边、右边露出一大块布帛。
 func _clamp_map_center() -> void:
+	var vs := get_viewport().get_visible_rect().size
+	var sc := _map_scale()
+	if vs.x / maxf(sc.x, 0.0001) >= 300.0:
+		map_center = Vector2.ZERO
+		return
 	map_center.x = clampf(map_center.x, -180.0, 180.0)
 	map_center.y = clampf(map_center.y, -LAT_LIMIT, LAT_LIMIT)
 
 
 func _zoom_min() -> float:
 	return 0.7
-
-
-func _zoom_text() -> String:
-	if map_zoom >= 100.0:
-		return str(int(round(map_zoom)))
-	return "%.1f" % map_zoom
 
 
 ## 以鼠标位置为轴心缩放
@@ -2275,6 +2276,9 @@ func _draw_map() -> void:
 	if not _map_shader_ok:
 		map_root.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.42, 0.38, 0.28))
 
+	# 先夹取再排版：夹取可能把中心挪到 0（低倍强制居中），
+	# 排版用的 content_rect 必须用挪过之后的值，否则这一帧会画偏
+	_clamp_map_center()
 	# 卷轴版式：内容居中，布帛左右宽、上下窄
 	# 整张卷轴按 map_zoom 一起缩放，内容恒为 2:1
 	var base := _sheet_base(vs)
@@ -2297,7 +2301,6 @@ func _draw_map() -> void:
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
 	_content_h = content_h
-	_clamp_map_center()
 	if OS.get_cmdline_user_args().has("--mapsize"):
 		print("[尺寸] vs=%.0fx%.0f content=%.0fx%.0f at (%.0f,%.0f) sheet=%.0fx%.0f zoom=%.2f"
 				% [vs.x, vs.y, content_w, content_h, content_rect.position.x, content_rect.position.y,
@@ -2360,9 +2363,7 @@ func _draw_map() -> void:
 			map_root.draw_line(Vector2(62, gy), Vector2(vs.x - 62, gy),
 					Color(0.34, 0.27, 0.17, 0.18), 1.0)
 
-	# 标题与缩放读数
-	map_root.draw_string(ThemeDB.fallback_font, Vector2(vs.x - 132, vs.y - 36), "×%s" % _zoom_text(),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.72, 0.64, 0.48))
+	# 地图上不写任何文字（缩放读数也去掉了）：要读倍率用 --mapsize 或看 debug
 
 	var _t0 := Time.get_ticks_usec()
 	# 地图上下各压一条 2px 的墨线：遮住贴图边缘那一行（极地行会显示成白色）
