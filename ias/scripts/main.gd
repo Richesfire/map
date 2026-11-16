@@ -1205,6 +1205,27 @@ func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
 
 
 
+## 域外城邦（约前 209 年前后的地中海/西亚/南亚/东亚）：小空心圈 + 圆心点，褐色。
+## 只做地图层，不写文字，点开面板只有「城名 + 域外·地区 + 前往」。
+func _draw_world_cities(cr: Rect2) -> void:
+	if map_zoom < 1.0:
+		return
+	var list := TG.world_cities()
+	if list.is_empty():
+		return
+	var r := clampf(2.2 + map_zoom * 0.02, 2.6, 4.5)
+	var ink := Color(0.30, 0.17, 0.08, 0.92)
+	for w in list:
+		var p := _lonlat_to_screen_off(w["ll"], 0.0)
+		if not cr.has_point(p):
+			continue
+		map_root.draw_arc(p, r, 0.0, TAU, 12, ink, 1.2)
+		map_root.draw_circle(p, maxf(r * 0.28, 0.8), ink)
+		if not _hover.is_empty() and String(_hover.get("kind", "")) == "world" \
+				and (_hover["ll"] as Vector2).is_equal_approx(w["ll"]):
+			map_root.draw_arc(p, r + 3.0, 0.0, TAU, 16, Color(0.98, 0.84, 0.44, 0.95), 2.0)
+
+
 ## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
 ## 只画图标不写文字；和聚落的实心方块/关城的朱砂方块分开，悬停才高亮。
 func _draw_counties(cr: Rect2) -> void:
@@ -1496,6 +1517,12 @@ func _poi_cands(pos: Vector2) -> Array:
 			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 			if d < 12.0:
 				out.append({"kind": "site", "ll": ll, "data": s, "d": d, "pri": 1})
+	if map_zoom >= 1.0:
+		for w in TG.world_cities():
+			var ll: Vector2 = w["ll"]
+			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+			if d < 10.0:
+				out.append({"kind": "world", "ll": ll, "data": w, "d": d, "pri": 1})
 	if map_zoom >= 12.0:
 		# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
 		var ll0 := _screen_to_lonlat(pos)
@@ -1547,6 +1574,10 @@ func _poi_open(hit: Dictionary) -> void:
 			_open_city_panel(hit["data"])
 		"site":
 			_open_site_panel({"ll": hit["ll"], "site": hit["data"]})
+		"world":
+			var w: Dictionary = hit["data"]
+			_open_place_panel(String(w["name"]),
+					"域外 · %s" % String(w.get("region", "")), hit["ll"])
 		"county":
 			_open_county_panel({"ll": hit["ll"], "county": hit["data"]})
 
@@ -2187,6 +2218,7 @@ func _draw_map() -> void:
 	_draw_scroll_rollers(scroll_rect)
 	_draw_brocade(scroll_rect, pad_x, pad_y)
 	var _t1 := Time.get_ticks_usec()
+	_draw_world_cities(content_rect)
 	_draw_counties(content_rect)
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)

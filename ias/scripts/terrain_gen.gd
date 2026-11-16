@@ -439,6 +439,37 @@ static func cities() -> Array:
 	return _cities
 
 
+## 域外城邦（cities_world.json）：只做地图层，不进 3D 手工城市，也不影响地形与撒点。
+## 加/删条目不用重烘任何东西，改 JSON 就生效。
+static var _world_cities: Array = []
+static var _world_loaded := false
+
+static func world_cities() -> Array:
+	if _world_loaded:
+		return _world_cities
+	_world_loaded = true
+	var f := FileAccess.open("res://data/cities_world.json", FileAccess.READ)
+	if f == null:
+		return _world_cities
+	var js: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(js) != TYPE_DICTIONARY:
+		return _world_cities
+	for c in js.get("cities", []):
+		var lon := float(c.get("lon", 0.0))
+		var lat := float(c.get("lat", 0.0))
+		_world_cities.append({
+			"name": String(c.get("name", "")),
+			"lon": lon, "lat": lat,
+			"region": String(c.get("region", "")),
+			"note": String(c.get("note", "")),
+			"ll": Vector2(lon, lat),
+		})
+	if not _world_cities.is_empty():
+		print("[地图] 域外城邦 %d 座" % _world_cities.size())
+	return _world_cities
+
+
 ## 城市权重与手工高程：x = 权重（1=完全手工地面），y = 手工高程
 static func city_blend(lon: float, lat: float) -> Vector2:
 	var best_w := 0.0
