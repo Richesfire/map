@@ -713,6 +713,9 @@ func _start_game() -> void:
 				best = v
 		if not best.is_empty():
 			_open_village_panel({"ll": best["ll"], "name": best["name"], "kind": "village"})
+	if _flags.has("--pickcenter"):
+		# 调试：打印"屏幕中心点到了什么"，用来校验 _poi_pick 的优先级和半径
+		_pick_probe()
 	if _debug_citypanel != "":
 		var idx := int(_debug_citypanel)
 		var cs := TG.cities()
@@ -872,18 +875,9 @@ func _map_input(e: InputEvent) -> void:
 		var mb := e as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				var hit := _city_hit(mb.position)
+				var hit := _poi_pick(mb.position)
 				if not hit.is_empty():
-					_open_city_panel(hit)
-					return
-				# 关城/邑的点位优先于现代聚落（同一处常有 GeoNames 的现代村镇）
-				var sh := _site_hit(mb.position)
-				if not sh.is_empty():
-					_open_site_panel(sh)
-					return
-				var ch := _county_hit(mb.position)
-				if not ch.is_empty():
-					_open_county_panel(ch)
+					_poi_open(hit)
 					return
 				_close_city_panel()
 			dragging = mb.pressed
@@ -907,18 +901,10 @@ func _map_input(e: InputEvent) -> void:
 	elif e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
 		if not dragging and not pin_drag:
-			var hc := _city_hit(mm.position)
+			var hit := _poi_pick(mm.position)
 			var hv: Dictionary = {}
-			if not hc.is_empty():
-				hv = {"kind": "city", "ll": Vector2(float(hc["lon"]), float(hc["lat"]))}
-			else:
-				var sh := _site_hit(mm.position)
-				if not sh.is_empty():
-					hv = {"kind": "site", "ll": sh["ll"]}
-				else:
-					var cn_hit := _county_hit(mm.position)
-					if not cn_hit.is_empty():
-						hv = {"kind": "county", "ll": cn_hit["ll"]}
+			if not hit.is_empty():
+				hv = {"kind": hit["kind"], "ll": hit["ll"]}
 			var same: bool = hv.is_empty() == _hover.is_empty()
 			if same and not hv.is_empty():
 				same = (hv["ll"] as Vector2).is_equal_approx(_hover["ll"])
@@ -1215,16 +1201,6 @@ func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
 			map_root.draw_colored_polygon(big, ink)
 
 
-## 点选关城/邑/要地
-func _site_hit(pos: Vector2) -> Dictionary:
-	if map_zoom < 2.0:
-		return {}
-	for s in TG.sites():
-		var ll := Vector2(float(s["lon"]), float(s["lat"]))
-		var p := _lonlat_to_screen_off(ll, 0.0)
-		if p.distance_to(pos) < 12.0:
-			return {"ll": ll, "site": s}
-	return {}
 
 
 ## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
@@ -1263,27 +1239,6 @@ func _draw_counties(cr: Rect2) -> void:
 			map_root.draw_rect(Rect2(p - Vector2(r, r), Vector2(r, r) * 2.0), ink, false, 1.0)
 
 
-## 点选汉书县（命中半径小一点，避免和聚落抢）
-## 1134 个点逐个算屏幕坐标太浪费：先把点击位置换成经纬度，只测附近 12 px 以内的几个。
-func _county_hit(pos: Vector2) -> Dictionary:
-	if map_zoom < 12.0:
-		return {}
-	var ll0 := _screen_to_lonlat(pos)
-	var sc := _map_scale()
-	var rl := 12.0 / maxf(sc.x, 0.0001)
-	var rb := 12.0 / maxf(sc.y, 0.0001)
-	var best: Dictionary = {}
-	var bd := 9.0
-	for it in TG.counties():
-		var ll: Vector2 = it["ll"]
-		if absf(ll.x - ll0.x) > rl or absf(ll.y - ll0.y) > rb:
-			continue
-		var p := _lonlat_to_screen_off(ll, 0.0)
-		var d := p.distance_to(pos)
-		if d < bd:
-			bd = d
-			best = {"ll": ll, "county": it}
-	return best
 
 
 ## 面板贴在地图内容区左上角（用户要求：窗口只出现在地图里）。
@@ -1516,16 +1471,65 @@ func _city_gates(c: Dictionary) -> Array:
 
 
 
-## 点选城市：命中图标范围
-func _city_hit(pos: Vector2) -> Dictionary:
+## 地图上的可点物：城 / 关城邑 / 汉县（三套数据，一个入口）。
+## 优先级固定为 城 → 关城邑 → 汉县（和以前一样，不看距离跨类别抢）；
+## 同类里取最近的一个。返回 {} 或 {"kind": "city"/"site"/"county", "ll", "data"}。
+func _poi_pick(pos: Vector2) -> Dictionary:
+	# 城：图标大小随缩放变（咸阳城墙约 3.7 km 见方），命中半径跟着走
+	var best_city: Dictionary = {}
+	var bd := 1e9
 	for c in TG.cities():
 		var lat := float(c["lat"])
 		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
 		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
 		var p := _lonlat_to_screen_off(Vector2(float(c["lon"]), lat), 0.0)
-		if p.distance_to(pos) < maxf(sz * 0.75, 12.0):
-			return c
-	return {}
+		var d := p.distance_to(pos)
+		if d < maxf(sz * 0.75, 12.0) and d < bd:
+			bd = d
+			best_city = {"kind": "city", "ll": Vector2(float(c["lon"]), lat), "data": c}
+	if not best_city.is_empty():
+		return best_city
+	if map_zoom < 2.0:
+		return {}
+	var best_site: Dictionary = {}
+	bd = 1e9
+	for s in TG.sites():
+		var ll := Vector2(float(s["lon"]), float(s["lat"]))
+		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+		if d < 12.0 and d < bd:
+			bd = d
+			best_site = {"kind": "site", "ll": ll, "data": s}
+	if not best_site.is_empty():
+		return best_site
+	if map_zoom < 12.0:
+		return {}
+	# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
+	var ll0 := _screen_to_lonlat(pos)
+	var sc := _map_scale()
+	var rl := 12.0 / maxf(sc.x, 0.0001)
+	var rb := 12.0 / maxf(sc.y, 0.0001)
+	var best_cty: Dictionary = {}
+	bd = 9.0
+	for it in TG.counties():
+		var ll: Vector2 = it["ll"]
+		if absf(ll.x - ll0.x) > rl or absf(ll.y - ll0.y) > rb:
+			continue
+		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+		if d < bd:
+			bd = d
+			best_cty = {"kind": "county", "ll": ll, "data": it}
+	return best_cty
+
+
+## 点开命中的那个点位（三种面板的差别只在标题/副标题）
+func _poi_open(hit: Dictionary) -> void:
+	match String(hit.get("kind", "")):
+		"city":
+			_open_city_panel(hit["data"])
+		"site":
+			_open_site_panel({"ll": hit["ll"], "site": hit["data"]})
+		"county":
+			_open_county_panel({"ll": hit["ll"], "county": hit["data"]})
 
 
 
@@ -2789,3 +2793,24 @@ func _th() -> TestHarness:
 		_harness.m = self
 		add_child(_harness)
 	return _harness
+
+
+## 调试：--pickcenter 打印"屏幕中心命中了什么"（校验 _poi_pick 的优先级/半径）
+func _pick_probe() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var vs := get_viewport().get_visible_rect().size
+	map_root.queue_redraw()
+	await get_tree().process_frame
+	var hit := _poi_pick(vs * 0.5)
+	if hit.is_empty():
+		print("[拾取] 中心 %.3f,%.3f -> 无（zoom %.1f）" % [map_center.x, map_center.y, map_zoom])
+	else:
+		var d: Dictionary = hit["data"]
+		var nm: String = String(d.get("name", d.get("n", "?")))
+		print("[拾取] 中心 %.3f,%.3f -> %s「%s」（zoom %.1f）"
+				% [map_center.x, map_center.y, hit["kind"], nm, map_zoom])
+		if _flags.has("--pickopen"):
+			_poi_open(hit)     # 连面板一起验（配合 --shots 截图）
+			return
+	get_tree().quit()
