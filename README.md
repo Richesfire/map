@@ -45,8 +45,7 @@ godot --headless --path ias --script res://tools/bake_landform_id.gd
 | `ias/data` | 指向 `ias-core/data` 的目录联接（不跟踪、不单独存一份） |
 | `ias-core/data/` | 高程、水系、城池/史事/汉县、地貌配置；`*.bin` 不进 git |
 | `tools/` | `get_data.py`（下载数据）、`run_tests.ps1`（回归测试） |
-| `截图_*/` | 各轮验证截图（按日期分目录） |
-| `策划整理/` `后续故事/` `model/` | 策划文档与武器模型素材，不参与构建 |
+| `docs/` | `策划/` 策划案与兵种表、`故事/` 设定、`模型/` 武器模型、`截图/<日期>/` 各轮验证截图（都不参与构建） |
 
 ## 测试
 
