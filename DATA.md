@@ -33,7 +33,7 @@ python tools/get_data.py          # 下载解压约 280 MB 数据包，并建 ia
 | counties_han.json | — | 汉书·地理志县治 1134 处（CHGIS V6，CC0） |
 | mountain_features.json | — | 54 条山系特征 |
 | cities.json | — | 手工城池 16 座 |
-| cities_world.json | — | 域外城邦 42 处（约前 209 年前后的地中海/西亚/南亚/东亚；只做地图层，不进 3D） |
+| world_settlements.json | — | 域外定居点 111 处 = 城 42 + 附邑/镇 69（约前 209 年；只做地图层，不进 3D） |
 | textures/ | 18 MB | 地表 / 法线 / 树皮 / 叶簇 / 草叶图集 |
 | biomes/ | — | 29 个地貌 `.tres` 配置（文件名 `编号_配置id`，编号 = 地貌号） |
 

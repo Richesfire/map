@@ -172,6 +172,9 @@ func _ready() -> void:
 	if _flags.has("--sitestats"):
 		_th()._site_stats()
 		return
+	if _flags.has("--worldstats"):
+		_world_stats()
+		return
 	if _flags.has("--hash"):
 		TG.ensure_loaded()
 		print("[稳定] 校验和 %d" % _th()._hash_samples())
@@ -930,15 +933,36 @@ func _map_input(e: InputEvent) -> void:
 			_travel_ll(pin_ll)
 
 
-func _travel_ll(ll: Vector2) -> void:
+## 点到点名的定居点时（from_place=true）：城址常常贴海，2.4 km 底图会把那一格判成水，
+## 这时把目标吸附到最近的陆地，而不是直接拒绝。自由右键落的旅行标仍然按海面拦截。
+## 能不能落脚：既不是海（掩膜），高程也不低于海平面（2.4 km 底图会把贴海的城址判成水下）
+func _land_ok(ll: Vector2) -> bool:
+	return not TG.is_water(ll.x, ll.y) and TG.dem_at(ll.x, ll.y) >= 0.5
+
+
+func _snap_to_land(ll: Vector2) -> Vector2:
+	if _land_ok(ll):
+		return ll
+	var cosl := maxf(cos(deg_to_rad(ll.y)), 0.2)
+	for r in [0.02, 0.04, 0.08, 0.12, 0.2, 0.3]:
+		for k in 12:
+			var a := TAU * float(k) / 12.0
+			var p := Vector2(ll.x + cos(a) * r / cosl, ll.y + sin(a) * r)
+			if _land_ok(p):
+				return p
+	return ll
+
+
+func _travel_ll(ll: Vector2, from_place := false) -> void:
 	if _traveling:
 		return
-	if TG.is_water(ll.x, ll.y):
+	var dest := _snap_to_land(ll) if from_place else ll
+	if not _land_ok(dest):
 		toast("那里是海面，无法前往")
 		return
 	_traveling = true
 	_close_map()
-	var dist_km := TG.distance_m(terrain.center_lon, terrain.center_lat, ll.x, ll.y) / 1000.0
+	var dist_km := TG.distance_m(terrain.center_lon, terrain.center_lat, dest.x, dest.y) / 1000.0
 	var days := maxf(dist_km / MARCH_KM_PER_DAY, 0.5)
 	_show_boot("正在前往……行程 %d 公里，约 %s 日" % [int(round(dist_km)), _cn(int(round(days)))])
 	_boot_set(0.02)
@@ -947,8 +971,8 @@ func _travel_ll(ll: Vector2) -> void:
 
 	# 快速旅行消耗的是游戏时间，不是无代价传送
 	clock_min += days * 1440.0
-	terrain.center_lon = ll.x
-	terrain.center_lat = ll.y
+	terrain.center_lon = dest.x
+	terrain.center_lat = dest.y
 	await terrain.build(_on_build_progress)
 	_boot_text("正在布置植被……")
 	_boot_set(0.9)
@@ -1205,25 +1229,36 @@ func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
 
 
 
-## 域外城邦（约前 209 年前后的地中海/西亚/南亚/东亚）：小空心圈 + 圆心点，褐色。
-## 只做地图层，不写文字，点开面板只有「城名 + 域外·地区 + 前往」。
+## 域外定居点（world_settlements.json）：城邦=褐圈+圆心点（1 倍就可见），
+## 附邑/镇=更小的空心圈（2 倍淡入）。只画图上，不写文字。
 func _draw_world_cities(cr: Rect2) -> void:
 	if map_zoom < 1.0:
 		return
-	var list := TG.world_cities()
+	var list := TG.world_settlements()
 	if list.is_empty():
 		return
-	var r := clampf(2.2 + map_zoom * 0.02, 2.6, 4.5)
 	var ink := Color(0.30, 0.17, 0.08, 0.92)
+	var ink2 := Color(0.34, 0.22, 0.12, 0.70)
 	for w in list:
+		var tier := int(w.get("tier", 1))
+		if tier > 1 and map_zoom < 2.0:
+			continue
 		var p := _lonlat_to_screen_off(w["ll"], 0.0)
 		if not cr.has_point(p):
 			continue
-		map_root.draw_arc(p, r, 0.0, TAU, 12, ink, 1.2)
-		map_root.draw_circle(p, maxf(r * 0.28, 0.8), ink)
-		if not _hover.is_empty() and String(_hover.get("kind", "")) == "world" \
-				and (_hover["ll"] as Vector2).is_equal_approx(w["ll"]):
-			map_root.draw_arc(p, r + 3.0, 0.0, TAU, 16, Color(0.98, 0.84, 0.44, 0.95), 2.0)
+		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "world" \
+				and (_hover["ll"] as Vector2).is_equal_approx(w["ll"])
+		if tier <= 1:
+			var r := clampf(2.2 + map_zoom * 0.02, 2.6, 4.5)
+			map_root.draw_arc(p, r, 0.0, TAU, 12, ink, 1.2)
+			map_root.draw_circle(p, maxf(r * 0.28, 0.8), ink)
+			if hov:
+				map_root.draw_arc(p, r + 3.0, 0.0, TAU, 16, Color(0.98, 0.84, 0.44, 0.95), 2.0)
+		else:
+			var r2 := clampf(1.3 + map_zoom * 0.012, 1.5, 2.6)
+			map_root.draw_arc(p, r2, 0.0, TAU, 10, ink2, 1.0)
+			if hov:
+				map_root.draw_arc(p, r2 + 2.5, 0.0, TAU, 14, Color(0.98, 0.84, 0.44, 0.95), 1.5)
 
 
 ## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
@@ -1517,12 +1552,14 @@ func _poi_cands(pos: Vector2) -> Array:
 			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 			if d < 12.0:
 				out.append({"kind": "site", "ll": ll, "data": s, "d": d, "pri": 1})
-	if map_zoom >= 1.0:
-		for w in TG.world_cities():
-			var ll: Vector2 = w["ll"]
-			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
-			if d < 10.0:
-				out.append({"kind": "world", "ll": ll, "data": w, "d": d, "pri": 1})
+	for w in TG.world_settlements():
+		var tier := int(w.get("tier", 1))
+		if tier > 1 and map_zoom < 2.0:
+			continue
+		var ll: Vector2 = w["ll"]
+		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+		if d < (10.0 if tier <= 1 else 8.0):
+			out.append({"kind": "world", "ll": ll, "data": w, "d": d, "pri": 1})
 	if map_zoom >= 12.0:
 		# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
 		var ll0 := _screen_to_lonlat(pos)
@@ -1576,8 +1613,13 @@ func _poi_open(hit: Dictionary) -> void:
 			_open_site_panel({"ll": hit["ll"], "site": hit["data"]})
 		"world":
 			var w: Dictionary = hit["data"]
-			_open_place_panel(String(w["name"]),
-					"域外 · %s" % String(w.get("region", "")), hit["ll"])
+			var wsub := "域外 · %s" % String(w.get("region", ""))
+			if int(w.get("tier", 1)) > 1:
+				wsub = "域外镇 · %s" % String(w.get("region", ""))
+				var par := String(w.get("parent", ""))
+				if par != "":
+					wsub += "（属%s）" % par
+			_open_place_panel(String(w["name"]), wsub, hit["ll"])
 		"county":
 			_open_county_panel({"ll": hit["ll"], "county": hit["data"]})
 
@@ -2090,14 +2132,14 @@ func _city_go(what: String) -> void:
 		var pn := String(_panel_place["name"])
 		_close_city_panel()
 		toast("前往 %s" % pn)
-		_travel_ll(pll)
+		_travel_ll(pll, true)
 		return
 	if not _panel_village.is_empty():
 		var vll: Vector2 = _panel_village["ll"]
 		var vn := String(_panel_village["name"])
 		_close_city_panel()
 		toast("前往 %s" % vn)
-		_travel_ll(vll)
+		_travel_ll(vll, true)
 		return
 	if _panel_city.is_empty():
 		return
@@ -2109,7 +2151,7 @@ func _city_go(what: String) -> void:
 	var nm := String(_panel_city["name"])
 	_close_city_panel()
 	toast("前往 %s · %s" % [nm, "府衙" if what == "yamen" else "街道"])
-	_travel_ll(Vector2(lon, lat))
+	_travel_ll(Vector2(lon, lat), true)
 
 
 
@@ -2866,6 +2908,47 @@ func _th() -> TestHarness:
 		_harness.m = self
 		add_child(_harness)
 	return _harness
+
+
+## 调试：--worldstats 打印域外定居点（坐标/高程/地貌/落水/同点），查数据用
+func _world_stats() -> void:
+	TG.ensure_loaded()
+	var list := TG.world_settlements()
+	var t1 := 0
+	var t2 := 0
+	var wet := 0
+	var dup := 0
+	var seen := {}
+	print("======== 域外定居点 %d 处 ========" % list.size())
+	for w in list:
+		var ll: Vector2 = w["ll"]
+		var h: float = TG.dem_at(ll.x, ll.y)
+		var lf: int = TG.landform_kind(ll.x, ll.y, h)
+		var is_wet: bool = (h < 0.5 and TG.is_water(ll.x, ll.y)) or h < -8.0
+		var tier := int(w.get("tier", 1))
+		if tier <= 1:
+			t1 += 1
+		else:
+			t2 += 1
+		if is_wet:
+			wet += 1
+		var key := "%.2f,%.2f" % [ll.x, ll.y]
+		if seen.has(key):
+			dup += 1
+			print("  [同点] %s 与 %s" % [String(w["name"]), String(seen[key])])
+		else:
+			seen[key] = w["name"]
+		var par := String(w.get("parent", ""))
+		var extra := ""
+		if is_wet:
+			var sn := _snap_to_land(ll)
+			extra = "  ← 落水，旅行会吸附到 %.3f,%.3f（%s）" % [
+					sn.x, sn.y, "已上岸" if not TG.is_water(sn.x, sn.y) else "仍是水"]
+		print("  T%d %-10s %8.2f,%7.2f h=%5.0f %-6s %-5s%s%s"
+				% [tier, String(w["name"]), ll.x, ll.y, h, TG.LF_NAMES[lf],
+				String(w.get("region", "")), "（属%s）" % par if par != "" else "", extra])
+	print("[统计] 城 %d / 镇 %d；落水 %d；同点 %d" % [t1, t2, wet, dup])
+	get_tree().quit()
 
 
 ## 调试：--pickcenter 打印"屏幕中心命中了什么"（校验 _poi_pick 的最近优先/连点切换）

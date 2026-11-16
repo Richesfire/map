@@ -439,35 +439,44 @@ static func cities() -> Array:
 	return _cities
 
 
-## 域外城邦（cities_world.json）：只做地图层，不进 3D 手工城市，也不影响地形与撒点。
-## 加/删条目不用重烘任何东西，改 JSON 就生效。
-static var _world_cities: Array = []
+## 域外定居点（world_settlements.json）：tier 1 = 城邦/大城，tier 2 = 附邑/镇。
+## 只做地图层，不进 3D 手工城市，也不影响地形与撒点。改 JSON 即可生效，不用重烘。
+static var _world: Array = []
 static var _world_loaded := false
 
-static func world_cities() -> Array:
+static func world_settlements() -> Array:
 	if _world_loaded:
-		return _world_cities
+		return _world
 	_world_loaded = true
-	var f := FileAccess.open("res://data/cities_world.json", FileAccess.READ)
+	var f := FileAccess.open("res://data/world_settlements.json", FileAccess.READ)
 	if f == null:
-		return _world_cities
+		return _world
 	var js: Variant = JSON.parse_string(f.get_as_text())
 	f.close()
 	if typeof(js) != TYPE_DICTIONARY:
-		return _world_cities
-	for c in js.get("cities", []):
+		return _world
+	var t1 := 0
+	var t2 := 0
+	for c in js.get("settlements", []):
 		var lon := float(c.get("lon", 0.0))
 		var lat := float(c.get("lat", 0.0))
-		_world_cities.append({
+		var tier := int(c.get("tier", 1))
+		if tier <= 1:
+			t1 += 1
+		else:
+			t2 += 1
+		_world.append({
 			"name": String(c.get("name", "")),
 			"lon": lon, "lat": lat,
+			"tier": tier,
 			"region": String(c.get("region", "")),
+			"parent": String(c.get("parent", "")),
 			"note": String(c.get("note", "")),
 			"ll": Vector2(lon, lat),
 		})
-	if not _world_cities.is_empty():
-		print("[地图] 域外城邦 %d 座" % _world_cities.size())
-	return _world_cities
+	if not _world.is_empty():
+		print("[地图] 域外定居点 %d 处（城 %d / 镇 %d）" % [_world.size(), t1, t2])
+	return _world
 
 
 ## 城市权重与手工高程：x = 权重（1=完全手工地面），y = 手工高程
