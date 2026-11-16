@@ -26,3 +26,6 @@ ias/data/
 # 大型高程数据（可用 scripts 重新生成，见 DATA.md）
 ias-core/data/*.bin
 data/*.bin
+
+# 验证截图只留本地（2026-11-16 用户要求；历史里已有的不动）
+docs/截图/

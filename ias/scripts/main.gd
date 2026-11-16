@@ -847,6 +847,7 @@ func _open_map() -> void:
 	_clamp_map_center()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.map_open = true
+	_panel_placeholder()      # 面板常显：先摆空面板，点谁换谁
 	map_root.queue_redraw()
 
 
@@ -876,7 +877,7 @@ func _map_input(e: InputEvent) -> void:
 		var mb := e as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				var hit := _poi_pick(mb.position)
+				var hit := _poi_pick(mb.position, true)
 				if not hit.is_empty():
 					_poi_open(hit)
 					return
@@ -1473,53 +1474,70 @@ func _city_gates(c: Dictionary) -> Array:
 
 
 ## 地图上的可点物：城 / 关城邑 / 汉县（三套数据，一个入口）。
-## 优先级固定为 城 → 关城邑 → 汉县（和以前一样，不看距离跨类别抢）；
-## 同类里取最近的一个。返回 {} 或 {"kind": "city"/"site"/"county", "ll", "data"}。
-func _poi_pick(pos: Vector2) -> Dictionary:
+## 命中规则：**取最近的**（各自的命中半径内），距离相同时按 城 → 关城邑 → 汉县 排。
+## 以前是"先城、再关城、再汉县"，于是同一处叠着的两个点位（比如咸阳城 12 km 外
+## 的渭城/长陵/池阳三个汉县，或者和汉县完全同点的史事点位）永远只能点到排前面的那个，
+## 用户看到的就是"点两个不同的定居点，面板都写咸阳"。
+## cycle=true 时（左键点击）：同一个位置连点会依次切换叠在这里的候选。
+func _poi_cands(pos: Vector2) -> Array:
+	var out: Array = []
 	# 城：图标大小随缩放变（咸阳城墙约 3.7 km 见方），命中半径跟着走
-	var best_city: Dictionary = {}
-	var bd := 1e9
 	for c in TG.cities():
 		var lat := float(c["lat"])
 		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
 		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
-		var p := _lonlat_to_screen_off(Vector2(float(c["lon"]), lat), 0.0)
-		var d := p.distance_to(pos)
-		if d < maxf(sz * 0.75, 12.0) and d < bd:
-			bd = d
-			best_city = {"kind": "city", "ll": Vector2(float(c["lon"]), lat), "data": c}
-	if not best_city.is_empty():
-		return best_city
-	if map_zoom < 2.0:
-		return {}
-	var best_site: Dictionary = {}
-	bd = 1e9
-	for s in TG.sites():
-		var ll := Vector2(float(s["lon"]), float(s["lat"]))
+		var ll := Vector2(float(c["lon"]), lat)
 		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
-		if d < 12.0 and d < bd:
-			bd = d
-			best_site = {"kind": "site", "ll": ll, "data": s}
-	if not best_site.is_empty():
-		return best_site
-	if map_zoom < 12.0:
+		if d < maxf(sz * 0.75, 12.0):
+			out.append({"kind": "city", "ll": ll, "data": c, "d": d, "pri": 0})
+	if map_zoom >= 2.0:
+		for s in TG.sites():
+			var ll := Vector2(float(s["lon"]), float(s["lat"]))
+			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+			if d < 12.0:
+				out.append({"kind": "site", "ll": ll, "data": s, "d": d, "pri": 1})
+	if map_zoom >= 12.0:
+		# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
+		var ll0 := _screen_to_lonlat(pos)
+		var sc := _map_scale()
+		var rl := 12.0 / maxf(sc.x, 0.0001)
+		var rb := 12.0 / maxf(sc.y, 0.0001)
+		for it in TG.counties():
+			var ll: Vector2 = it["ll"]
+			if absf(ll.x - ll0.x) > rl or absf(ll.y - ll0.y) > rb:
+				continue
+			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+			if d < 9.0:
+				out.append({"kind": "county", "ll": ll, "data": it, "d": d, "pri": 2})
+	# 近的优先；同距离（<1.5 px）按类别排
+	out.sort_custom(func(a, b):
+		if absf(float(a["d"]) - float(b["d"])) > 1.5:
+			return float(a["d"]) < float(b["d"])
+		return int(a["pri"]) < int(b["pri"]))
+	return out
+
+
+var _pick_pos := Vector2(1e9, 1e9)    # 上一次点击的位置（判断"连点同一个地方"）
+var _pick_i := 0                      # 同一个地方第几个候选
+
+
+func _poi_pick(pos: Vector2, cycle: bool = false) -> Dictionary:
+	var list := _poi_cands(pos)
+	if list.is_empty():
+		_pick_pos = Vector2(1e9, 1e9)
+		_pick_i = 0
 		return {}
-	# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
-	var ll0 := _screen_to_lonlat(pos)
-	var sc := _map_scale()
-	var rl := 12.0 / maxf(sc.x, 0.0001)
-	var rb := 12.0 / maxf(sc.y, 0.0001)
-	var best_cty: Dictionary = {}
-	bd = 9.0
-	for it in TG.counties():
-		var ll: Vector2 = it["ll"]
-		if absf(ll.x - ll0.x) > rl or absf(ll.y - ll0.y) > rb:
-			continue
-		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
-		if d < bd:
-			bd = d
-			best_cty = {"kind": "county", "ll": ll, "data": it}
-	return best_cty
+	if cycle:
+		if _pick_pos.distance_to(pos) < 6.0:
+			_pick_i = (_pick_i + 1) % list.size()
+		else:
+			_pick_i = 0
+		_pick_pos = pos
+	else:
+		_pick_i = 0
+		_pick_pos = Vector2(1e9, 1e9)
+	var hit: Dictionary = list[_pick_i]
+	return {"kind": hit["kind"], "ll": hit["ll"], "data": hit["data"]}
 
 
 ## 点开命中的那个点位（三种面板的差别只在标题/副标题）
@@ -1945,7 +1963,9 @@ func _open_city_panel(c: Dictionary) -> void:
 	_panel_city = c
 	var title: Label = city_panel.get_node("Title")
 	title.text = String(c["name"])
-	(city_panel.get_node("Opt0") as Button).text = "街道"
+	var b0 := city_panel.get_node("Opt0") as Button
+	b0.text = "街道"
+	b0.visible = true
 	var b1 := city_panel.get_node("Opt1") as Button
 	b1.text = "府衙"
 	b1.visible = true
@@ -1953,6 +1973,7 @@ func _open_city_panel(c: Dictionary) -> void:
 	# 面板必须在地图图层之上
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.offset_bottom = 172.0
 	city_panel.visible = true
 	map_root.queue_redraw()
 
@@ -1963,23 +1984,38 @@ func _open_village_panel(v: Dictionary) -> void:
 	_panel_village = v
 	var title: Label = city_panel.get_node("Title")
 	title.text = String(v["name"])
-	(city_panel.get_node("Opt0") as Button).text = "进村"
+	var b0 := city_panel.get_node("Opt0") as Button
+	b0.text = "进村"
+	b0.visible = true
 	(city_panel.get_node("Opt1") as Button).visible = false
 	(city_panel.get_node("Sub") as Label).text = ""
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.offset_bottom = 172.0
 	city_panel.visible = true
 	map_root.queue_redraw()
 
 
-func _close_city_panel() -> void:
-	city_panel.visible = false
+## 面板常显：没选中任何点位时（刚开图 / 点了空地）显示占位，不隐藏
+func _panel_placeholder() -> void:
+	if city_panel == null:
+		return
 	_panel_city = {}
 	_panel_village = {}
 	_panel_place = {}
-	if city_panel != null:
-		(city_panel.get_node("Opt1") as Button).visible = true
-		(city_panel.get_node("Sub") as Label).text = ""
+	(city_panel.get_node("Title") as Label).text = "地 图"
+	(city_panel.get_node("Sub") as Label).text = "点城 / 关城 / 汉县查看详情"
+	city_panel.offset_bottom = 92.0      # 占位时面板矮一点，别留一大块空
+	(city_panel.get_node("Opt0") as Button).visible = false
+	(city_panel.get_node("Opt1") as Button).visible = false
+	if ui_layer != null and city_panel.get_parent() == ui_layer:
+		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.visible = true
+
+
+## 清空当前选择（面板不收起，回到占位）
+func _close_city_panel() -> void:
+	_panel_placeholder()
 
 
 ## 通用「点位面板」：关城/邑/要地、汉书县共用（标题 + 副标题 + 前往）
@@ -1990,10 +2026,13 @@ func _open_place_panel(title_txt: String, sub_txt: String, ll: Vector2) -> void:
 	var title: Label = city_panel.get_node("Title")
 	title.text = title_txt
 	(city_panel.get_node("Sub") as Label).text = sub_txt
-	(city_panel.get_node("Opt0") as Button).text = "前往"
+	var b0 := city_panel.get_node("Opt0") as Button
+	b0.text = "前往"
+	b0.visible = true
 	(city_panel.get_node("Opt1") as Button).visible = false
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
+	city_panel.offset_bottom = 172.0
 	city_panel.visible = true
 	map_root.queue_redraw()
 
@@ -2797,13 +2836,27 @@ func _th() -> TestHarness:
 	return _harness
 
 
-## 调试：--pickcenter 打印"屏幕中心命中了什么"（校验 _poi_pick 的优先级/半径）
+## 调试：--pickcenter 打印"屏幕中心命中了什么"（校验 _poi_pick 的最近优先/连点切换）
+func _poi_name(hit: Dictionary) -> String:
+	if hit.is_empty():
+		return "无"
+	var d: Dictionary = hit["data"]
+	return "%s「%s」" % [hit["kind"], String(d.get("name", d.get("n", "?")))]
+
+
 func _pick_probe() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var vs := get_viewport().get_visible_rect().size
 	map_root.queue_redraw()
 	await get_tree().process_frame
+	if _flags.has("--pickcycle"):
+		# 模拟在同一个点连点 4 次：应当依次换出叠在这里的候选
+		for i in 4:
+			var h := _poi_pick(vs * 0.5, true)
+			print("[连点] 第 %d 次 -> %s" % [i + 1, _poi_name(h)])
+		get_tree().quit()
+		return
 	var hit := _poi_pick(vs * 0.5)
 	if hit.is_empty():
 		print("[拾取] 中心 %.3f,%.3f -> 无（zoom %.1f）" % [map_center.x, map_center.y, map_zoom])
