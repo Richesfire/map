@@ -7,7 +7,9 @@ extends SceneTree
 ## 变过一次，目录里就留下两套重名文件（36 个），加载端按排序取下标后 18..28 号
 ## 地貌全部串位（盐碱地拿到三角洲配置）。这里顺便把不符合规范的老文件删掉。
 ##
-## 注意：数值仍取自 DEFAULTS；data/biomes 下手工调过的值会被覆盖。
+## 注意：数值取自 DEFAULTS；2026-11-16 起 DEFAULTS 已按 .tres 现值重新同步过
+## （以前它停在旧一轮调参，跑一次这个工具就会把手工调好的参数冲掉，
+##  `probe_biome.gd` 会把这类差异打出来）。改参数请改 .tres 或 DEFAULTS 其中一处再同步另一处。
 
 func _init() -> void:
 	var Lib = load("res://scripts/biome_library.gd")
