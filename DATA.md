@@ -7,10 +7,15 @@
 ```bash
 git clone https://github.com/Richesfire/map.git
 cd map
-python tools/get_data.py          # 下载并解压约 280 MB 数据包
+python tools/get_data.py          # 下载解压约 280 MB 数据包，并建 ias/data 联接
 ```
 
 然后双击 `ias/Play.bat`（或 Godot 打开 `ias/project.godot`）。
+
+> ⚠️ 游戏读的是 `res://data/`，而数据放在 `ias-core/data/`，两者靠 `ias/data` 这个**目录联接**
+> 打通（Windows 用 `mklink /J`，不需要管理员；其它系统是 symlink）。`get_data.py` 会自动建，
+> 数据已在别处时用 `python tools/get_data.py --link-only` 补。
+> 没有联接时游戏不会报错，只会打印 `[地形] 没有高程数据，用平地` 并显示一片平地。
 
 数据会解压到 `ias-core/data/`：
 
@@ -42,13 +47,19 @@ GitHub 免费账号 LFS 是 1 GB 存储 + 1 GB/月流量。数据包 363 MB 放�
 但每台机器 clone 一次就要拉一遍，一个月拉两三次就超额，且 LFS 上传在国内很慢。
 Release 附件不占 LFS 配额，单独下载一次即可。
 
-## 贴图怎么换
+## 贴图
 
-- 地表：`python fetch_textures.py` → `data/textures/ground_atlas.png`
-- 法线：`python fetch_normals.py` → `data/textures/ground_normal.png`
-- 树/草：`python make_tree_atlas.py` → `tree_atlas.png` / `grass_sheet.png`
+`ias-core/data/textures/` 里的图集随数据包一起分发，游戏中不存在从网络拉取贴图的脚本：
 
-三个脚本都在仓库根目录，素材来自 ambientCG（CC0）。
+| 文件 | 用途 |
+|---|---|
+| `ground_atlas.png` + `ground_atlas.json` | 地表 4×4 图集（地形着色器按地貌混贴） |
+| `ground_normal.png` | 地表法线 |
+| `tree_atlas.png` | 树皮 / 叶簇图集 |
+| `grass_sheet.png` | 草叶图集 |
+
+换贴图直接替换同名文件即可（尺寸和图集切分见 `ground_atlas.json`）。
+原始素材来自 ambientCG（CC0）。
 
 ## 提交约定
 
