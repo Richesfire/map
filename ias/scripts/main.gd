@@ -1390,109 +1390,10 @@ func _settlements_in(lon0: float, lat0: float, lon1: float, lat1: float, max_lvl
 	return out
 
 
-## 村庄：真实聚落数据，按缩放分级显示
-func _villages_for_view(sr: Rect2) -> Array:
-	if map_zoom < 15.0:
-		return []
-	var vs3 := get_viewport().get_visible_rect().size
-	var sc3 := _map_scale()
-	var half_lon: float = (vs3.x * 0.5) / sc3.x
-	var half_lat: float = (vs3.y * 0.5) / sc3.y
-	var key := Vector2i(int(floor(map_center.x / 0.2)) * 131 + int(map_zoom * 2.0),
-			int(floor(map_center.y / 0.2)))
-	if key == _vil_key:
-		return _vil_cache
-	_vil_key = key
-	_vil_cache = _settlements_in(map_center.x - half_lon, map_center.y - half_lat,
-			map_center.x + half_lon, map_center.y + half_lat, 4)
-	return _vil_cache
 
 
-## 单点评估：返回 {ll, name, kind} 或空
-func _village_try(lon: float, lat: float, hv: float) -> Dictionary:
-	var h := TG.dem_at(lon, lat)
-	if h <= 3.0 or h > 2400.0:
-		return {}
-	var lf := TG.landform_kind(lon, lat, h)
-	# 地貌基础分（荒漠/冰川/陡山几乎不落村）
-	var sc := 0.0
-	match lf:
-		TG.LF_PLAIN, TG.LF_VALLEY, TG.LF_DELTA, TG.LF_COAST:
-			sc += 2.5
-		TG.LF_STEPPE, TG.LF_HILL, TG.LF_BASIN, TG.LF_HILL_RED, TG.LF_HILL_LOESS, TG.LF_HILL_DANXIA:
-			sc += 1.6
-		TG.LF_FOREST, TG.LF_WETLAND:
-			sc += 0.9
-		TG.LF_MOUNTAIN, TG.LF_KARST, TG.LF_MTN_GRANITE, TG.LF_MTN_KARST, TG.LF_MTN_VOLCANIC, TG.LF_MTN_LOESS:
-			sc -= 0.6
-		TG.LF_DESERT, TG.LF_DESERT_SAND, TG.LF_YARDANG, TG.LF_DESERT_SALT, TG.LF_DESERT_GOBI, TG.LF_DUNE:
-			sc -= 2.5
-		TG.LF_ICE, TG.LF_GLACIAL, TG.LF_MTN_ICE:
-			sc -= 4.0
-	# 近水
-	var w := _water_near(lon, lat)
-	if w < 0.04:
-		sc += 3.2
-	elif w < 0.15:
-		sc += 1.6
-	elif w > 0.5:
-		sc -= 1.2
-	# 坡度（4 邻域差分，度）
-	var d := 0.02
-	var dx := (TG.dem_at(lon + d, lat) - TG.dem_at(lon - d, lat)) / (2.0 * d * 111320.0)
-	var dy := (TG.dem_at(lon, lat + d) - TG.dem_at(lon, lat - d)) / (2.0 * d * 110540.0)
-	var slope := rad_to_deg(atan(sqrt(dx * dx + dy * dy)))
-	if slope < 8.0:
-		sc += 1.0
-	elif slope > 15.0:
-		sc -= 2.0
-	# 城市距离
-	var cd := 9.0
-	for c in TG.cities():
-		var ddx: float = (float(c["lon"]) - lon) * cos(deg_to_rad(lat))
-		var ddy: float = float(c["lat"]) - lat
-		cd = minf(cd, sqrt(ddx * ddx + ddy * ddy))
-	if cd < 0.3:
-		sc += 2.0
-	elif cd < 1.0:
-		sc += 1.0
-	# 随机扰动 + 密度门限（hv 决定“这格有没有人”）
-	var need := 3.4 - (hv - 0.5) * 2.0
-	if sc < need:
-		return {}
-	# 最小间距 0.42°
-	for v2 in _vil_cache:
-		var p2: Vector2 = v2["ll"]
-		var ex: float = (p2.x - lon) * maxf(cos(deg_to_rad(lat)), 0.05)
-		if absf(ex) > 0.42 or absf(p2.y - lat) > 0.42:
-			continue
-		if Vector2(ex, p2.y - lat).length() < 0.42:
-			return {}
-
-	var kind := "plain"
-	if w < 0.15:
-		kind = "water"
-	elif lf in [TG.LF_MOUNTAIN, TG.LF_KARST, TG.LF_MTN_GRANITE, TG.LF_MTN_KARST, TG.LF_MTN_VOLCANIC, TG.LF_MTN_LOESS]:
-		kind = "mount"
-	var nm := _village_name_for(lon, lat, kind, cd)
-	return {"ll": Vector2(lon, lat), "name": nm, "kind": kind}
 
 
-## 按地景取名：近水用 津/泽/陂，山地用 岭/峪/原，平原用 里/亭/乡
-func _village_name_for(lon: float, lat: float, kind: String, city_d: float) -> String:
-	var xings := ["王", "李", "张", "赵", "刘", "陈", "杨", "周", "吴", "徐", "孙", "马", "朱", "郭", "何", "高"]
-	var h1: float = TG._vnoise(lon * 13.0, lat * 13.0, 3311)
-	var h2: float = TG._vnoise(lon * 29.0, lat * 29.0, 7717)
-	var xing: String = xings[int(h1 * 15.999)]
-	if kind == "water":
-		var wl: Array = ["津", "泽", "陂", "渡", "浦"]
-		return xing + wl[int(h2 * 4.999)]
-	if kind == "mount":
-		var ml: Array = ["岭", "峪", "原", "坡"]
-		return xing + ml[int(h2 * 3.999)]
-	if city_d < 0.5:
-		return xing + "亭"
-	return xing + ("里" if h2 < 0.55 else "乡")
 
 
 ## 江河湖泊：加载时预处理，绘制时按可见范围逐条画
@@ -1586,34 +1487,6 @@ func _ensure_hydro() -> void:
 	print("[地图] 水系 %d 条，湖泊 %d" % [_riv_list.size(), _lake_list.size()])
 
 
-## 到最近河/湖的近似距离（度）
-func _water_near(lon: float, lat: float) -> float:
-	var cx := int(floor(lon / 0.5))
-	var cy := int(floor(lat / 0.5))
-	var best := 9.0
-	for gy in range(cy - 1, cy + 2):
-		for gx in range(cx - 1, cx + 2):
-			var key := Vector2i(gx, gy)
-			if not _hydro_grid.has(key):
-				continue
-			for p in _hydro_grid[key]:
-				var dx: float = (float(p.x) - lon) * maxf(cos(deg_to_rad(lat)), 0.05)
-				var dy: float = float(p.y) - lat
-				var dd: float = sqrt(dx * dx + dy * dy)
-				if dd < best:
-					best = dd
-	return best
-
-
-func _line_bbox(pts: Array) -> Rect2:
-	var mn := Vector2(999, 999)
-	var mx := Vector2(-999, -999)
-	for p in pts:
-		mn.x = minf(mn.x, float(p[0]))
-		mn.y = minf(mn.y, float(p[1]))
-		mx.x = maxf(mx.x, float(p[0]))
-		mx.y = maxf(mx.y, float(p[1]))
-	return Rect2(mn, mx - mn)
 
 
 ## 城门位置：城墙四边中点（经纬度）
@@ -1631,15 +1504,6 @@ func _city_gates(c: Dictionary) -> Array:
 	]
 
 
-## 点选村庄
-func _village_hit(pos: Vector2) -> Dictionary:
-	if map_zoom < 12.0:
-		return {}
-	for v in _villages_for_view(Rect2(Vector2.ZERO, get_viewport().get_visible_rect().size)):
-		var p := _lonlat_to_screen_off(v["ll"], 0.0)
-		if p.distance_to(pos) < 14.0:
-			return {"ll": v["ll"], "name": String(v["name"]), "kind": String(v.get("kind", "village"))}
-	return {}
 
 
 ## 点选城市：命中图标范围
@@ -1653,108 +1517,6 @@ func _city_hit(pos: Vector2) -> Dictionary:
 			return c
 	return {}
 
-
-## 命中测试：鼠标附近是否有城门（只在高倍下）
-func _gate_hit(pos: Vector2) -> Dictionary:
-	for c in TG.cities():
-		var p := _lonlat_to_screen_off(Vector2(float(c["lon"]), float(c["lat"])), 0.0)
-		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(float(c["lat"]))), 0.05) / (_map_scale().x * 360.0)
-		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
-		if sz < 40.0:
-			continue
-		for g in _city_gates(c):
-			var gp := _lonlat_to_screen_off(g["ll"], 0.0)
-			if gp.distance_to(pos) < maxf(10.0, sz * 0.16):
-				return {"ll": g["ll"], "label": "%s·%s" % [String(c["name"]), String(g["name"])]}
-	return {}
-
-
-## 官道：村庄连到最近城池（微弯，赭色）
-func _draw_roads(cr: Rect2) -> void:
-	if terrain == null:
-		return
-	var fade := clampf((map_zoom - 1.4) / 1.6, 0.0, 1.0)
-	if fade <= 0.02:
-		return
-	var cities := TG.cities()
-	if cities.is_empty():
-		return
-	var col := Color(0.42, 0.27, 0.14, 0.55 * fade)
-	# 城际官道：每座城连最近的 2 座（链接表只算一次）
-	if _city_links.is_empty():
-		var seen: Dictionary = {}
-		for i in cities.size():
-			var a := Vector2(float(cities[i]["lon"]), float(cities[i]["lat"]))
-			var ds: Array = []
-			for j in cities.size():
-				if i == j:
-					continue
-				var b := Vector2(float(cities[j]["lon"]), float(cities[j]["lat"]))
-				ds.append([a.distance_to(b), j])
-			ds.sort_custom(func(x, y): return x[0] < y[0])
-			for k in mini(2, ds.size()):
-				var key := Vector2i(mini(i, int(ds[k][1])), maxi(i, int(ds[k][1])))
-				if seen.has(key):
-					continue
-				seen[key] = true
-				_city_links.append(key)
-	for key in _city_links:
-		var i2: int = key.x
-		var j2: int = key.y
-		var p1 := _lonlat_to_screen_off(Vector2(float(cities[i2]["lon"]), float(cities[i2]["lat"])), 0.0)
-		var p2 := _lonlat_to_screen_off(Vector2(float(cities[j2]["lon"]), float(cities[j2]["lat"])), 0.0)
-		if not (cr.grow(30.0).has_point(p1) or cr.grow(30.0).has_point(p2)):
-			continue
-		var dv := p2 - p1
-		var midv := (p1 + p2) * 0.5 + Vector2(-dv.y, dv.x).normalized() * (p1.distance_to(p2) * 0.05)
-		map_root.draw_polyline(PackedVector2Array([p1, midv, p2]), Color(0.40, 0.25, 0.12, 0.65 * fade), 2.0)
-
-	# 官道：镇→县→州→城，逐级汇聚；跨水不连
-	var vlist := _villages_for_view(cr) if map_zoom >= 15.0 else []
-	if not vlist.is_empty():
-		var all_pts: Array = []
-		for v in vlist:
-			all_pts.append({"ll": v["ll"], "lvl": int(v["lvl"])})
-		for c in cities:
-			all_pts.append({"ll": Vector2(float(c["lon"]), float(c["lat"])), "lvl": 0})
-		var drawn := 0
-		for i in all_pts.size():
-			if drawn >= 160:
-				break
-			var a: Vector2 = all_pts[i]["ll"]
-			var al: int = all_pts[i]["lvl"]
-			if al == 0:
-				continue
-			var bi := -1
-			var best := 2.0
-			for j in all_pts.size():
-				if int(all_pts[j]["lvl"]) >= al:
-					continue
-				var b: Vector2 = all_pts[j]["ll"]
-				var dd := Vector2((b.x - a.x) * cos(deg_to_rad(a.y)), b.y - a.y).length()
-				if dd < best:
-					best = dd
-					bi = j
-			if bi < 0:
-				continue
-			var b2: Vector2 = all_pts[bi]["ll"]
-			var wet := false
-			for k in [0.3, 0.5, 0.7]:
-				var mp: Vector2 = a.lerp(b2, k)
-				if TG.dem_at(mp.x, mp.y) < -8.0:
-					wet = true
-					break
-			if wet:
-				continue
-			var pa := _lonlat_to_screen_off(a, 0.0)
-			var pb := _lonlat_to_screen_off(b2, 0.0)
-			if not (cr.grow(30.0).has_point(pa) or cr.grow(30.0).has_point(pb)):
-				continue
-			var dvv := pb - pa
-			var midv := (pa + pb) * 0.5 + Vector2(-dvv.y, dvv.x).normalized() * (pa.distance_to(pb) * 0.04)
-			map_root.draw_polyline(PackedVector2Array([pa, midv, pb]),
-					Color(0.40, 0.26, 0.13, 0.5 * fade), 1.3)
-			drawn += 1
 
 
 
@@ -1908,17 +1670,7 @@ func _zoom_at(target_zoom: float) -> void:
 
 
 
-## 扩散范围：屏幕四周各外扩 120 px（超出不扩散）
-func _zoom_rect() -> Vector4:
-	var vs := get_viewport().get_visible_rect().size
-	var sc := _map_scale()
-	var hw := vs.x * 0.5 + 120.0
-	var hh := vs.y * 0.5 + 120.0
-	return Vector4(
-			map_center.x - hw / sc.x,
-			map_center.y + hh / sc.y,
-			map_center.x + hw / sc.x,
-			map_center.y - hh / sc.y)
+
 
 ## 细节层覆盖范围：可见屏幕四角换算成经纬度，四周各外扩「一屏」。
 ## 超出这个范围的既不烘也不扩散。
@@ -1954,18 +1706,13 @@ func _detail_core() -> Vector4:
 ##   I2 同一倍率的 texel 网格永不改变，只有换倍率才换画布
 ##   I3 已烘好的 texel 永不丢弃（只在整屏烘完后裁回一屏）
 ##   I4 reveal_r 只跟“当前屏幕中心 + 已烘前沿”有关，前沿每次现算
-## ── 高倍细节层：只有"实时屏幕中心 + 阈值 + 一个半径" ────────────────────
-## 规则（就这几条，没有别的分支）：
-##   1. zoom < 45：细版整体渐隐，粗版渐显，淡完释放画布
-##   2. zoom >= 45：从**实时屏幕中心**开始，R 以 450 px/s 向外扩散
-##   3. 拖动：中心每帧现算，烘的优先级跟着变，R 继续推进（不重置）
-##   4. 换倍率 / 换地方：一律 R = 0 重新从中心扩散 —— **即使那块地已经烘过**
-##      （缓存只用来省烘，绝不影响"看到的永远是扩散"，保证一致性）
+## ── 高倍细节层：跟着视野的一张画布 + 一块一块显示 ─────────────────────────
+## 规则：
+##   1. zoom < DETAIL_ZOOM(60)：细版整体渐隐，粗版渐显，淡完释放画布
+##   2. zoom >= 60：烘好一块就显示一块（按离屏幕中心由近到远），不做圆环遮罩
+##   3. 拖动：烘的优先级跟着屏幕中心变；已烘 texel 全部保留
+##   4. 换倍率 / 跳区：旧图渐隐退回粗图，新窗口从头烘
 ##   5. 画布只为一件事长大：覆盖当前屏幕（已烘好的块整块搬过来，不重烘）
-const REVEAL_PX_S := 450.0
-const CLOUD_CX_PX_S := 1200.0   # 云雾中心追赶屏幕中心的速度（够快，不会露出没烘的地方）
-const REVEAL_BAND := 280.0    # >= 2/3 块（384px），把块的硬边吃掉
-const REVEAL_TRAIL := 150.0
 const DETAIL_FADE_S := 0.18
 const DETAIL_KEEP_ZOOM := 3         # 缓存几个倍率的烘焙结果（只省烘）
 
@@ -1977,14 +1724,7 @@ var _canvas_zoom := 0.0
 var _canvas_ds := 8.0     # 当前画布用的 texel 尺寸（4 或 8）
 var _pending_zk := -1               # 防抖：等待停稳的目标倍率
 var _zk_settle := 0.0
-var _reveal_r := 0.0
 var _fade := 0.0                    # 0 = 粗版，1 = 细版
-var _cloud_ll := Vector2.ZERO     # 云雾中心（地图经纬度）
-var _ring_c := Vector2.ZERO         # 揭开圆心（屏幕像素，带路径预估）
-var _detail_vel := Vector2.ZERO     # 屏幕中心的移动速度（像素/秒，平滑后）
-var _pred_lon := 0.0
-var _pred_lat := 0.0
-var _last_center := Vector2(1e9, 1e9)
 var _st_dbg := 0.0
 
 
@@ -1995,23 +1735,10 @@ func _detail_tick(delta: float) -> void:
 		_st_dbg += delta
 		if _st_dbg > 0.5:
 			_st_dbg = 0.0
-			print("[状态] fade=%.2f R=%.0f zk=%d canvas=%s tiles=%d/%d zoom=%.1f"
-					% [_fade, _reveal_r, _cur_zk, str(_canvas != null),
+			print("[状态] fade=%.2f zk=%d canvas=%s tiles=%d/%d zoom=%.1f"
+					% [_fade, _cur_zk, str(_canvas != null),
 					-1 if _canvas == null else _canvas.tiles_done,
 					-1 if _canvas == null else _canvas.tiles_total, map_zoom])
-	# 屏幕中心的移动速度（平滑）+ 往前探的预测中心：
-	# 不直接拿每一帧的 map_center 去用，否则扩散会跟着鼠标一跳一跳
-	var sc0 := _map_scale()
-	if _last_center.x > 1e8:
-		_last_center = map_center
-		_pred_lon = map_center.x
-		_pred_lat = map_center.y
-	var dvx := (map_center.x - _last_center.x) * sc0.x / maxf(delta, 0.001)
-	var dvy := -(map_center.y - _last_center.y) * sc0.y / maxf(delta, 0.001)
-	_detail_vel = _detail_vel.lerp(Vector2(dvx, dvy), clampf(delta * 12.0, 0.0, 1.0))
-	_last_center = map_center
-	_pred_lon = map_center.x + _detail_vel.x * 0.18 / maxf(sc0.x, 0.0001)
-	_pred_lat = map_center.y - _detail_vel.y * 0.18 / maxf(sc0.y, 0.0001)
 	# 阈值以下：细版渐隐，粗版渐显
 	if not map_open or map_zoom < DETAIL_ZOOM:
 		if _fade > 0.0:
@@ -2021,7 +1748,6 @@ func _detail_tick(delta: float) -> void:
 				_map_mat.set_shader_parameter("detail_on", 0.0)
 				_canvas = null
 				_cur_zk = -1
-				_reveal_r = 0.0
 		return
 	# 阈值以上：换倍率（或刚跨过阈值）→ 一律 R=0 重新扩散
 	# 两套固定数据：45-90 倍用 8px/texel 的粗档，90 倍以上用 4px/texel 的细档。
@@ -2072,39 +1798,9 @@ func _detail_tick(delta: float) -> void:
 		_canvas.reorder_from(map_center.x + ahead.x / scv.x,
 				map_center.y - ahead.y / scv.y, core)
 		_canvas.poll()
-	# 云雾中心存**地图坐标**，只在推 uniform 时换算成屏幕像素：
-	# 窗口变了它也不会跳到新中心，而是接着旧位置继续长。
-	var sc_c := _map_scale()
-	if _reveal_r <= 0.5:
-		_cloud_ll = map_center                 # 首次跨过阈值：直接落在屏幕中心
-	else:
-		var dl := map_center.x - _cloud_ll.x
-		var dp := map_center.y - _cloud_ll.y
-		var dpix := Vector2(dl * sc_c.x, -dp * sc_c.y)
-		var step := CLOUD_CX_PX_S * delta
-		if dpix.length() <= maxf(step, 0.001):
-			_cloud_ll = map_center
-		elif dpix.length() > 0.0001:
-			var k2 := step / dpix.length()
-			_cloud_ll.x += dl * k2
-			_cloud_ll.y += dp * k2
-	_pred_lon = _cloud_ll.x
-	_pred_lat = _cloud_ll.y
-	var vs := get_viewport().get_visible_rect().size
-	_ring_c = vs * 0.5 + Vector2((_cloud_ll.x - map_center.x) * sc_c.x,
-			-(_cloud_ll.y - map_center.y) * sc_c.y)
 	# 不做云雾、不做半径、不做区域限制：烘好一块就整块显示，速度只取决于烘焙吞吐
 	_fade = minf(1.0, _fade + delta / DETAIL_FADE_S)
 	_push_detail_uniforms()
-
-
-## 把矩形按倍数向外扩（画布长大时留出余量）
-func _expand_rect(r: Vector4, k: float) -> Vector4:
-	var cx := (r.x + r.z) * 0.5
-	var cy := (r.y + r.w) * 0.5
-	var hw := (r.z - r.x) * 0.5 * k
-	var hh := (r.y - r.w) * 0.5 * k
-	return Vector4(cx - hw, cy + hh, cx + hw, cy - hh)
 
 
 func _canvas_for(zk: int) -> MapDetail:
@@ -2120,6 +1816,7 @@ func _canvas_for(zk: int) -> MapDetail:
 			return cached
 		_canvases.erase(zk)
 		_canvas_order.erase(zk)
+		cached.cancel()      # 别再让废画布在后台抢 worker
 		if OS.get_cmdline_user_args().has("--dbgstate"):
 			print("[细节] 缓存 zk=%d 不覆盖/texel 不符，丢弃重建" % zk)
 	var vr := _detail_view()
@@ -2136,6 +1833,7 @@ func _canvas_for(zk: int) -> MapDetail:
 	while _canvas_order.size() > DETAIL_KEEP_ZOOM:
 		var old: int = _canvas_order.pop_back()
 		if _canvases.has(old) and _canvases[old] != _canvas:
+			(_canvases[old] as MapDetail).cancel()
 			_canvases.erase(old)
 	return c
 
@@ -2200,8 +1898,6 @@ func _bind_canvas(c: MapDetail) -> void:
 
 
 func _push_detail_uniforms() -> void:
-	_map_mat.set_shader_parameter("detail_reveal", _reveal_r)
-	_map_mat.set_shader_parameter("detail_band", REVEAL_BAND)
 	_map_mat.set_shader_parameter("detail_fade", _fade)
 
 ## 调试：--pan=dx,dy / --zoomto=Z 开图 5 秒后动一次（测流式重烘 / 缩放降级）
@@ -2482,8 +2178,6 @@ func _draw_map() -> void:
 	_draw_scroll_rollers(scroll_rect)
 	_draw_brocade(scroll_rect, pad_x, pad_y)
 	var _t1 := Time.get_ticks_usec()
-	var _t2 := Time.get_ticks_usec()
-	var _t3 := Time.get_ticks_usec()
 	_draw_counties(content_rect)
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)
@@ -2493,13 +2187,11 @@ func _draw_map() -> void:
 	var _t4 := Time.get_ticks_usec()
 	if OS.get_cmdline_user_args().has("--maptime"):
 		_tm["frame"] = float(_t1 - _t0) / 1000.0
-		_tm["hydro"] = float(_t2 - _t1) / 1000.0
-		_tm["roads"] = float(_t3 - _t2) / 1000.0
-		_tm["settle"] = float(_t4 - _t3) / 1000.0
+		_tm["marks"] = float(_t4 - _t1) / 1000.0
 		_tm_n += 1
 		if _tm_n % 2 == 0:
-			print("[计时] 框 %.1f ms / 水系 %.1f / 官道 %.1f / 聚落 %.1f"
-					% [_tm["frame"], _tm["hydro"], _tm["roads"], _tm["settle"]])
+			print("[计时] 框 %.1f ms / 点位 %.1f ms"
+					% [_tm["frame"], _tm["marks"]])
 
 	# 玩家位置
 	if terrain != null:
@@ -2693,8 +2385,6 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("detail_on", 0.0)
 	_map_mat.set_shader_parameter("detail_org", Vector2.ZERO)
 	_map_mat.set_shader_parameter("detail_span", Vector2.ONE)
-	_map_mat.set_shader_parameter("detail_reveal", 0.0)
-	_map_mat.set_shader_parameter("detail_band", REVEAL_BAND)
 	_map_mat.set_shader_parameter("detail_fade", 1.0)
 	map_surface.material = _map_mat
 	_map_shader_ok = true

@@ -14,9 +14,6 @@ const APRON := 8          # 阴影差分需要的四周余量（texel）
 
 var tex: ImageTexture = null
 var img: Image = null
-var _tile_rgba := PackedByteArray()
-var _fades: Array = []
-var _pending_reveal: Array = []   # 烘好但还没被波扫到的块
 var px_w := 0
 var px_h := 0
 var lon0 := 0.0           # 西
@@ -30,37 +27,21 @@ var sy := 1.0
 var tiles_total := 0
 var tiles_done := 0
 var first_ready := false
-var ms := 0
-var started := 0          # 开始烘焙的毫秒时间戳
 var tile_state := PackedByteArray()   # 每块是否已合入
 var _chunks: Array = []
 var _chunk_i := 0
 var _target := Vector2(-1, -1)
 var _all_done := false
-var _covered := PackedByteArray()     # 逻辑块是否已被某次烘焙覆盖
-var _baked_texels := 0
-var frontier_texels := 0.0   # 已经烘到的最远距离（texel，从画布中心算）
-var _bake_t0 := 0
-var _tile_t0 := 0
-var zoom_key := 0          # 这块画布属于哪个倍率（换倍率就换画布）
-var reveal_r := 0.0        # 这块画布自己的揭开半径（缓存命中时恢复它）
 var _nx := 0
 var _ny := 0
-var _cx := 0.0            # 当前“第一优先级”中心（texel 坐标）
-var _cy := 0.0
-const RADIAL_N := 64      # 揭开半径的分环带数（越细，半径越连续）
-var _band_w := 1.0
-var _band_need := PackedInt32Array()
 var cancelled := false    # 被抛弃的窗口立刻停，别在后台抢线程
 var _adopt = null   # 同缩放的旧窗口，重叠区直接搬
 
 var _dlon := 0.0
 var _dlat := 0.0
-var _order: Array = []          # [[tx,ty], ...] 由近到远
-var _qi := 0
+var _order: Array = []          # [[tx,ty], ...] 由近到远（_steal_overlap 按它搬重叠块）
 var _gid := -1
 var _stage := 0                 # 0=高程 1=分类 2=去斑
-var _t0 := 0
 var _tw := 0
 var _th := 0
 var _tx0 := 0
@@ -121,13 +102,9 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 	var ny := int(ceil(float(px_h) / float(TILE)))
 	_nx = nx
 	_ny = ny
-	_cx = float(px_w) * 0.5
-	_cy = float(px_h) * 0.5
 	tiles_total = nx * ny
 	tile_state.resize(tiles_total)
 	tile_state.fill(0)
-	_covered.resize(tiles_total)
-	_covered.fill(0)
 	var mid := Vector2(float(nx - 1) * 0.5, float(ny - 1) * 0.5)
 	var cells: Array = []
 	for ty in ny:
@@ -138,22 +115,7 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 	_order.clear()
 	for c in cells:
 		_order.append([int(c[1]), int(c[2])])
-	_qi = 0
 	_stage = 0
-	_t0 = Time.get_ticks_msec()
-	started = _t0
-	_bake_t0 = _t0
-	_tile_t0 = _t0
-	# 环带表：每环带覆盖哪些块（用于连续半径）
-	var dmax := Vector2(float(px_w) * 0.5, float(px_h) * 0.5).length()
-	_band_w = maxf(dmax / float(RADIAL_N), 0.001)
-	_band_need.resize(RADIAL_N)
-	_band_need.fill(0)
-	for ty in ny:
-		for tx in nx:
-			var br: Vector2i = _tile_band(tx, ty)
-			for b in range(br.x, br.y + 1):
-				_band_need[b] += 1
 	# 先把旧窗口已经烘好的重叠块搬过来（平移一屏能省约 40%）
 	if _adopt != null:
 		_steal_overlap()
@@ -163,7 +125,6 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 	_start_full()
 
 
-## 揭开推进：把"整块落在半径 r（texel）内、且已烘好"的块写进掩膜，之后永不回退。
 ## 从 _adopt 搬重叠区：只搬“源窗口里已经烘好、且整块落在重叠区”的块
 func _steal_overlap() -> void:
 	var src = _adopt
@@ -191,77 +152,6 @@ func _steal_overlap() -> void:
 	_order = keep
 
 
-## 换视野中心时把“还没烘的块”按新中心重排（已烘的前 _qi 块不动）
-func retarget(lon: float, lat: float) -> void:
-	var cx := (lon - lon0) / _dlon
-	var cy := (lat0 - lat) / _dlat
-	if absf(cx - _cx) < float(TILE) and absf(cy - _cy) < float(TILE):
-		return
-	_cx = cx
-	_cy = cy
-	# 环带表是按老中心算的（baked_radius 用它当分母），中心一动就必须重算，
-	# 否则 got/need 不同源：揭开半径会卡在 0，或者一下跳到满。
-	_band_need.fill(0)
-	for ty in _ny:
-		for tx in _nx:
-			var br: Vector2i = _tile_band(tx, ty)
-			for b in range(br.x, br.y + 1):
-				_band_need[b] += 1
-	if _qi >= _order.size():
-		return
-	var rest: Array = _order.slice(_qi)
-	rest.sort_custom(func(a, b): return _tile_dist2(a) < _tile_dist2(b))
-	_order = _order.slice(0, _qi) + rest
-
-
-func _tile_dist2(t: Array) -> float:
-	var px := (float(int(t[0])) + 0.5) * float(TILE)
-	var py := (float(int(t[1])) + 0.5) * float(TILE)
-	return (px - _cx) * (px - _cx) + (py - _cy) * (py - _cy)
-
-
-## 已烘区域“从中心算起的连续半径”（texel）。
-## 按半径分 RADIAL_N 个环带统计完成比例再插值 —— 直接用块的矩形算，
-## 半径一次会跳一个块（384 px），揭开就会一卡一卡。
-func baked_radius() -> float:
-	var got := PackedInt32Array()
-	got.resize(RADIAL_N)
-	got.fill(0)
-	for ty in _ny:
-		for tx in _nx:
-			if tile_state[ty * _nx + tx] == 0:
-				continue
-			var br: Vector2i = _tile_band(tx, ty)
-			for b in range(br.x, br.y + 1):
-				got[b] += 1
-	for b in RADIAL_N:
-		var need: int = _band_need[b]
-		if need == 0:
-			continue
-		var r0 := float(b) * _band_w
-		if got[b] >= need:
-			continue
-		return r0 + _band_w * float(got[b]) / float(need)
-	return 1e9
-
-
-## 一块（tx,ty）覆盖的环带范围
-func _tile_band(tx: int, ty: int) -> Vector2i:
-	var x0 := float(tx * TILE)
-	var x1 := float(mini((tx + 1) * TILE, px_w))
-	var y0 := float(ty * TILE)
-	var y1 := float(mini((ty + 1) * TILE, px_h))
-	var dx := maxf(maxf(x0 - _cx, _cx - x1), 0.0)
-	var dy := maxf(maxf(y0 - _cy, _cy - y1), 0.0)
-	var dmin := sqrt(dx * dx + dy * dy)
-	var dmx := 0.0
-	for p in [Vector2(x0, y0), Vector2(x1, y0), Vector2(x0, y1), Vector2(x1, y1)]:
-		dmx = maxf(dmx, p.distance_to(Vector2(_cx, _cy)))
-	var b0: int = clampi(int(dmin / _band_w), 0, RADIAL_N - 1)
-	var b1: int = clampi(int(dmx / _band_w), 0, RADIAL_N - 1)
-	return Vector2i(b0, b1)
-
-
 ## 视口矩形是否完全落在窗口内（纯几何，不看烘没烘）
 ## 容差要留够 3 个 texel：重叠复用会把新窗口的原点吸附到旧窗口的网格上，
 ## 最多偏半个 texel，而"窗口 == 屏幕"时这点偏移就足以让判定失败；
@@ -276,74 +166,15 @@ func lon_per_texel() -> float:
 	return _dlon
 
 
-## 从任意经纬度（一般传屏幕中心）量"已烘进度"：0 = 还没烘，1 = 铺满给定椭圆。
-## 椭圆半轴 hw/hh 用 texel 表示（= 窗口/2 + 120px，换算成 texel）。
-## 沿 64 个方向往外走，碰到未烘瓦片就停，把停点换算成椭圆坐标 t 取最小值 ——
-## 于是前沿永远落在已烘区域内部，且能一路推到四角（圆做不到这点）。
-func inset_norm_at(lon: float, lat: float, hw: float, hh: float) -> float:
-	var px: float = (lon - lon0) / maxf(_dlon, 1e-9)
-	var py: float = (lat0 - lat) / maxf(_dlat, 1e-9)
-	var dirs := 64
-	var step := float(TILE)
-	var best := 1e9
-	for k in dirs:
-		var a := TAU * float(k) / float(dirs)
-		var ca := cos(a)
-		var sa := sin(a)
-		var r := step
-		while r < 4000.0:
-			var tx := int((px + ca * r) / float(TILE))
-			var ty := int((py + sa * r) / float(TILE))
-			if tx < 0 or ty < 0 or tx >= _nx or ty >= _ny:
-				break
-			if tile_state[ty * _nx + tx] == 0:
-				break
-			r += step
-		var t: float = r - step
-		var qx: float = (ca * t) / maxf(hw, 1.0)
-		var qy: float = (sa * t) / maxf(hh, 1.0)
-		best = minf(best, sqrt(qx * qx + qy * qy))
-		if best <= 0.0:
-			break
-	return clampf(best, 0.0, 1.2)
-func inset_texel_at(lon: float, lat: float) -> float:
-	var px: float = (lon - lon0) / maxf(_dlon, 1e-9)
-	var py: float = (lat0 - lat) / maxf(_dlat, 1e-9)
-	var dirs := 64
-	var step := float(TILE)
-	var best := 1e9
-	for k in dirs:
-		var a := TAU * float(k) / float(dirs)
-		var ca := cos(a)
-		var sa := sin(a)
-		var r := step
-		while r < 4000.0:
-			var tx := int((px + ca * r) / float(TILE))
-			var ty := int((py + sa * r) / float(TILE))
-			if tx < 0 or ty < 0 or tx >= _nx or ty >= _ny:
-				break
-			if tile_state[ty * _nx + tx] == 0:
-				break
-			r += step
-		best = minf(best, r - step)
-		if best <= 0.0:
-			break
-	return maxf(best, 0.0)
-
-
 func done() -> bool:
 	return _all_done
 
 
-## 每帧调一次：推进一块。返回 true 表示这一帧有块合入（tex 已更新）
-## 每帧尽量多推进几块：一帧内循环 start → 三趟 → commit，直到时间预算用完。
-## 这样吞吐不再被"一块占三帧"卡住。
-const POLL_BUDGET_MS := 4.0
-
+## 每帧调一次：推进一块（三趟跑完才合入，所以一块要跨三帧）。
+## 返回 true 表示这一帧有块合入（tex 已更新）。
 func poll() -> bool:
 	if cancelled:
 		return false
-	_pump_fades()
 	if _gid == -1:
 		if _stage >= 3:
 			return false
@@ -361,7 +192,6 @@ func poll() -> bool:
 			_set_chunk(_chunk_i)
 			return true
 		_all_done = true
-		ms = Time.get_ticks_msec() - _t0
 		return true
 	_start_stage()
 	return false
@@ -377,24 +207,6 @@ func _start_stage() -> void:
 		_:
 			_gid = WorkerThreadPool.add_group_task(_pass_filter, _th, 8, false, "md_c")
 
-
-
-## 拖动后重新确定"从哪里开始烘"：把剩余队列按离新屏幕中心最近重排
-func resort_from(lon: float, lat: float) -> void:
-	if _order.is_empty():
-		return
-	var cx := (lon - lon0) / _dlon / float(TILE)
-	var cy := (lat0 - lat) / _dlat / float(TILE)
-	_cx = cx * float(TILE)
-	_cy = cy * float(TILE)
-	var rest: Array = []
-	for i in range(_qi, _order.size()):
-		rest.append(_order[i])
-	var c2 := Vector2(cx, cy)
-	rest.sort_custom(func(a, b):
-		return Vector2(float(a[0]), float(a[1])).distance_squared_to(c2) \
-				< Vector2(float(b[0]), float(b[1])).distance_squared_to(c2))
-	_order = _order.slice(0, _qi) + rest
 
 ## 放弃这个窗口：最多浪费正在跑的那一趟，不再启动新的
 func cancel() -> void:
@@ -435,7 +247,6 @@ func _start_full() -> void:
 	_chunk_i = 0
 	_all_done = false
 	_target = Vector2(float(px_w) * 0.5, float(px_h) * 0.5)
-	_covered.fill(0)
 	_set_chunk(0)
 
 
@@ -507,32 +318,9 @@ func _commit_full() -> void:
 			if tile_state[idx] == 0:
 				tile_state[idx] = 1
 				tiles_done += 1
-			_covered[idx] = 1
 	first_ready = true
 
 
-func _start_tile_legacy() -> void:
-	while _qi < _order.size():
-		var t: Array = _order[_qi]
-		_qi += 1
-		var tx: int = int(t[0])
-		var ty: int = int(t[1])
-		if _covered[ty * _nx + tx] == 1:
-			continue
-		# 统一 48x48 texel 一块（3x3 个逻辑块），块大小处处相同
-		var nb := 3
-		_tx0 = tx * TILE
-		_ty0 = ty * TILE
-		_tw = mini(nb * TILE, px_w - _tx0)
-		_th = mini(nb * TILE, px_h - _ty0)
-		var aw := _tw + APRON * 2
-		var ah := _th + APRON * 2
-		_hgt.resize(aw * ah)
-		_lid.resize(_tw * _th)
-		_out.resize(_tw * _th * 4)
-		_stage = 0
-		_gid = WorkerThreadPool.add_group_task(_pass_height, ah, 8, false, "md_a")
-		return
 ## 阶段一：这一块（含四周余量）的高程，供阴影差分用
 func _pass_height(ay: int) -> void:
 	var aw := _tw + APRON * 2
@@ -604,152 +392,6 @@ static func _vote_int(a: int, b: int, c: int, d: int) -> int:
 	if c == d:
 		return c
 	return a
-
-
-## 一块烘好：RGB 立刻写进纹理，但 A 先留 0 —— 由 reveal_step() 按"波"逐帧刷进去。
-## 这样块内部也是逐 texel 渐变的，不会出现 384 px 的整块翻面。
-const EDGE_SOFT := 40.0    # 波前沿的软边宽度（texel，约 160 屏幕像素）
-const EDGE_NOISE := 10.0   # 云雾扰动振幅（texel）
-
-func _commit_tile() -> void:
-	var tx := _tx0 / TILE
-	var ty := _ty0 / TILE
-	var tile := Image.create_from_data(_tw, _th, false, Image.FORMAT_RGBA8, _out)
-	img.blit_rect(tile, Rect2i(0, 0, _tw, _th), Vector2i(_tx0, _ty0))
-	tex.update(img)
-	tiles_done += 1
-	_baked_texels += _tw * _th
-	var fcx := float(_tx0 + _tw) * 0.5 - _cx
-	var fcy := float(_ty0 + _th) * 0.5 - _cy
-	frontier_texels = maxf(frontier_texels, Vector2(fcx, fcy).length() + Vector2(float(_tw), float(_th)).length() * 0.5)
-	if OS.get_cmdline_user_args().has("--bakelog"):
-		var el := maxf(float(Time.get_ticks_msec() - _bake_t0), 1.0)
-		print("[bake] " + str(_tw) + "x" + str(_th) + "  " + str(_baked_texels) + " / " + str(px_w * px_h) + " texel  " + str(int(100.0 * float(_baked_texels) / float(px_w * px_h))) + "%%  " + str(int(float(_baked_texels) * 1000.0 / el)) + " texel/s")
-	var bx := _tw / TILE
-	var by := _th / TILE
-	for j in by:
-		for i in bx:
-			var cx2: int = tx + i
-			var cy2: int = ty + j
-			if cx2 < _nx and cy2 < _ny:
-				tile_state[cy2 * _nx + cx2] = 1
-				_covered[cy2 * _nx + cx2] = 1
-	first_ready = true
-	# 把这一批覆盖的所有逻辑块都登记，否则只有锚块会被揭开（屏幕大部分没有细版）
-	var bx2 := _tw / TILE
-	var by2 := _th / TILE
-	for j in by2:
-		for i in bx2:
-			var cx3: int = tx + i
-			var cy3: int = ty + j
-			if cx3 < _nx and cy3 < _ny:
-				_pending_reveal.append([cx3, cy3])
-
-
-## 波往外推：把已经烘好、但还没被波扫到的块，按"到中心的距离"逐 texel 写 A。
-## 只处理波附近 1–3 块；A 单调不减，扫过就永远显示。
-func reveal_step(cx: float, cy: float, r_tex: float, zone: Rect2) -> void:
-	if _pending_reveal.is_empty():
-		return
-	var keep: Array = []
-	var changed := false
-	for t in _pending_reveal:
-		var tx: int = int(t[0])
-		var ty: int = int(t[1])
-		var x0 := tx * TILE
-		var y0 := ty * TILE
-		var w := mini(TILE, px_w - x0)
-		var h := mini(TILE, px_h - y0)
-		var dmin := 1e9
-		for p in [Vector2(x0, y0), Vector2(x0 + w, y0), Vector2(x0, y0 + h), Vector2(x0 + w, y0 + h)]:
-			dmin = minf(dmin, p.distance_to(Vector2(cx, cy)))
-		if dmin > r_tex + EDGE_SOFT:
-			keep.append(t)
-			continue
-		var bytes: PackedByteArray = img.get_region(Rect2i(x0, y0, w, h)).get_data()
-		var all_full := true
-		for y in h:
-			for x in w:
-				var o := (y * w + x) * 4 + 3
-				var cur: int = bytes[o]
-				if cur >= 255:
-					continue
-				var px := float(x0 + x) + 0.5
-				var py := float(y0 + y) + 0.5
-				if px < zone.position.x or py < zone.position.y or px > zone.end.x or py > zone.end.y:
-					all_full = false
-					continue
-				var n := TG._vnoise(px * 0.10, py * 0.10, 771) - 0.5
-				var d := Vector2(px, py).distance_to(Vector2(cx, cy))
-				var a := int(clampf((r_tex - d) / EDGE_SOFT + n * 0.6 + 0.5, 0.0, 1.0) * 255.0)
-				if a > cur:
-					bytes[o] = a
-					cur = a
-				if cur < 255:
-					all_full = false
-		var im := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, bytes)
-		img.blit_rect(im, Rect2i(0, 0, w, h), Vector2i(x0, y0))
-		changed = true
-		if not all_full:
-			keep.append(t)
-	_pending_reveal = keep
-	if changed:
-		tex.update(img)
-## 把某个已烘邻居靠着我这一侧的那条 8 texel 斜坡补满（A=255）
-func _set_edge_full(tx: int, ty: int, side: int) -> void:
-	var x0 := tx * TILE
-	var y0 := ty * TILE
-	var w := mini(TILE, px_w - x0)
-	var h := mini(TILE, px_h - y0)
-	var rx := x0
-	var ry := y0
-	var rw := w
-	var rh := h
-	var soft := int(EDGE_SOFT) + 1
-	# 补的是整条软边（40 texel），否则噪声边会留一条残留
-	match side:
-		0:      # 邻居在我左边 -> 补它的右边
-			rx = x0 + w - soft
-			rw = soft
-		1:      # 邻居在我右边 -> 补它的左边
-			rw = soft
-		2:      # 邻居在我上面 -> 补它的下边
-			ry = y0 + h - soft
-			rh = soft
-		_:
-			rh = soft
-	_bump_alpha(rx, ry, rw, rh, 1.0)
-
-
-## 把某个矩形区域的 alpha 换成 level（RGB 不动）
-func _bump_alpha(x: int, y: int, w: int, h: int, level: float) -> void:
-	var bytes: PackedByteArray = img.get_region(Rect2i(x, y, w, h)).get_data()
-	var a := int(clampf(level, 0.0, 1.0) * 255.0)
-	var n := bytes.size()
-	var i := 3
-	while i < n:
-		bytes[i] = a
-		i += 4
-	var t := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, bytes)
-	img.blit_rect(t, Rect2i(0, 0, w, h), Vector2i(x, y))
-	tex.update(img)
-
-
-## 每帧推进未完成的淡入（0.45 → 0.75 → 1.0）
-func _pump_fades() -> void:
-	var now := Time.get_ticks_msec()
-	var i := _fades.size() - 1
-	while i >= 0:
-		var f: Dictionary = _fades[i]
-		var age: int = now - int(f["t"])
-		var level := 0.45 if age < 80 else (0.75 if age < 160 else 1.0)
-		if level >= 1.0:
-			_fades.remove_at(i)
-		elif int(f["lv"]) < int(level * 100.0):
-			f["lv"] = int(level * 100.0)
-			_fades[i] = f
-			_bump_alpha(int(f["x"]), int(f["y"]), int(f["w"]), int(f["h"]), level)
-		i -= 1
 
 
 ## 视口（经纬度矩形）对应的 texel 范围

@@ -19,10 +19,7 @@ uniform sampler2D detail_tex : filter_nearest, repeat_disable;
 uniform vec2 detail_org = vec2(0.0, 0.0);    // 细节层左上角（世界 uv）
 uniform vec2 detail_span = vec2(1.0, 1.0);   // 细节层覆盖的 uv 范围
 uniform float detail_on = 0.0;
-uniform float detail_reveal = 1e9;           // 揭开半径（屏幕像素，从屏幕中心算）
-uniform float detail_band = 40.0;            // 揭开环的过渡带宽（屏幕像素）
 uniform float detail_fade = 1.0;             // 整体淡出（换窗口/缩放时用）
-uniform vec2 detail_ring_c = vec2(-1.0, -1.0);   // 揭开圆心（屏幕像素；<0 表示用屏幕正中）
 uniform float water_ink = 1.0;               // 水线浓度
 uniform float zoom = 1.0;                    // 当前缩放倍率（符号在高倍减淡）
 uniform float dbg2 = 0.0;                    // 1 = 输出细节层覆盖率，2 = 输出 duv（对位排查）
@@ -93,8 +90,8 @@ void fragment() {
 	float coast = 1.0 - smoothstep(0.45, 1.50, abs(h + 8.0) / fw);
 	vec3 c = lf_color(lid);
 
-	// 细节层：贴在地理坐标上。A 通道 = 这块烘好了，并且**在粗细交界处带 8 texel 的软斜坡**，
-	// 所以交界就是烘焙前沿的真实轮廓（不规则），不需要任何圆环。
+	// 细节层：贴在地理坐标上。A 通道 = 这块 texel 已烘好（块级 255/0），
+	// 所以粗细交界就是烘焙前沿——烘好一块显示一块，不做任何圆环/云雾遮罩。
 	float g_cov = 0.0;
 	vec2 g_duv = vec2(0.0);
 	if (detail_on > 0.5) {
@@ -102,13 +99,7 @@ void fragment() {
 		vec4 dt = texture(detail_tex, clamp(duv, 0.0, 1.0));
 		vec2 e0 = smoothstep(vec2(0.0), vec2(0.02), duv);
 		vec2 e1 = smoothstep(vec2(0.0), vec2(0.02), vec2(1.0) - duv);
-		// 可见边界完全由 A 决定（CPU 按"到云雾中心的距离"逐 texel 写入，只增不减），
-		// 所以形状是弧形/云雾状，和烘焙用的矩形瓦片无关。
 		float cov = e0.x * e0.y * e1.x * e1.y * dt.a * detail_fade;
-		// 边界处一点点提亮：A 在中间的地方就是边界
-		float edgeband = clamp(4.0 * dt.a * (1.0 - dt.a), 0.0, 1.0);
-		c += vec3(0.075, 0.068, 0.050) * edgeband * e0.x * e0.y * e1.x * e1.y
-				* detail_fade;
 		g_cov = cov;
 		g_duv = duv;
 		if (cov > 0.002) {
