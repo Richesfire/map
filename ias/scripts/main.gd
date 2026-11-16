@@ -2222,13 +2222,6 @@ func _lonlat_to_screen_off(ll: Vector2, off: float) -> Vector2:
 			vs.y * 0.5 - (ll.y - float(p[3])) * float(p[1]))
 
 
-## 经纬度 -> 屏幕（以地图中心为基准）
-func _lonlat_to_screen(ll: Vector2) -> Vector2:
-	var vs := get_viewport().get_visible_rect().size
-	var ppd := (MAP_W * map_zoom) / 360.0
-	var ppy := (MAP_H * map_zoom) / 180.0
-	return Vector2(vs.x * 0.5 + (ll.x - map_center.x) * ppd,
-			vs.y * 0.5 - (ll.y - map_center.y) * ppy)
 
 
 ## 屏幕 -> 经纬度

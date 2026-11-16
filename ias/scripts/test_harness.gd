@@ -10,7 +10,6 @@ extends Node
 ## 否则会和 main.gd 的同名 const 冲突。
 
 const Gen := preload("res://scripts/terrain_gen.gd")
-const Detail := preload("res://scripts/map_detail.gd")
 
 ## main 节点（Node3D）。故意不标类型：要用的是 main 的私有成员，标成 Node/Node3D
 ## 会让静态检查报"方法/成员不存在"。
