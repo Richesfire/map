@@ -6,6 +6,22 @@ extends Node
 const DIR := "res://data/biomes"
 const PROFILE_SCRIPT := "res://scripts/biome_profile.gd"
 
+## 地貌编号 → 配置 id（唯一的事实表，改地貌/配置文件时先看这里）。
+## 以前是按"文件名排序后的下标"取配置，而 data/biomes 里留着历史批次的重名文件
+## （17_delta_wet 与 17_hill_red 并存，共 36 个），下标从 18 起整体错位：
+## 花岗岩山地拿到红壤丘陵、盐碱地拿到三角洲（盐滩上长草和湿地杂物）。
+## 现在按 id 查字典，文件名只当说明；编号本身只用于排序和肉眼对照。
+const LF_PROFILE := {
+	0: "plain_open", 1: "hill_rolling", 2: "mountain_mid", 3: "plateau_steppe",
+	4: "basin_flat", 5: "valley_wide", 6: "desert_sand", 7: "steppe_temp",
+	8: "forest_plain", 9: "wetland_marsh", 10: "ice_glacier", 11: "coast_beach",
+	12: "karst_cone", 13: "yardang", 14: "loess_yuan", 15: "dune_sand",
+	16: "glacial_valley", 17: "delta_wet", 18: "mtn_granite", 19: "mtn_karst",
+	20: "mtn_loess", 21: "mtn_volcanic", 22: "mtn_ice", 23: "hill_red",
+	24: "hill_loess", 25: "hill_danxia", 26: "desert_sand2", 27: "desert_gobi",
+	28: "desert_salt",
+}
+
 ## 内置默认（与 .tres 同结构）——仅作为缺省，正式配置在 data/biomes 下
 const DEFAULTS := [
 	{
@@ -199,7 +215,9 @@ const DEFAULTS := [
 ]
 
 static var _profiles: Array = []
+static var _by_id := {}
 static var _loaded := false
+static var _warned := {}
 
 
 static func _to_dict(p: Resource) -> Dictionary:
@@ -218,6 +236,7 @@ static func _load() -> void:
 		return
 	_loaded = true
 	_profiles = []
+	_by_id = {}
 	var d := DirAccess.open(DIR)
 	if d != null:
 		var files := d.get_files()
@@ -226,10 +245,22 @@ static func _load() -> void:
 			if not f.ends_with(".tres"):
 				continue
 			var res: Resource = load(DIR + "/" + f)
-			if res != null and res is Resource:
-				_profiles.append(_to_dict(res))
+			if res == null or not res is Resource:
+				continue
+			var prof := _to_dict(res)
+			var pid := String(prof.get("id", ""))
+			if pid.is_empty():
+				push_warning("[地貌] %s 没有 id，跳过" % f)
+				continue
+			if _by_id.has(pid):
+				continue   # 重名的旧批次文件：保留文件名靠前的那份
+			_by_id[pid] = prof
+			_profiles.append(prof)
 	if _profiles.is_empty():
-		_profiles = DEFAULTS.duplicate(true)
+		for dd in DEFAULTS:
+			var p2: Dictionary = (dd as Dictionary).duplicate(true)
+			_by_id[p2["id"]] = p2
+			_profiles.append(p2)
 		print("[地貌] 使用内置配置（data/biomes 下没有 .tres）")
 	else:
 		print("[地貌] 已加载 %d 个 .tres 配置" % _profiles.size())
@@ -237,6 +268,13 @@ static func _load() -> void:
 
 static func profile_for(kind: int) -> Dictionary:
 	_load()
+	var nm: String = String(LF_PROFILE.get(kind, ""))
+	if _by_id.has(nm):
+		return _by_id[nm]
+	# 兜底：这个编号还没配 .tres（新加地貌时），退回下标近似，并且只提醒一次
+	if not _warned.has(kind):
+		_warned[kind] = true
+		push_warning("[地貌] 编号 %d 没有配置 %s，退回第 %d 项" % [kind, nm, kind])
 	return _profiles[clampi(kind, 0, _profiles.size() - 1)]
 
 
