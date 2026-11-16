@@ -5,22 +5,15 @@ extends Node
 
 const DIR := "res://data/biomes"
 const PROFILE_SCRIPT := "res://scripts/biome_profile.gd"
+const LandformDb := preload("res://scripts/landform_db.gd")
 
 ## 地貌编号 → 配置 id（唯一的事实表，改地貌/配置文件时先看这里）。
 ## 以前是按"文件名排序后的下标"取配置，而 data/biomes 里留着历史批次的重名文件
 ## （17_delta_wet 与 17_hill_red 并存，共 36 个），下标从 18 起整体错位：
 ## 花岗岩山地拿到红壤丘陵、盐碱地拿到三角洲（盐滩上长草和湿地杂物）。
 ## 现在按 id 查字典，文件名只当说明；编号本身只用于排序和肉眼对照。
-const LF_PROFILE := {
-	0: "plain_open", 1: "hill_rolling", 2: "mountain_mid", 3: "plateau_steppe",
-	4: "basin_flat", 5: "valley_wide", 6: "desert_sand", 7: "steppe_temp",
-	8: "forest_plain", 9: "wetland_marsh", 10: "ice_glacier", 11: "coast_beach",
-	12: "karst_cone", 13: "yardang", 14: "loess_yuan", 15: "dune_sand",
-	16: "glacial_valley", 17: "delta_wet", 18: "mtn_granite", 19: "mtn_karst",
-	20: "mtn_loess", 21: "mtn_volcanic", 22: "mtn_ice", 23: "hill_red",
-	24: "hill_loess", 25: "hill_danxia", 26: "desert_sand2", 27: "desert_gobi",
-	28: "desert_salt",
-}
+## 地貌编号 → 配置 id：表在 landform_db.gd
+const LF_PROFILE := LandformDb.PROFILES
 
 ## 内置默认（与 .tres 同结构）——仅作为缺省，正式配置在 data/biomes 下
 const DEFAULTS := [

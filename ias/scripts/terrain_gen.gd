@@ -18,6 +18,7 @@ const DEM_MAX := 9000.0
 
 const FEATURES_PATH := "res://data/mountain_features.json"
 const BiomeLib := preload("res://scripts/biome_library.gd")
+const LandformDb := preload("res://scripts/landform_db.gd")
 
 # ---- 地貌类型：温度带(9) × 湿度带(5) = 45 类，高地变体再 +45 ----
 const B_LAND_MAX := 90
@@ -966,40 +967,10 @@ const LF_HILL_DANXIA := 25
 const LF_DESERT_SAND := 26
 const LF_DESERT_GOBI := 27
 const LF_DESERT_SALT := 28
-const LF_COUNT := 29
+const LF_COUNT := LandformDb.COUNT
 
-## 地貌类型的代表色（地图/小地图共用，和地表观感对应）
-const LF_COLORS := [
-	Color(0.55, 0.60, 0.36),  # 0 平原
-	Color(0.50, 0.55, 0.34),  # 1 丘陵
-	Color(0.46, 0.44, 0.40),  # 2 山地
-	Color(0.62, 0.58, 0.42),  # 3 高原
-	Color(0.52, 0.55, 0.38),  # 4 盆地
-	Color(0.42, 0.52, 0.38),  # 5 河谷
-	Color(0.80, 0.72, 0.50),  # 6 荒漠
-	Color(0.66, 0.64, 0.40),  # 7 草原
-	Color(0.30, 0.42, 0.24),  # 8 森林
-	Color(0.34, 0.44, 0.36),  # 9 湿地
-	Color(0.86, 0.88, 0.90),  # 10 冰雪
-	Color(0.78, 0.74, 0.56),  # 11 海岸
-	Color(0.56, 0.54, 0.46),  # 12 喀斯特
-	Color(0.74, 0.60, 0.42),  # 13 雅丹
-	Color(0.68, 0.58, 0.40),  # 14 黄土
-	Color(0.84, 0.76, 0.54),  # 15 沙丘
-	Color(0.80, 0.84, 0.86),  # 16 冰川谷
-	Color(0.42, 0.50, 0.34),  # 17 三角洲
-	Color(0.44, 0.42, 0.38),  # 18 花岗岩山地
-	Color(0.54, 0.52, 0.44),  # 19 喀斯特山地
-	Color(0.64, 0.54, 0.38),  # 20 黄土山地
-	Color(0.38, 0.36, 0.34),  # 21 火山山地
-	Color(0.84, 0.86, 0.88),  # 22 冰蚀山地
-	Color(0.66, 0.46, 0.36),  # 23 红壤丘陵
-	Color(0.64, 0.55, 0.40),  # 24 黄土丘陵
-	Color(0.70, 0.42, 0.32),  # 25 丹霞丘陵
-	Color(0.82, 0.74, 0.52),  # 26 沙质荒漠
-	Color(0.66, 0.62, 0.54),  # 27 砾质荒漠
-	Color(0.86, 0.84, 0.76),  # 28 盐碱地
-]
+## 地貌代表色：表在 landform_db.gd（唯一事实表）
+const LF_COLORS := LandformDb.COLORS
 
 
 static func landform_color(kind: int) -> Color:
@@ -1019,11 +990,8 @@ static func landform_material(lon: float, lat: float) -> int:
 	return 0
 
 
-const LF_NAMES := ["平原", "丘陵", "山地", "高原", "盆地", "河谷",
-		"荒漠", "草原", "森林", "湿地", "冰雪", "海岸",
-		"喀斯特", "雅丹", "黄土", "沙丘", "冰川谷", "三角洲",
-		"花岗岩山地", "喀斯特山地", "黄土山地", "火山山地", "冰蚀山地",
-		"红壤丘陵", "黄土丘陵", "丹霞丘陵", "沙质荒漠", "砾质荒漠", "盐碱地"]
+## 地貌名字：表在 landform_db.gd
+const LF_NAMES := LandformDb.NAMES
 
 
 ## 地貌形态：由海拔、坡度、相对起伏和气候代理共同决定。
