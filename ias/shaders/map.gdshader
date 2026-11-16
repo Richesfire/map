@@ -11,6 +11,7 @@ uniform float shade_gain = 1.0;
 uniform float pat_period = 4.0;   // 符号间距（公里），由缩放决定
 uniform float lat_limit = 85.0;
 uniform sampler2D palette_tex : filter_nearest, repeat_disable;   // 29 类本色（唯一一套调色板）
+uniform sampler2D symbol_tex : filter_nearest, repeat_disable;    // 32×1：R=符号类别 G=浓度
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。
@@ -137,23 +138,16 @@ void fragment() {
 		float dash = abs(fract((kmy) / (px * 1.6)) - 0.5);
 		float dash_line = (1.0 - smoothstep(0.01, 0.05, dash)) * 0.35 * fade_ln;
 
-		float ink = 0.0;
-		if (lid > 5.5 && lid < 6.5) ink = dune_ink * 0.70;            // 荒漠
-		else if (lid > 14.5 && lid < 15.5) ink = dune_ink * 0.90;     // 沙丘
-		else if (lid > 25.5 && lid < 26.5) ink = dune_ink * 0.85;     // 沙质荒漠
-		else if (lid > 26.5 && lid < 27.5) ink = dot_p * 0.55;        // 砾质荒漠
-		else if (lid > 12.5 && lid < 13.5) ink = dot_p * 0.45;        // 雅丹
-		else if (lid > 27.5 && lid < 28.5) ink = dot_p * 0.35;        // 盐碱
-		else if (lid > 11.5 && lid < 12.5) ink = dot_p * 0.75;        // 喀斯特（峰丛）
-		else if (lid > 18.5 && lid < 19.5) ink = dot_p * 0.55;        // 喀斯特山地
-		else if (lid > 1.5 && lid < 2.5) ink = hach_line * 0.55;      // 山地
-		else if (lid > 17.5 && lid < 18.5) ink = hach_line * 0.60;    // 花岗岩山地
-		else if (lid > 19.5 && lid < 20.5) ink = hach_line * 0.45;    // 黄土山地
-		else if (lid > 20.5 && lid < 21.5) ink = hach_line * 0.45;    // 火山山地
-		else if (lid > 21.5 && lid < 22.5) ink = hach_line * 0.40;    // 冰蚀山地
-		else if (lid > -0.5 && lid < 1.5) ink = dash_line * 0.30;     // 平原/丘陵
-		else if (lid > 6.5 && lid < 9.5) ink = dash_line * 0.22;      // 草原/森林/湿地
-		else if (lid > 13.5 && lid < 14.5) ink = dot_p * 0.30;        // 黄土
+		// 符号类别/浓度来自 32×1 查表纹理（landform_db.gd 的 SYMBOL_KIND / SYMBOL_STRENGTH），
+		// shader 里不再写死地貌编号区间。
+		vec2 sym_uv = vec2((lid + 0.5) / 32.0, 0.5);
+		vec4 st = texture(symbol_tex, sym_uv);
+		float sk = floor(st.r * 255.0 + 0.5);
+		float pat = dune_ink;
+		if (sk > 1.5 && sk < 2.5) pat = dot_p;
+		else if (sk > 2.5 && sk < 3.5) pat = hach_line;
+		else if (sk > 3.5 && sk < 4.5) pat = dash_line;
+		float ink = (sk < 0.5) ? 0.0 : pat * st.g;
 		// 高倍时符号淡出：这个尺度上靠阴影读地形，符号只会变成噪点
 		ink *= mix(1.0, 0.0, smoothstep(40.0, 90.0, zoom));
 		c *= 1.0 - ink * 0.35;

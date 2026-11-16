@@ -4,6 +4,7 @@ extends Node3D
 const TG := preload("res://scripts/terrain_gen.gd")
 const MapDetail := preload("res://scripts/map_detail.gd")
 const TestHarness := preload("res://scripts/test_harness.gd")
+const LandformDb := preload("res://scripts/landform_db.gd")
 
 ## 世界地图逻辑尺寸（屏幕矩形按它算；纹理可以更高清地拉伸上去）
 const LAT_LIMIT := 85.0      # 裁掉极区（等距圆柱在极点会拉伸）
@@ -2345,6 +2346,14 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("palette_tex",
 			ImageTexture.create_from_image(
 					Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)))
+	# 舆图符号查表：R = 类别（0 无 / 1 沙粒 / 2 点阵 / 3 晕滃 / 4 横划），G = 浓度。
+	# 表在 landform_db.gd；以前是 shader 里一串写死的 if 区间。
+	var sym := Image.create(32, 1, false, Image.FORMAT_RGBA8)
+	sym.fill(Color(0, 0, 0, 1))
+	for i in TG.LF_COUNT:
+		sym.set_pixel(i, 0, Color(float(LandformDb.SYMBOL_KIND[i]) / 255.0,
+				LandformDb.SYMBOL_STRENGTH[i], 0.0, 1.0))
+	_map_mat.set_shader_parameter("symbol_tex", ImageTexture.create_from_image(sym))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	_map_mat.set_shader_parameter("lat_limit", LAT_LIMIT)
 	# 细节层占位（1×1），就绪前 detail_on=0 走编号图
