@@ -149,46 +149,50 @@ var _bb_d = null
 var _bb_t0 := 0
 var _harness: TestHarness = null   # 自检/基准（test_harness.gd）
 var _prof_max := 0.0
+var _argv: PackedStringArray = []   # `--` 之后的用户参数：启动时取一次
+var _flags := {}                    # 上面参数的集合，避免逐帧 OS.get_cmdline_user_args()
 
 
 func _ready() -> void:
 	_parse_args()
-	if OS.get_cmdline_user_args().has("--bakebench"):
+	MapDetail.dbg_state = _flags.has("--dbgstate")
+	MapDetail.dbg_bakelog = _flags.has("--bakelog")
+	if _flags.has("--bakebench"):
 		_bb_d = MapDetail.new()
 		_bb_d.setup(100.0, 27.0, 106.0, 23.0, 920, 570)
 		_bb_t0 = Time.get_ticks_msec()
 		return
-	if OS.get_cmdline_user_args().has("--citytest"):
+	if _flags.has("--citytest"):
 		_th()._city_test()
 		return
-	if OS.get_cmdline_user_args().has("--maptest"):
+	if _flags.has("--maptest"):
 		_th()._map_test()
 		return
-	if OS.get_cmdline_user_args().has("--sitestats"):
+	if _flags.has("--sitestats"):
 		_th()._site_stats()
 		return
-	if OS.get_cmdline_user_args().has("--hash"):
+	if _flags.has("--hash"):
 		TG.ensure_loaded()
 		print("[稳定] 校验和 %d" % _th()._hash_samples())
 		get_tree().quit()
 		return
-	if OS.get_cmdline_user_args().has("--nooverlay"):
+	if _flags.has("--nooverlay"):
 		TG.disable_overlay()
-	if OS.get_cmdline_user_args().has("--seamtest"):
+	if _flags.has("--seamtest"):
 		_th()._seam_test()
 		return
 	if _debug_demtest.size() > 0:
 		_th()._dem_test(_debug_demtest)
 		get_tree().quit()
 		return
-	if OS.get_cmdline_user_args().has("--probe"):
+	if _flags.has("--probe"):
 		_th()._probe()
 		get_tree().quit()
 		return
 	_show_boot("正在载入地形数据……")
 	await get_tree().process_frame
 	await get_tree().process_frame
-	for a in OS.get_cmdline_user_args():
+	for a in _argv:
 		if a.begins_with("--bootshot="):
 			_take_shot(a.substr(11), 0.4)
 	await get_tree().process_frame
@@ -197,7 +201,7 @@ func _ready() -> void:
 	_boot_text("正在烘焙世界地图……")
 	await get_tree().process_frame
 	_build_world_tex()
-	var uargs := OS.get_cmdline_user_args()
+	var uargs := _argv
 	if not _preview_args.is_empty():
 		_th()._preview_tile(float(_preview_args[0]), float(_preview_args[1]), float(_preview_args[2]),
 				int(_preview_args[3]), String(_preview_args[4]))
@@ -226,7 +230,11 @@ func _ready() -> void:
 
 ## 调试参数：--at lon,lat   --fresh   --shot 路径.png
 func _parse_args() -> void:
-	var ua := OS.get_cmdline_user_args()
+	_argv = OS.get_cmdline_user_args()
+	_flags = {}
+	for a in _argv:
+		_flags[a] = true
+	var ua := _argv
 	var i := 0
 	while i < ua.size():
 		var a: String = ua[i]
@@ -688,12 +696,12 @@ func _start_game() -> void:
 		clock_min = _debug_hour * 60.0
 	if _debug_mapzoom > 0.0:
 		map_zoom = _debug_mapzoom
-	if OS.get_cmdline_user_args().has("--map"):
+	if _flags.has("--map"):
 		_open_map()
 	if _debug_mapcenter.x != INF:
 		map_center = _debug_mapcenter
 		_clamp_map_center()
-	if OS.get_cmdline_user_args().has("--hitcenter"):
+	if _flags.has("--hitcenter"):
 		# 调试：直接打开离地图中心最近的聚落面板
 		var best: Dictionary = {}
 		var bd := 9.0
@@ -721,7 +729,7 @@ func _start_game() -> void:
 		var cl := TG.counties()
 		if ci >= 0 and ci < cl.size():
 			_open_county_panel({"ll": cl[ci]["ll"], "county": cl[ci]})
-	if OS.get_cmdline_user_args().has("--selftest"):
+	if _flags.has("--selftest"):
 		_th()._selftest()
 	if sv.has("soul"):
 		player.soul = bool(sv["soul"])
@@ -1400,7 +1408,7 @@ func _settlements_in(lon0: float, lat0: float, lon1: float, lat1: float, max_lvl
 
 ## 江河湖泊：加载时预处理，绘制时按可见范围逐条画
 func _draw_hydro_layer() -> void:
-	if OS.get_cmdline_user_args().has("--nohydro"):
+	if _flags.has("--nohydro"):
 		return
 	_ensure_hydro()
 	var fade := clampf((map_zoom - 1.0) / 1.6, 0.0, 1.0)
@@ -1733,7 +1741,7 @@ var _st_dbg := 0.0
 func _detail_tick(delta: float) -> void:
 	if _map_mat == null or _detail_off:
 		return
-	if OS.get_cmdline_user_args().has("--dbgstate"):
+	if _flags.has("--dbgstate"):
 		_st_dbg += delta
 		if _st_dbg > 0.5:
 			_st_dbg = 0.0
@@ -1819,7 +1827,7 @@ func _canvas_for(zk: int) -> MapDetail:
 		_canvases.erase(zk)
 		_canvas_order.erase(zk)
 		cached.cancel()      # 别再让废画布在后台抢 worker
-		if OS.get_cmdline_user_args().has("--dbgstate"):
+		if _flags.has("--dbgstate"):
 			print("[细节] 缓存 zk=%d 不覆盖/texel 不符，丢弃重建" % zk)
 	var vr := _detail_view()
 	var sc := _map_scale()
@@ -1867,7 +1875,7 @@ func _grow_canvas(core: Vector4) -> void:
 		_canvas = fresh
 		# 不要重置 _fade：重叠区是继承过来的，淡出到粗版会闪一下
 		_bind_canvas(fresh)
-		if OS.get_cmdline_user_args().has("--dbgstate"):
+		if _flags.has("--dbgstate"):
 			print("[细节] 跨区：按当前视野重建画布（不并集）")
 		return
 	var u0 := minf(_canvas.lon0, core.x)
@@ -2063,7 +2071,7 @@ func _draw_map() -> void:
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
 	_content_w = content_w
 	_content_h = content_h
-	if OS.get_cmdline_user_args().has("--mapsize"):
+	if _flags.has("--mapsize"):
 		print("[尺寸] vs=%.0fx%.0f content=%.0fx%.0f at (%.0f,%.0f) sheet=%.0fx%.0f zoom=%.2f"
 				% [vs.x, vs.y, content_w, content_h, content_rect.position.x, content_rect.position.y,
 					sheet_w, sheet_h, map_zoom])
@@ -2078,7 +2086,7 @@ func _draw_map() -> void:
 	var ppd := sc.x
 	var w := ppd * 360.0
 	var h := sc.y * 180.0
-	if OS.get_cmdline_user_args().has("--pintest") and not _pin_probed:
+	if _flags.has("--pintest") and not _pin_probed:
 		_pin_probed = true
 		var vsz2 := get_viewport().get_visible_rect().size
 		var pr := Vector2(vsz2.x * 0.25, vsz2.y * 0.75)
@@ -2142,7 +2150,7 @@ func _draw_map() -> void:
 	if map_hydro != null:
 		map_hydro.queue_redraw()
 	var _t4 := Time.get_ticks_usec()
-	if OS.get_cmdline_user_args().has("--maptime"):
+	if _flags.has("--maptime"):
 		_tm["frame"] = float(_t1 - _t0) / 1000.0
 		_tm["marks"] = float(_t4 - _t1) / 1000.0
 		_tm_n += 1
@@ -2364,7 +2372,7 @@ func _build_world_tex() -> void:
 	_shade_tex = ImageTexture.create_from_image(imgs[1])
 	print("[地图] 快速版 %dx%d，用时 %d ms" % [MAP_BOOT_W, MAP_BOOT_H, Time.get_ticks_msec() - t0])
 	# 高清版放后台线程烘，烘完替换；测试模式下不烘，保证回归计时稳定
-	var args := OS.get_cmdline_user_args()
+	var args := _argv
 	if args.has("--bugtest") or args.has("--selftest") or args.has("--combattest") or args.has("--citytest"):
 		print("[地图] 测试模式：跳过高清烘焙")
 		return
@@ -2551,7 +2559,7 @@ func _process(delta: float) -> void:
 			_bb_d = null
 			get_tree().quit()
 		return
-	if OS.get_cmdline_user_args().has("--prof"):
+	if _flags.has("--prof"):
 		_prof_t += delta
 		_prof_max = maxf(_prof_max, delta)
 		if _prof_t >= 0.25:
@@ -2597,7 +2605,7 @@ func _process(delta: float) -> void:
 
 
 func _update_hud() -> void:
-	if OS.get_cmdline_user_args().has("--fps"):
+	if _flags.has("--fps"):
 		print("[帧率] %.1f fps  绘制调用 %d  三角形 %d" % [Engine.get_frames_per_second(),
 				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 				Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)])

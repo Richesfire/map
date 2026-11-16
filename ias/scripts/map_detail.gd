@@ -12,6 +12,10 @@ const MAX_PX := 4096      # 只做安全阀：正常窗口（含 4K）都不该�
 const TILE := 16          # 逻辑块边长（texel）：中心 1×1、中间 3×3、外围 6×6 一起烘
 const APRON := 8          # 阴影差分需要的四周余量（texel）
 
+## 调试开关：main 启动时按命令行参数设一次（别在每个块里调 OS.get_cmdline_user_args）
+static var dbg_state := false
+static var dbg_bakelog := false
+
 var tex: ImageTexture = null
 var img: Image = null
 var px_w := 0
@@ -57,7 +61,7 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 	var k: float = minf(1.0, float(MAX_PX) / float(maxi(pw, ph)))
 	px_w = maxi(MIN_PX, int(float(pw) * k))
 	px_h = maxi(MIN_PX, int(float(ph) * k))
-	if k < 0.999 and OS.get_cmdline_user_args().has("--dbgstate"):
+	if k < 0.999 and dbg_state:
 		# 静默降分辨率是大方块的直接原因，必须留痕
 		print("[细节] 画布超 MAX_PX 降分辨率：请求 %dx%d → %dx%d（texel 放大 %.1f 倍）"
 				% [pw, ph, px_w, px_h, 1.0 / maxf(k, 0.001)])
@@ -260,7 +264,7 @@ func _set_chunk(i: int) -> void:
 	_hgt.resize(aw0 * (_th + APRON * 2))
 	_lid.resize(_tw * _th)
 	_out.resize(_tw * _th * 4)
-	if OS.get_cmdline_user_args().has("--bakelog"):
+	if dbg_bakelog:
 		var cc := Vector2(float(_tx0 + _tw * 0.5), float(_ty0 + _th * 0.5))
 		print("[chunk] n=", _chunk_i, "/", _chunks.size(), "  d=", int(cc.distance_to(_target)), "  rect=", _tx0, ",", _ty0, " ", _tw, "x", _th)
 	_stage = 0
