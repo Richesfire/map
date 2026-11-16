@@ -1,4 +1,4 @@
-﻿# 数据与仓库说明
+# 数据与仓库说明
 
 仓库里**只放代码、配置、文档和贴图**；运行所需的高程数据放在 GitHub Release 附件里。
 
@@ -18,16 +18,22 @@ python tools/get_data.py          # 下载并解压约 280 MB 数据包
 |---|---|---|
 | dem2k.bin | 256 MB | 全球 2.4 km 高程（地形唯一真源） |
 | dem2k.json | — | 底图经纬范围 |
-| dem_map.bin | 64 MB | 地图着色器用高程纹理 |
+| dem_map_lo.bin | 16 MB | 地图着色器用高程纹理（半分辨率） |
+| dem_map.bin | 64 MB | 地图用全分辨率高程（备用） |
 | land_mask.bin | 8 MB | 海陆掩膜 |
+| landform_id.bin | 32 MB | 预烘焙地貌编号图（8192×4096；不随数据包，用 `ias/tools/bake_landform_id.gd` 现烘） |
+| hydro.json | 1.4 MB | 江河湖泊（Natural Earth 抽稀） |
+| settlements.json | 0.56 MB | GeoNames 现代聚落 10725 处（地图层已撤，留作 3D/调试） |
+| sites_han.json | — | 秦汉史事点位 82 处（城邑坐标取 CHGIS） |
+| counties_han.json | — | 汉书·地理志县治 1134 处（CHGIS V6，CC0） |
 | mountain_features.json | — | 54 条山系特征 |
-| cities.json | — | 手工城市（咸阳） |
+| cities.json | — | 手工城池 16 座 |
 | textures/ | 18 MB | 地表 / 法线 / 树皮 / 叶簇 / 草叶图集 |
-| biomes/ | — | 12 个地貌 `.tres` 配置 |
+| biomes/ | — | 29 个地貌 `.tres` 配置（文件名 `编号_配置id`，编号 = 地貌号） |
 
 ## 自检
 
-双击 `run_tests.bat`（或 `powershell -ExecutionPolicy Bypass -File tools/run_tests.ps1`）跑全部 7 项自检，约 90 秒。
+双击 `run_tests.bat`（或 `powershell -ExecutionPolicy Bypass -File tools/run_tests.ps1`）跑全部 6 项自检，约 70 秒。
 Godot 不在默认路径时，先设置环境变量 `GODOT_EXE`。
 
 ## 为什么不用 LFS
@@ -48,4 +54,4 @@ Release 附件不占 LFS 配额，单独下载一次即可。
 
 - 提交：代码、shader、`.tres`、文档、脚本、贴图；
 - 不提交：`*.bin` 大文件、`.godot/`、`_tiles_cache/`、`_tiles_z6/`、备份目录、原始 zip；
-- 每完成一个可验证功能提交一次，提交前跑 `--bugtest`。
+- 每完成一个可验证功能提交一次，提交前跑 `tools/run_tests.ps1`（6 项 ≈ 70 秒）。
