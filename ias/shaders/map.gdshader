@@ -164,7 +164,7 @@ void fragment() {
 	// 古地图纸色
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));
 	vec3 paper = vec3(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04);
-	c = mix(c, paper, 0.12);
+	c = mix(c, paper, 0.07);
 
 	// 阴影叠上去
 	c = mix(c, vec3(0.30, 0.27, 0.22) * (0.45 + 0.75 * shade), shade_alpha);

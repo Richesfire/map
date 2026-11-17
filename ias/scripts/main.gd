@@ -2285,7 +2285,7 @@ func _draw_map() -> void:
 		map_surface.position = Vector2(-2, -2)
 		map_surface.size = content_rect.size + Vector2(4, 4)
 		_map_mat.set_shader_parameter("shade_alpha",
-				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.50)
+				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.34)
 		# 符号间距：屏幕上约 12 像素
 		_map_mat.set_shader_parameter("pat_period",
 				clampf(12.0 * 111.0 / maxf(ppd, 0.01), 0.12, 60.0))
