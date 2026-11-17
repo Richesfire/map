@@ -342,7 +342,8 @@ def main():
         "version": 3,
         "settlements": S,
     }
-    OUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    with open(OUT, "w", encoding="utf-8", newline="\n") as fp:
+        json.dump(data, fp, ensure_ascii=False, separators=(",", ":"))
     print("共 %d 处：城 %d / 镇 %d / 邑 %d" % (len(S), tiers[1], tiers[2], tiers[3]))
     print("按地区:", dict(regions))
 
