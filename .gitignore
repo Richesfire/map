@@ -1,6 +1,8 @@
 # Godot 编辑器缓存
 ias/.godot/
 ias/.import/
+# 贴图导入元数据（Godot 会按 .godot/ 重新生成）
+*.import
 
 # Python / 临时文件
 __pycache__/
