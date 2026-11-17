@@ -569,6 +569,9 @@ func _mat() -> ShaderMaterial:
 	tex.generate_mipmaps = true
 	tex.noise = n
 	m.set_shader_parameter("noise_tex", tex)
+	# 雪线随纬度：赤道约 4800 m，45° 约 2775 m，60° 约 2100 m，70° 约 1650 m
+	# （以前固定 2800 m，阿尔卑斯 2737 m 差一点没雪、西伯利亚/加拿大更不可能有雪）
+	m.set_shader_parameter("snow_line", clampf(4800.0 - 45.0 * absf(center_lat), 600.0, 5200.0))
 	return m
 
 

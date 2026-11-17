@@ -1010,6 +1010,8 @@ const LF_HILL_DANXIA := 25
 const LF_DESERT_SAND := 26
 const LF_DESERT_GOBI := 27
 const LF_DESERT_SALT := 28
+const LF_TAIGA := 29        # 亚寒带针叶林（西伯利亚/加拿大/北欧）
+const LF_TUNDRA := 30       # 苔原（极地边缘、高山苔原）
 const LF_COUNT := LandformDb.COUNT
 
 ## 地貌代表色：表在 landform_db.gd（唯一事实表）
@@ -1169,14 +1171,24 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if m > 0.75 and slope < 0.8 and h < 120.0 and relief < 40.0 \
 			and h < (h_e + h_w + h_n + h_s) * 0.25 - 1.5:
 		return LF_WETLAND
-	# 平坦低地：按干湿分草原 / 平原；特别湿的留给森林
+	# 高纬蒸发弱 → 有效湿度更高（以前按同一套湿度判，西伯利亚/加拿大全被画成草原）
+	var m2 := clampf(m + maxf(absf(lat) - 40.0, 0.0) * 0.0065, 0.0, 1.0)
+	# 平坦低地：先看冷不冷（苔原 / 针叶林），再按干湿分草原 / 平原
 	if slope < 1.5 and relief < 30.0 and h < 600.0:
-		if t < 10.0 or m < 0.42:
+		if t < -3.0:
+			return LF_TUNDRA
+		if t < 5.0 and m2 > 0.40:
+			return LF_TAIGA
+		if t < 10.0 or m2 < 0.42:
 			return LF_STEPPE
-		if m < 0.80:
+		if m2 < 0.80:
 			return LF_PLAIN
-	# 温度带区分草原 / 森林
-	if t < 10.0 or m < 0.45:
+	# 温度带区分苔原 / 针叶林 / 草原 / 森林
+	if t < -3.0:
+		return LF_TUNDRA
+	if t < 5.0 and m2 > 0.40:
+		return LF_TAIGA
+	if m2 < 0.45:
 		return LF_STEPPE
 	return LF_FOREST
 
