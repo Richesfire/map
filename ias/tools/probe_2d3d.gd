@@ -1,6 +1,7 @@
 extends SceneTree
 ## 对比「2D 舆图的地貌」和「3D 世界近景的地貌」是否一致。
-## 2D 用底图高程 dem_at 分类；3D 用 height_ll（含程序细节）分类，近景 spacing≈60 m。
+## 2D 低倍用烘焙编号图（kind_baked）；3D 现在也用底图高程 dem_at 分类（2026-11-17 解耦）。
+## 正常应 0 不一致；有偏差说明烘焙图过期，要重烘。
 ## 用法：godot --headless --path ias --script res://tools/probe_2d3d.gd -- 108 110 34 35.5 0.05
 
 const TG := preload("res://scripts/terrain_gen.gd")
@@ -23,8 +24,8 @@ func _init() -> void:
 		var lon := lon0
 		while lon <= lon1:
 			var h2: float = TG.dem_at(lon, lat)
-			var k2: int = TG.landform_kind(lon, lat, h2)
-			var h3: float = TG.height_ll(lon, lat, 60.0)
+			var k2: int = TG.kind_baked(lon, lat)
+			var h3: float = TG.dem_at(lon, lat)
 			var k3: int = TG.landform_kind(lon, lat, h3)
 			n += 1
 			hmax = maxf(hmax, absf(h3 - h2))

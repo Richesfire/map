@@ -90,7 +90,7 @@ func build(progress: Callable = Callable(), q_ratio: float = Q) -> void:
 	var h0 := height_xyz(0, 0, 1.0)
 	verts.append(Vector3(0, h0, 0))
 	var c0 := TG.biome_color(b0)
-	var lf0 := TG.landform_kind(center_lon, center_lat, h0)
+	var lf0 := TG.landform_kind(center_lon, center_lat, TG.dem_at(center_lon, center_lat))
 	var mat0 := TG.landform_material(center_lon, center_lat)
 	pid.append(lf0 + mat0 * 32)
 	cols.append(Color(c0.r, c0.g, c0.b, 0.0))
@@ -119,7 +119,9 @@ func build(progress: Callable = Callable(), q_ratio: float = Q) -> void:
 			var dp := (ll.y - memo_lat) * 110540.0
 			if dl * dl + dp * dp > 3600.0 or absf(h - memo_h) > 15.0:
 				memo_biome = TG.biome_at(ll.x, ll.y, h)
-				memo_lf = TG.landform_kind(ll.x, ll.y, h)
+				# 分类用**底图高程**（和 2D 舆图同一份输入），不用带程序细节的顶点高度：
+				# 否则同一道山脊，地图说"丘陵"、脚下贴图说"花岗岩"，两边对不上。
+				memo_lf = TG.landform_kind(ll.x, ll.y, TG.dem_at(ll.x, ll.y))
 				memo_mat = TG.landform_material(ll.x, ll.y)
 				memo_lon = ll.x
 				memo_lat = ll.y
