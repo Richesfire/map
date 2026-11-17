@@ -1139,8 +1139,9 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 黄土：中纬半干旱、台地边缘
 	if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 5.0:
 		return LF_LOESS
-	# 三角洲：近海低平、湿润
-	if h < 25.0 and m > 0.55 and slope < 0.8:
+	# 三角洲：只留真正贴着海/大湖的低平河口（以前"h<25 且湿润"把整个渤海平原
+	# 判成三角洲，地图上东部看起来像海）
+	if h < 20.0 and slope < 1.0 and m > 0.55 and _near_sea(lon, lat, 0.5):
 		return LF_DELTA
 	# 高而平 → 高原
 	if h > 1200.0:
@@ -1157,13 +1158,31 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		return LF_DESERT_SAND
 	if m < 0.30 and absf(lat) > 24.0 and absf(lat) < 45.0:
 		return LF_DESERT_GOBI
-	# 湿润低平 → 湿地
-	if m > 0.72 and slope < 1.0 and h < 60.0 and relief < 40.0:
+	# 湿地：必须是真正的低洼积水（比四周平均低），不能把整片湿润平原都算进来
+	if m > 0.75 and slope < 0.8 and h < 120.0 and relief < 40.0 \
+			and h < (h_e + h_w + h_n + h_s) * 0.25 - 1.5:
 		return LF_WETLAND
+	# 平坦低地：按干湿分草原 / 平原；特别湿的留给森林
+	if slope < 1.5 and relief < 30.0 and h < 600.0:
+		if t < 10.0 or m < 0.42:
+			return LF_STEPPE
+		if m < 0.80:
+			return LF_PLAIN
 	# 温度带区分草原 / 森林
 	if t < 10.0 or m < 0.45:
 		return LF_STEPPE
 	return LF_FOREST
+
+
+## 附近（半径 deg 度，8 个方向）有没有海/大湖：只给"三角洲"用。
+## 8 次掩膜查表约 1.5 µs，相对 landform_kind 的 31 µs 可以忽略。
+static func _near_sea(lon: float, lat: float, deg: float = 0.5) -> bool:
+	var cosl := maxf(cos(deg_to_rad(lat)), 0.2)
+	for k in 8:
+		var a := TAU * float(k) / 8.0
+		if is_water(lon + cos(a) * deg / cosl, lat + sin(a) * deg):
+			return true
+	return false
 
 
 ## 局部地貌：域扭曲 + 脊状多重分形。

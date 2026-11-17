@@ -140,6 +140,7 @@ var _detail: MapDetail = null       # 正在烘/最近烘好的窗口
 var _detail_shown := false
 var _detail_off := false
 var _detail_dbg := 0
+var _dump_detail := ""      # --dumpdetail=路径：细节层烘完后存 PNG（对位/查色用）
 var _pan_test := Vector2.ZERO       # --pan=dx,dy：开图 5 秒后平移这么多像素（测流式）
 var _zoom_test := 0.0               # --zoomto=Z：开图 5 秒后切到这个倍率
 var _pan_acc := 0.0
@@ -277,6 +278,8 @@ func _parse_args() -> void:
 			_detail_off = true
 		elif a.begins_with("--dbgdetail="):
 			_detail_dbg = int(a.substr(12))
+		elif a.begins_with("--dumpdetail="):
+			_dump_detail = a.substr(13)
 		elif a.begins_with("--yaw="):
 			_debug_yaw = float(a.substr(6))
 		elif a.begins_with("--air="):
@@ -1160,11 +1163,19 @@ func _draw_sites(cr: Rect2) -> void:
 	var list := TG.sites()
 	if list.is_empty():
 		return
-	var fade := clampf((map_zoom - 2.0) / 4.0, 0.0, 1.0)
-	if fade <= 0.01:
+	_poi_dedup()
+	var fade := clampf((map_zoom - 3.0) / 3.0, 0.0, 1.0)      # 关隘/城邑
+	var fade_v := clampf((map_zoom - 22.0) / 6.0, 0.0, 1.0)   # 邑（小聚落，最后才出）
+	if fade <= 0.01 and fade_v <= 0.01:
 		return
 	var sz := clampf(3.0 + map_zoom * 0.05, 3.0, 7.5)
 	for s in list:
+		var kind0 := String(s.get("kind", "要地"))
+		var a := fade_v if kind0 == "邑" else fade
+		if a <= 0.01:
+			continue
+		if _hid_sites.has(_ll_key(float(s["lon"]), float(s["lat"]))):
+			continue
 		var ll := Vector2(float(s["lon"]), float(s["lat"]))
 		var p := _lonlat_to_screen_off(ll, 0.0)
 		if not cr.grow(12.0).has_point(p):
@@ -1173,11 +1184,11 @@ func _draw_sites(cr: Rect2) -> void:
 				and (_hover["ll"] as Vector2).is_equal_approx(ll)
 		if hov:
 			# 悬停：金盘 + 一圈亮边，符号本身也放大一点（盘别太大，免得盖住旁边那一丛点位）
-			map_root.draw_circle(p, sz + 4.5, Color(0.96, 0.82, 0.42, 0.85 * fade))
-			map_root.draw_arc(p, sz + 6.5, 0.0, TAU, 20, Color(0.99, 0.90, 0.55, 0.90 * fade), 1.4)
-			_site_marker(p, String(s.get("kind", "要地")), sz * 1.2, fade)
+			map_root.draw_circle(p, sz + 4.5, Color(0.96, 0.82, 0.42, 0.85 * a))
+			map_root.draw_arc(p, sz + 6.5, 0.0, TAU, 20, Color(0.99, 0.90, 0.55, 0.90 * a), 1.4)
+			_site_marker(p, kind0, sz * 1.2, a)
 		else:
-			_site_marker(p, String(s.get("kind", "要地")), sz, fade)
+			_site_marker(p, kind0, sz, a)
 
 
 ## 关 / 城（都） / 邑 / 津 / 要地（仓、战场）的舆图符号，画在屏幕坐标 p 上，s 为半径像素。
@@ -1267,7 +1278,8 @@ func _draw_counties(cr: Rect2) -> void:
 	var list := TG.counties()
 	if list.is_empty():
 		return
-	var fade := clampf((map_zoom - 20.0) / 10.0, 0.0, 1.0)
+	_poi_dedup()
+	var fade := clampf((map_zoom - 10.0) / 6.0, 0.0, 1.0)
 	if fade <= 0.01:
 		return
 	var sc := _map_scale()
@@ -1284,6 +1296,8 @@ func _draw_counties(cr: Rect2) -> void:
 		var ll: Vector2 = it["ll"]
 		# 视口外的点先按经纬度框掉（1134 个全画也不卡，但这层是每帧都跑的）
 		if absf(ll.x - cx) > half_lon or absf(ll.y - cy) > half_lat:
+			continue
+		if _hid_counties.has(_ll_key(ll.x, ll.y)):
 			continue
 		var p := _lonlat_to_screen_off(ll, 0.0)
 		if not cr.has_point(p):
@@ -1529,6 +1543,40 @@ func _city_gates(c: Dictionary) -> Array:
 
 
 
+## 定居点层级与去重（2026-11-17）：
+##   城（cities.json / 域外 tier1）最早显示；关隘、城邑其次；汉县再次；邑（小聚落）最后。
+##   同一处叠着的点位只画一个：名字和城一样的史事点位不画（城已经有了），
+##   和点位/别的县完全同坐标的县只留第一个。
+var _poi_deduped := false
+var _hid_sites := {}
+var _hid_counties := {}
+
+
+func _ll_key(lon: float, lat: float) -> String:
+	return "%.2f,%.2f" % [lon, lat]
+
+
+func _poi_dedup() -> void:
+	if _poi_deduped:
+		return
+	_poi_deduped = true
+	var names := {}
+	for c in TG.cities():
+		names[String(c["name"])] = true
+	var spots := {}
+	for c in TG.cities():
+		spots[Vector2i(int(float(c["lon"]) * 100.0), int(float(c["lat"]) * 100.0))] = true
+	for st in TG.sites():
+		if names.has(String(st["name"])):
+			_hid_sites[_ll_key(float(st["lon"]), float(st["lat"]))] = true
+		spots[Vector2i(int(float(st["lon"]) * 100.0), int(float(st["lat"]) * 100.0))] = true
+	for it in TG.counties():
+		var ll2: Vector2 = it["ll"]
+		var cell := Vector2i(int(ll2.x * 100.0), int(ll2.y * 100.0))
+		if spots.has(cell) or _hid_counties.has(_ll_key(ll2.x, ll2.y)):
+			_hid_counties[_ll_key(ll2.x, ll2.y)] = true
+
+
 ## 地图上的可点物：城 / 关城邑 / 汉县（三套数据，一个入口）。
 ## 命中规则：**取最近的**（各自的命中半径内），距离相同时按 城 → 关城邑 → 汉县 排。
 ## 以前是"先城、再关城、再汉县"，于是同一处叠着的两个点位（比如咸阳城 12 km 外
@@ -1536,6 +1584,7 @@ func _city_gates(c: Dictionary) -> Array:
 ## 用户看到的就是"点两个不同的定居点，面板都写咸阳"。
 ## cycle=true 时（左键点击）：同一个位置连点会依次切换叠在这里的候选。
 func _poi_cands(pos: Vector2) -> Array:
+	_poi_dedup()
 	var out: Array = []
 	# 城：图标大小随缩放变（咸阳城墙约 3.7 km 见方），命中半径跟着走
 	for c in TG.cities():
@@ -1546,12 +1595,19 @@ func _poi_cands(pos: Vector2) -> Array:
 		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 		if d < maxf(sz * 0.75, 12.0):
 			out.append({"kind": "city", "ll": ll, "data": c, "d": d, "pri": 0})
-	if map_zoom >= 2.0:
-		for s in TG.sites():
-			var ll := Vector2(float(s["lon"]), float(s["lat"]))
-			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
-			if d < 12.0:
-				out.append({"kind": "site", "ll": ll, "data": s, "d": d, "pri": 1})
+	for s in TG.sites():
+		var kd := String(s.get("kind", "要地"))
+		if kd == "邑":
+			if map_zoom < 22.0:
+				continue
+		elif map_zoom < 3.0:
+			continue
+		if _hid_sites.has(_ll_key(float(s["lon"]), float(s["lat"]))):
+			continue
+		var ll := Vector2(float(s["lon"]), float(s["lat"]))
+		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
+		if d < 12.0:
+			out.append({"kind": "site", "ll": ll, "data": s, "d": d, "pri": 1})
 	for w in TG.world_settlements():
 		var tier := int(w.get("tier", 1))
 		if tier > 1 and map_zoom < 2.0:
@@ -1560,7 +1616,7 @@ func _poi_cands(pos: Vector2) -> Array:
 		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 		if d < (10.0 if tier <= 1 else 8.0):
 			out.append({"kind": "world", "ll": ll, "data": w, "d": d, "pri": 1})
-	if map_zoom >= 12.0:
+	if map_zoom >= 10.0:
 		# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
 		var ll0 := _screen_to_lonlat(pos)
 		var sc := _map_scale()
@@ -1569,6 +1625,8 @@ func _poi_cands(pos: Vector2) -> Array:
 		for it in TG.counties():
 			var ll: Vector2 = it["ll"]
 			if absf(ll.x - ll0.x) > rl or absf(ll.y - ll0.y) > rb:
+				continue
+			if _hid_counties.has(_ll_key(ll.x, ll.y)):
 				continue
 			var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 			if d < 9.0:
@@ -1904,6 +1962,11 @@ func _detail_tick(delta: float) -> void:
 		_canvas.reorder_from(map_center.x + ahead.x / scv.x,
 				map_center.y - ahead.y / scv.y, core)
 		_canvas.poll()
+	if _dump_detail != "" and _canvas != null and _canvas.done():
+		_canvas.img.save_png(_dump_detail)
+		print("[细节] 已存 %s（%dx%d，R=地貌编号 G=阴影 B=水线）"
+				% [_dump_detail, _canvas.px_w, _canvas.px_h])
+		_dump_detail = ""
 	# 不做云雾、不做半径、不做区域限制：烘好一块就整块显示，速度只取决于烘焙吞吐
 	_fade = minf(1.0, _fade + delta / DETAIL_FADE_S)
 	_push_detail_uniforms()
