@@ -49,6 +49,7 @@ var clock_min := CLOCK_START            # 游戏内分钟（连续）
 var _clock_acc := 0.0
 var _sun: DirectionalLight3D
 var _debug_center := Vector2(INF, INF)
+var _debug_up := 0.0          # --up=米：把出生点抬高，调试看水面/地形用
 var _debug_fresh := false
 var _debug_shot := ""
 var _debug_shot_delay := 3.0
@@ -244,8 +245,10 @@ func _parse_args() -> void:
 		var a: String = ua[i]
 		if a.begins_with("--at="):
 			var p := a.substr(5).split(",")
-			if p.size() == 2:
+			if p.size() >= 2:
 				_debug_center = Vector2(float(p[0]), float(p[1]))
+			if p.size() >= 3:
+				_debug_up = float(p[2])
 		elif a == "--fresh":
 			_debug_fresh = true
 		elif a.begins_with("--shot="):
@@ -981,7 +984,7 @@ func _travel_ll(ll: Vector2, from_place := false) -> void:
 	await get_tree().process_frame
 	await terrain._build_vegetation(_on_build_progress)
 	player.soul = false
-	player.global_position = Vector3(0, terrain.height_xyz(0, 0) + 3.0, 0)
+	player.global_position = Vector3(0, terrain.height_xyz(0, 0) + 3.0 + _debug_up, 0)
 	_update_hud()
 	_update_sun()
 	toast("行 %d 公里，历时 %s 日" % [int(round(dist_km)), _cn(int(round(days)))])

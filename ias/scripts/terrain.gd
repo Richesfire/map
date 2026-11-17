@@ -21,6 +21,7 @@ var _mesh: MeshInstance3D
 var _body: StaticBody3D
 var _veg: Node3D
 var _city_root: Node3D
+var _water: MeshInstance3D
 
 var center_lon := 113.72
 var center_lat := 36.00
@@ -65,8 +66,10 @@ func build(progress: Callable = Callable(), q_ratio: float = Q) -> void:
 	# 新网格挂上去之后再释放旧的。
 	var old_mesh := _mesh
 	var old_body := _body
+	var old_water := _water
 	_mesh = null
 	_body = null
+	_water = null
 
 	var t0 := Time.get_ticks_msec()
 	var radii: Array[float] = []
@@ -240,6 +243,11 @@ func build(progress: Callable = Callable(), q_ratio: float = Q) -> void:
 	_mesh.mesh = mesh
 	add_child(_mesh)
 
+	# 水面（海 / 河 / 湖）：和地形同一批顶点算出来的，中心一换就跟着重建
+	_build_water(verts, idx)
+	if old_water != null:
+		old_water.queue_free()
+
 	if progress.is_valid():
 		progress.call(0.92)
 	await get_tree().process_frame
@@ -261,6 +269,158 @@ func build(progress: Callable = Callable(), q_ratio: float = Q) -> void:
 		progress.call(1.0)
 	print("[地形] 顶点 %d，环 %d，用时 %d ms"
 			% [verts.size(), radii.size(), Time.get_ticks_msec() - t0])
+
+
+## 3D 水面：海（地形低于 0 且掩膜判水的三角面抬到 y=0）+ 河（hydro 折线扩成条带）+ 湖（多边形扇面）。
+## 以前 3D 世界完全没有水：海就是一块低洼地，还在上面长草。
+var _hydro_loaded := false
+var _hydro_rivers: Array = []
+var _hydro_lakes: Array = []
+
+
+func _load_hydro() -> void:
+	if _hydro_loaded:
+		return
+	_hydro_loaded = true
+	var f := FileAccess.open("res://data/hydro.json", FileAccess.READ)
+	if f == null:
+		return
+	var js: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(js) != TYPE_DICTIONARY:
+		return
+	_hydro_rivers = js.get("rivers", [])
+	_hydro_lakes = js.get("lakes", [])
+
+
+func _xz_of(lon: float, lat: float) -> Vector2:
+	return Vector2((lon - center_lon) * 111320.0 * cos(deg_to_rad(center_lat)),
+			(center_lat - lat) * 110540.0)
+
+
+## 三角形按 y<=0 裁剪，返回投影到 y=0 的多边形（x,z），0..4 个点。
+func _clip_below(a: Vector3, b: Vector3, c: Vector3) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var vs := [a, b, c]
+	for i in 3:
+		var p0: Vector3 = vs[i]
+		var p1: Vector3 = vs[(i + 1) % 3]
+		var in0: bool = p0.y < 0.0
+		var in1: bool = p1.y < 0.0
+		if in0:
+			out.append(Vector2(p0.x, p0.z))
+		if in0 != in1:
+			var t: float = p0.y / (p0.y - p1.y)
+			out.append(Vector2(lerpf(p0.x, p1.x, t), lerpf(p0.z, p1.z, t)))
+	return out
+
+
+func _build_water(verts: PackedVector3Array, idx: PackedInt32Array) -> void:
+	var t0 := Time.get_ticks_msec()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var tri := 0
+	# —— 海面：三角面按 y=0 精确裁剪（只留水下部分），海岸线才不会被裁成锯齿 ——
+	for i in range(0, idx.size(), 3):
+		var a := verts[idx[i]]
+		var b := verts[idx[i + 1]]
+		var c := verts[idx[i + 2]]
+		if a.y >= 0.0 and b.y >= 0.0 and c.y >= 0.0:
+			continue
+		var poly := _clip_below(a, b, c)
+		if poly.size() < 3:
+			continue
+		# 用三角形重心判海陆：裁剪后的第一个点常常正好落在岸线上，掩膜会判成陆地
+		var la := lonlat_of((a.x + b.x + c.x) / 3.0, (a.z + b.z + c.z) / 3.0)
+		if not TG.is_water(la.x, la.y):
+			continue
+		for k in range(1, poly.size() - 1):
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(poly[0].x, 0.0, poly[0].y))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(poly[k].x, 0.0, poly[k].y))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(poly[k + 1].x, 0.0, poly[k + 1].y))
+			tri += 1
+	# —— 河 / 湖 ——
+	_load_hydro()
+	var edge := R_MAX * 1.05
+	var riv := 0
+	for r in _hydro_rivers:
+		var pts: Array = r["p"]
+		var w := clampf(110.0 * pow(1.7, 6.0 - float(r.get("r", 5))), 80.0, 1600.0)
+		var prev := Vector2(INF, INF)
+		var prev_h := 0.0
+		for q in pts:
+			var xz := _xz_of(float(q[0]), float(q[1]))
+			if xz.length() > edge:
+				prev = Vector2(INF, INF)
+				continue
+			var h := height_xyz(xz.x, xz.y) + 0.6
+			if prev.x != INF:
+				var d := (xz - prev)
+				if d.length() > 0.5:
+					var nrm := Vector2(-d.y, d.x).normalized() * (w * 0.5)
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(prev.x + nrm.x, prev_h, prev.y + nrm.y))
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(xz.x + nrm.x, h, xz.y + nrm.y))
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(prev.x - nrm.x, prev_h, prev.y - nrm.y))
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(prev.x - nrm.x, prev_h, prev.y - nrm.y))
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(xz.x + nrm.x, h, xz.y + nrm.y))
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(xz.x - nrm.x, h, xz.y - nrm.y))
+					riv += 1
+			prev = xz
+			prev_h = h
+	var lak := 0
+	for l in _hydro_lakes:
+		var poly: Array = l["p"]
+		var pts2: Array = []
+		var sum := Vector2.ZERO
+		var far := true
+		for q in poly:
+			var xz2 := _xz_of(float(q[0]), float(q[1]))
+			if xz2.length() <= edge:
+				far = false
+			pts2.append(xz2)
+			sum += xz2
+		if far or pts2.size() < 3:
+			continue
+		var c := sum / float(pts2.size())
+		if c.length() > edge:
+			continue
+		var y := height_xyz(c.x, c.y) + 0.4
+		for i in pts2.size():
+			var p0: Vector2 = pts2[i]
+			var p1: Vector2 = pts2[(i + 1) % pts2.size()]
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(c.x, y, c.y))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(p0.x, y, p0.y))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(Vector3(p1.x, y, p1.y))
+			lak += 1
+	var mesh := st.commit()
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/water.gdshader")
+	# 调试：把水染成品红，确认水域位置（正常运行时由 shader 默认色决定）
+	if OS.get_cmdline_user_args().has("--pinkwater"):
+		mat.set_shader_parameter("deep_color", Color(1, 0, 1))
+		mat.set_shader_parameter("shallow_color", Color(1, 0, 1))
+		mat.set_shader_parameter("sky_color", Color(1, 0, 1))
+	mesh.surface_set_material(0, mat)
+	_water = MeshInstance3D.new()
+	_water.mesh = mesh
+	_water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_water)
+	print("[水面] 三角面 %d（海 %d / 河 %d / 湖 %d），用时 %d ms"
+			% [tri + riv + lak, tri, riv, lak, Time.get_ticks_msec() - t0])
 
 
 ## 程序生成 4x4 地表纹理图集（草/枯草/裸土/砾石/岩石/雪/泥…）
@@ -1375,6 +1535,9 @@ func _build_vegetation(progress: Callable = Callable()) -> void:
 		if TG.city_blend(ll.x, ll.y).x > 0.3:
 			continue
 		var h_rough := TG.dem_at(ll.x, ll.y)
+		# 水下不长东西（海/湖）；以前海床上会冒出草和树
+		if h_rough < 0.5 and TG.is_water(ll.x, ll.y):
+			continue
 		var biome := TG.biome_at(ll.x, ll.y, h_rough)
 		var density := TG.tree_density(biome)
 		if density <= 0.0 or rng.randf() > density:
