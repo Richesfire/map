@@ -1047,6 +1047,9 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		return LF_ICE
 	if h < -8.0:
 		return LF_COAST
+	# 浅海/潮滩：高度刚到海平面上下、掩膜判水 → 也算水
+	if h < 0.0 and is_water(lon, lat):
+		return LF_COAST
 	var alat := absf(lat)
 	# 极地冰盖：边界按经度起伏（真实冰缘受洋流影响，大西洋侧更北、太平洋侧更南）
 	var edge_n := _vnoise(lon * 0.055 + 11.0, 0.0, 4242) - 0.5
@@ -1061,8 +1064,9 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		return LF_ICE
 	if h > 5800.0 - maxf(alat - 30.0, 0.0) * 110.0:
 		return LF_ICE
-	if h < 8.0:
-		return LF_COAST
+	# 注意：低地（0–8 m）不再算海岸。以前 h<8 一律算 id 11，而 id 11 在着色器里
+	# 就是海水蓝，于是江苏/渤海那种 2–5 米的平原整片变成海。现在低地按
+	# 平原/三角洲/湿地走，id 11 只表示真正的水。
 
 	# 坡度与相对起伏（用 2.5 km 邻域的高低差近似，约等于底图一个格子）
 	var dd := LF_SLOPE_DD
