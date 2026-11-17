@@ -4,7 +4,6 @@ extends Node3D
 const TG := preload("res://scripts/terrain_gen.gd")
 const MapDetail := preload("res://scripts/map_detail.gd")
 const TestHarness := preload("res://scripts/test_harness.gd")
-const LandformDb := preload("res://scripts/landform_db.gd")
 
 ## 世界地图逻辑尺寸（屏幕矩形按它算；纹理可以更高清地拉伸上去）
 const LAT_LIMIT := 85.0      # 裁掉极区（等距圆柱在极点会拉伸）
@@ -1262,21 +1261,26 @@ func _draw_world_cities(cr: Rect2) -> void:
 		var hov: bool = not _hover.is_empty() and String(_hover.get("kind", "")) == "world" \
 				and (_hover["ll"] as Vector2).is_equal_approx(w["ll"])
 		if tier <= 1:
-			var r := clampf(2.2 + map_zoom * 0.02, 2.6, 4.5)
-			map_root.draw_arc(p, r, 0.0, TAU, 12, ink, 1.2)
-			map_root.draw_circle(p, maxf(r * 0.28, 0.8), ink)
+			# 城：双圈 + 中心点（看到就知道是城郭）
+			var r := clampf(3.6 + map_zoom * 0.05, 4.6, 9.0)
+			map_root.draw_arc(p, r, 0.0, TAU, 16, ink, 1.6)
+			map_root.draw_arc(p, r * 0.52, 0.0, TAU, 12, ink, 1.1)
+			map_root.draw_circle(p, maxf(r * 0.16, 0.9), ink)
 			if hov:
-				map_root.draw_arc(p, r + 3.0, 0.0, TAU, 16, Color(0.98, 0.84, 0.44, 0.95), 2.0)
+				map_root.draw_arc(p, r + 3.0, 0.0, TAU, 18, Color(0.98, 0.84, 0.44, 0.95), 2.0)
 		elif tier == 2:
-			var r2 := clampf(1.5 + map_zoom * 0.012, 1.7, 2.8)
-			map_root.draw_arc(p, r2, 0.0, TAU, 10, ink2, 1.0)
+			# 镇：菱形（和城的圆形一眼分开）
+			var r2 := clampf(2.6 + map_zoom * 0.03, 3.2, 5.2)
+			var pts := PackedVector2Array([p + Vector2(0, -r2), p + Vector2(r2, 0),
+					p + Vector2(0, r2), p + Vector2(-r2, 0), p + Vector2(0, -r2)])
+			map_root.draw_polyline(pts, ink2, 1.2)
 			if hov:
-				map_root.draw_arc(p, r2 + 2.5, 0.0, TAU, 14, Color(0.98, 0.84, 0.44, 0.95), 1.5)
+				map_root.draw_arc(p, r2 + 2.6, 0.0, TAU, 14, Color(0.98, 0.84, 0.44, 0.95), 1.5)
 		else:
-			# 邑：只有一个点，不画圈
-			map_root.draw_circle(p, clampf(1.0 + map_zoom * 0.008, 1.1, 1.8), ink2)
+			# 邑：实心小点
+			map_root.draw_circle(p, clampf(1.5 + map_zoom * 0.012, 1.8, 3.0), ink2)
 			if hov:
-				map_root.draw_arc(p, 3.6, 0.0, TAU, 12, Color(0.98, 0.84, 0.44, 0.95), 1.4)
+				map_root.draw_arc(p, 4.0, 0.0, TAU, 12, Color(0.98, 0.84, 0.44, 0.95), 1.4)
 
 
 ## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
@@ -2297,9 +2301,6 @@ func _draw_map() -> void:
 		map_surface.size = content_rect.size + Vector2(4, 4)
 		_map_mat.set_shader_parameter("shade_alpha",
 				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.34)
-		# 符号间距：屏幕上约 12 像素
-		_map_mat.set_shader_parameter("pat_period",
-				clampf(12.0 * 111.0 / maxf(ppd, 0.01), 0.12, 60.0))
 		_map_mat.set_shader_parameter("zoom", map_zoom)
 		_map_mat.set_shader_parameter("dbg2", float(_detail_dbg))
 	else:
@@ -2526,14 +2527,7 @@ func _setup_map_shader() -> void:
 	_map_mat.set_shader_parameter("palette_tex",
 			ImageTexture.create_from_image(
 					Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)))
-	# 舆图符号查表：R = 类别（0 无 / 1 沙粒 / 2 点阵 / 3 晕滃 / 4 横划），G = 浓度。
-	# 表在 landform_db.gd；以前是 shader 里一串写死的 if 区间。
-	var sym := Image.create(32, 1, false, Image.FORMAT_RGBA8)
-	sym.fill(Color(0, 0, 0, 1))
-	for i in TG.LF_COUNT:
-		sym.set_pixel(i, 0, Color(float(LandformDb.SYMBOL_KIND[i]) / 255.0,
-				LandformDb.SYMBOL_STRENGTH[i], 0.0, 1.0))
-	_map_mat.set_shader_parameter("symbol_tex", ImageTexture.create_from_image(sym))
+	# 舆图符号层已经取消（用户要求 2D 地图纯色）。landform_db 里的 SYMBOL_* 表暂时留着不用。
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	_map_mat.set_shader_parameter("lat_limit", LAT_LIMIT)
 	# 细节层占位（1×1），就绪前 detail_on=0 走编号图
@@ -2990,6 +2984,7 @@ func _world_stats() -> void:
 	var list := TG.world_settlements()
 	var t1 := 0
 	var t2 := 0
+	var t3 := 0
 	var wet := 0
 	var dup := 0
 	var seen := {}
@@ -3002,8 +2997,10 @@ func _world_stats() -> void:
 		var tier := int(w.get("tier", 1))
 		if tier <= 1:
 			t1 += 1
-		else:
+		elif tier == 2:
 			t2 += 1
+		else:
+			t3 += 1
 		if is_wet:
 			wet += 1
 		var key := "%.2f,%.2f" % [ll.x, ll.y]
@@ -3021,7 +3018,7 @@ func _world_stats() -> void:
 		print("  T%d %-10s %8.2f,%7.2f h=%5.0f %-6s %-5s%s%s"
 				% [tier, String(w["name"]), ll.x, ll.y, h, TG.LF_NAMES[lf],
 				String(w.get("region", "")), "（属%s）" % par if par != "" else "", extra])
-	print("[统计] 城 %d / 镇 %d；落水 %d；同点 %d" % [t1, t2, wet, dup])
+	print("[统计] 城 %d / 镇 %d / 邑 %d；落水 %d；同点 %d" % [t1, t2, t3, wet, dup])
 	get_tree().quit()
 
 

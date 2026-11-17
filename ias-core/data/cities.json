@@ -1,23 +1,151 @@
 {
-  "_comment": "手工城市表（策划案 3.2）。height 填 0 表示按底图自动取高程（dem_at + 3m）。",
-  "version": 2,
-  "cities": [
-    { "id": "xianyang", "name": "咸阳", "lon": 108.705, "lat": 34.330, "radius_km": 2.2, "blend_km": 4.0, "height": 392.0,
-      "note": "秦都，渭河北岸" },
-    { "id": "luoyang", "name": "雒阳", "lon": 112.450, "lat": 34.620, "radius_km": 2.0, "blend_km": 4.0, "height": 0 },
-    { "id": "handan", "name": "邯郸", "lon": 114.490, "lat": 36.610, "radius_km": 1.9, "blend_km": 3.8, "height": 0 },
-    { "id": "jinyang", "name": "晋阳", "lon": 112.550, "lat": 37.870, "radius_km": 1.8, "blend_km": 3.8, "height": 0 },
-    { "id": "linzi", "name": "临淄", "lon": 118.310, "lat": 36.850, "radius_km": 2.0, "blend_km": 4.0, "height": 0 },
-    { "id": "shouchun", "name": "寿春", "lon": 116.790, "lat": 32.580, "radius_km": 1.8, "blend_km": 3.8, "height": 0 },
-    { "id": "kuaiji", "name": "会稽", "lon": 120.580, "lat": 30.000, "radius_km": 1.8, "blend_km": 3.8, "height": 0 },
-    { "id": "chengdu", "name": "成都", "lon": 104.070, "lat": 30.670, "radius_km": 2.0, "blend_km": 4.0, "height": 0 },
-    { "id": "ji", "name": "蓟", "lon": 116.400, "lat": 39.900, "radius_km": 1.8, "blend_km": 3.8, "height": 0 },
-    { "id": "wan", "name": "宛", "lon": 112.530, "lat": 33.000, "radius_km": 1.7, "blend_km": 3.6, "height": 0 },
-    { "id": "chen", "name": "陈", "lon": 114.880, "lat": 33.730, "radius_km": 1.7, "blend_km": 3.6, "height": 0 },
-    { "id": "ying", "name": "郢", "lon": 112.190, "lat": 30.350, "radius_km": 1.9, "blend_km": 3.8, "height": 0 },
-    { "id": "julu", "name": "巨鹿", "lon": 115.030, "lat": 37.230, "radius_km": 1.6, "blend_km": 3.5, "height": 0 },
-    { "id": "pengcheng", "name": "彭城", "lon": 117.180, "lat": 34.260, "radius_km": 1.7, "blend_km": 3.6, "height": 0 },
-    { "id": "xue", "name": "薛", "lon": 117.150, "lat": 35.080, "radius_km": 1.5, "blend_km": 3.4, "height": 0 },
-    { "id": "langya", "name": "琅琊", "lon": 119.100, "lat": 35.100, "radius_km": 1.6, "blend_km": 3.5, "height": 0 }
-  ]
+ "_comment": "手工城市表（策划案 3.2）。height 填 0 表示按底图自动取高程（dem_at + 3m）。",
+ "version": 2,
+ "cities": [
+  {
+   "id": "xianyang",
+   "name": "咸阳",
+   "lon": 108.855,
+   "lat": 34.412,
+   "radius_km": 2.2,
+   "blend_km": 4.0,
+   "height": 392.0,
+   "note": "秦都，渭河北岸"
+  },
+  {
+   "id": "luoyang",
+   "name": "雒阳",
+   "lon": 112.596,
+   "lat": 34.732,
+   "radius_km": 2.0,
+   "blend_km": 4.0,
+   "height": 0
+  },
+  {
+   "id": "handan",
+   "name": "邯郸",
+   "lon": 114.516,
+   "lat": 36.591,
+   "radius_km": 1.9,
+   "blend_km": 3.8,
+   "height": 0
+  },
+  {
+   "id": "jinyang",
+   "name": "晋阳",
+   "lon": 112.55,
+   "lat": 37.87,
+   "radius_km": 1.8,
+   "blend_km": 3.8,
+   "height": 0
+  },
+  {
+   "id": "linzi",
+   "name": "临淄",
+   "lon": 118.37,
+   "lat": 36.864,
+   "radius_km": 2.0,
+   "blend_km": 4.0,
+   "height": 0
+  },
+  {
+   "id": "shouchun",
+   "name": "寿春",
+   "lon": 116.777,
+   "lat": 32.576,
+   "radius_km": 1.8,
+   "blend_km": 3.8,
+   "height": 0
+  },
+  {
+   "id": "kuaiji",
+   "name": "会稽",
+   "lon": 120.58,
+   "lat": 30.0,
+   "radius_km": 1.8,
+   "blend_km": 3.8,
+   "height": 0
+  },
+  {
+   "id": "chengdu",
+   "name": "成都",
+   "lon": 104.075,
+   "lat": 30.666,
+   "radius_km": 2.0,
+   "blend_km": 4.0,
+   "height": 0
+  },
+  {
+   "id": "ji",
+   "name": "蓟",
+   "lon": 116.4,
+   "lat": 39.9,
+   "radius_km": 1.8,
+   "blend_km": 3.8,
+   "height": 0
+  },
+  {
+   "id": "wan",
+   "name": "宛",
+   "lon": 112.535,
+   "lat": 33.002,
+   "radius_km": 1.7,
+   "blend_km": 3.6,
+   "height": 0
+  },
+  {
+   "id": "chen",
+   "name": "陈",
+   "lon": 114.885,
+   "lat": 33.75,
+   "radius_km": 1.7,
+   "blend_km": 3.6,
+   "height": 0
+  },
+  {
+   "id": "ying",
+   "name": "郢",
+   "lon": 112.19,
+   "lat": 30.35,
+   "radius_km": 1.9,
+   "blend_km": 3.8,
+   "height": 0
+  },
+  {
+   "id": "julu",
+   "name": "巨鹿",
+   "lon": 114.912,
+   "lat": 36.982,
+   "radius_km": 1.6,
+   "blend_km": 3.5,
+   "height": 0
+  },
+  {
+   "id": "pengcheng",
+   "name": "彭城",
+   "lon": 117.188,
+   "lat": 34.27,
+   "radius_km": 1.7,
+   "blend_km": 3.6,
+   "height": 0
+  },
+  {
+   "id": "xue",
+   "name": "薛",
+   "lon": 117.212,
+   "lat": 34.916,
+   "radius_km": 1.5,
+   "blend_km": 3.4,
+   "height": 0
+  },
+  {
+   "id": "langya",
+   "name": "琅琊",
+   "lon": 119.9,
+   "lat": 35.66,
+   "radius_km": 1.6,
+   "blend_km": 3.5,
+   "height": 0
+  }
+ ]
 }

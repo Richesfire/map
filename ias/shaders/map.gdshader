@@ -8,10 +8,8 @@ uniform sampler2D noise_tex : filter_linear, repeat_enable;
 uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
-uniform float pat_period = 4.0;   // 符号间距（公里），由缩放决定
 uniform float lat_limit = 85.0;
 uniform sampler2D palette_tex : filter_nearest, repeat_disable;   // 29 类本色（唯一一套调色板）
-uniform sampler2D symbol_tex : filter_nearest, repeat_disable;    // 32×1：R=符号类别 G=浓度
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。
@@ -115,51 +113,8 @@ void fragment() {
 	}
 	float is_water = (lid > 10.5 && lid < 11.5) ? 1.0 : 0.0;
 
-	// —— 地貌符号（舆图风格）：按类别画不同的纹理，密度随缩放调整 ——
-	{
-		float slope_p = length(vec2(sx, sy));
-		float kmx = uv.x * 360.0 * 111.32 * cos(radians(lat));
-		float kmy = uv.y * 180.0 * 110.54;
-		float px = max(pat_period, 0.02);
-		// 沙丘 / 荒漠：无方向细颗粒（不再画弧线与走向）
-		vec2 gp = vec2(kmx, kmy) / px;
-		float g1 = texture(noise_tex, gp * 1.15 + vec2(0.13, 0.41)).r;
-		float g2 = texture(noise_tex, gp * 2.90 + vec2(0.71, 0.23)).r;
-		float grain = smoothstep(0.50, 0.76, g1 * 0.55 + g2 * 0.45);
-		float dune_ink = grain * 0.50;
-		// 戈壁/砾石：点阵
-		vec2 cell = fract(vec2(kmx / px, kmy / px)) - 0.5;
-		float dot_p = 1.0 - smoothstep(0.10, 0.20, length(cell));
-		// 山地：顺坡短划（晕滃），密度随坡度；高倍时淡出（10 px 周期线条会起摩尔纹）
-		float fade_ln = 1.0 - smoothstep(40.0, 85.0, zoom);
-		float ang = atan(sy, sx);
-		float hach = abs(fract((kmx * cos(ang) + kmy * sin(ang)) / (px * 0.8)) - 0.5);
-		float hach_line = (1.0 - smoothstep(0.04, 0.12, hach))
-				* clamp(slope_p * 1.6, 0.0, 1.0) * fade_ln;
-		// 平地：极淡短划（以前是整行连续横线，一大片戈壁上像扫描线）
-		// 行位置加噪声抖动、沿行用第二层噪声断开，得到"断续短划"而不是长线
-		// 相位用高频噪声打散：否则几百公里内的短划会排成一列列扫描线
-		float jitA = texture(noise_tex, gp * 7.0 + vec2(0.31, 0.77)).r;
-		float jitB = texture(noise_tex, gp * 5.0 + vec2(0.63, 0.19)).r;
-		float dash_y = abs(fract(kmy / (px * 1.6) + jitA * 1.7) - 0.5);
-		float dash_x = abs(fract(kmx / (px * 0.8) + jitB * 1.3) - 0.5);
-		float dash_line = (1.0 - smoothstep(0.02, 0.06, dash_y))
-				* (1.0 - smoothstep(0.26, 0.40, dash_x)) * 0.35 * fade_ln;
-
-		// 符号类别/浓度来自 32×1 查表纹理（landform_db.gd 的 SYMBOL_KIND / SYMBOL_STRENGTH），
-		// shader 里不再写死地貌编号区间。
-		vec2 sym_uv = vec2((lid + 0.5) / 32.0, 0.5);
-		vec4 st = texture(symbol_tex, sym_uv);
-		float sk = floor(st.r * 255.0 + 0.5);
-		float pat = dune_ink;
-		if (sk > 1.5 && sk < 2.5) pat = dot_p;
-		else if (sk > 2.5 && sk < 3.5) pat = hach_line;
-		else if (sk > 3.5 && sk < 4.5) pat = dash_line;
-		float ink = (sk < 0.5) ? 0.0 : pat * st.g;
-		// 高倍时符号淡出：这个尺度上靠阴影读地形，符号只会变成噪点
-		ink *= mix(1.0, 0.0, smoothstep(40.0, 90.0, zoom));
-		c *= 1.0 - ink * 0.35;
-	}
+	// 地貌符号层已移除（2026-11-17 用户要求：2D 舆图所有地形一律纯色，不画点阵/短划/晕滃）。
+	// 要恢复可查 git 历史（或重新接回一张类别查表纹理）。
 
 	// 水陆交界浅线：陆地侧提亮，水面侧压一点青色
 	if (coast > 0.001) {
