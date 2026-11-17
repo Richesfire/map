@@ -457,14 +457,17 @@ static func world_settlements() -> Array:
 		return _world
 	var t1 := 0
 	var t2 := 0
+	var t3 := 0
 	for c in js.get("settlements", []):
 		var lon := float(c.get("lon", 0.0))
 		var lat := float(c.get("lat", 0.0))
 		var tier := int(c.get("tier", 1))
 		if tier <= 1:
 			t1 += 1
-		else:
+		elif tier == 2:
 			t2 += 1
+		else:
+			t3 += 1
 		_world.append({
 			"name": String(c.get("name", "")),
 			"lon": lon, "lat": lat,
@@ -475,7 +478,7 @@ static func world_settlements() -> Array:
 			"ll": Vector2(lon, lat),
 		})
 	if not _world.is_empty():
-		print("[地图] 域外定居点 %d 处（城 %d / 镇 %d）" % [_world.size(), t1, t2])
+		print("[地图] 域外定居点 %d 处（城 %d / 镇 %d / 邑 %d）" % [_world.size(), t1, t2, t3])
 	return _world
 
 

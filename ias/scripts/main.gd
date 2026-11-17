@@ -1252,7 +1252,9 @@ func _draw_world_cities(cr: Rect2) -> void:
 	var ink2 := Color(0.34, 0.22, 0.12, 0.70)
 	for w in list:
 		var tier := int(w.get("tier", 1))
-		if tier > 1 and map_zoom < 2.0:
+		if tier >= 3 and map_zoom < 10.0:
+			continue
+		if tier == 2 and map_zoom < 3.0:
 			continue
 		var p := _lonlat_to_screen_off(w["ll"], 0.0)
 		if not cr.has_point(p):
@@ -1265,11 +1267,16 @@ func _draw_world_cities(cr: Rect2) -> void:
 			map_root.draw_circle(p, maxf(r * 0.28, 0.8), ink)
 			if hov:
 				map_root.draw_arc(p, r + 3.0, 0.0, TAU, 16, Color(0.98, 0.84, 0.44, 0.95), 2.0)
-		else:
-			var r2 := clampf(1.3 + map_zoom * 0.012, 1.5, 2.6)
+		elif tier == 2:
+			var r2 := clampf(1.5 + map_zoom * 0.012, 1.7, 2.8)
 			map_root.draw_arc(p, r2, 0.0, TAU, 10, ink2, 1.0)
 			if hov:
 				map_root.draw_arc(p, r2 + 2.5, 0.0, TAU, 14, Color(0.98, 0.84, 0.44, 0.95), 1.5)
+		else:
+			# 邑：只有一个点，不画圈
+			map_root.draw_circle(p, clampf(1.0 + map_zoom * 0.008, 1.1, 1.8), ink2)
+			if hov:
+				map_root.draw_arc(p, 3.6, 0.0, TAU, 12, Color(0.98, 0.84, 0.44, 0.95), 1.4)
 
 
 ## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
@@ -1610,11 +1617,14 @@ func _poi_cands(pos: Vector2) -> Array:
 			out.append({"kind": "site", "ll": ll, "data": s, "d": d, "pri": 1})
 	for w in TG.world_settlements():
 		var tier := int(w.get("tier", 1))
-		if tier > 1 and map_zoom < 2.0:
+		if tier >= 3 and map_zoom < 10.0:
+			continue
+		if tier == 2 and map_zoom < 3.0:
 			continue
 		var ll: Vector2 = w["ll"]
 		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
-		if d < (10.0 if tier <= 1 else 8.0):
+		var rad := 10.0 if tier <= 1 else (8.0 if tier == 2 else 6.0)
+		if d < rad:
 			out.append({"kind": "world", "ll": ll, "data": w, "d": d, "pri": 1})
 	if map_zoom >= 10.0:
 		# 汉县 1134 处：先按经纬度粗筛（全算屏幕坐标太浪费）
@@ -1672,8 +1682,9 @@ func _poi_open(hit: Dictionary) -> void:
 		"world":
 			var w: Dictionary = hit["data"]
 			var wsub := "域外 · %s" % String(w.get("region", ""))
-			if int(w.get("tier", 1)) > 1:
-				wsub = "域外镇 · %s" % String(w.get("region", ""))
+			var wtier := int(w.get("tier", 1))
+			if wtier > 1:
+				wsub = ("域外镇 · %s" if wtier == 2 else "域外邑 · %s") % String(w.get("region", ""))
 				var par := String(w.get("parent", ""))
 				if par != "":
 					wsub += "（属%s）" % par

@@ -27,13 +27,13 @@ python tools/get_data.py          # 下载解压约 280 MB 数据包，并建 ia
 | dem_map.bin | 64 MB | 地图用全分辨率高程（备用） |
 | land_mask.bin | 8 MB | 海陆掩膜 |
 | landform_id.bin | 32 MB | 预烘焙地貌编号图（8192×4096；不随数据包，用 `ias/tools/bake_landform_id.gd` 现烘） |
-| hydro.json | 1.4 MB | 江河湖泊（Natural Earth 抽稀） |
+| hydro.json | 1.4 MB | 江河湖泊（Natural Earth 抽稀）；湖已按 tools/filter_lakes.py 滤掉现代水库，425 -> 199 |
 | settlements.json | 0.56 MB | GeoNames 现代聚落 10725 处（地图层已撤，留作 3D/调试） |
 | sites_han.json | — | 秦汉史事点位 82 处（城邑坐标取 CHGIS） |
 | counties_han.json | — | 汉书·地理志县治 1134 处（CHGIS V6，CC0） |
 | mountain_features.json | — | 54 条山系特征 |
 | cities.json | — | 手工城池 16 座 |
-| world_settlements.json | — | 域外定居点 111 处 = 城 42 + 附邑/镇 69（约前 209 年；只做地图层，不进 3D） |
+| world_settlements.json | — | 域外定居点 303 处 = 城 111 + 镇 121 + 邑 71（约前 209 年；只做地图层，不进 3D） |
 | textures/ | 18 MB | 地表 / 法线 / 树皮 / 叶簇 / 草叶图集 |
 | biomes/ | — | 29 个地貌 `.tres` 配置（文件名 `编号_配置id`，编号 = 地貌号） |
 

@@ -136,9 +136,15 @@ void fragment() {
 		float hach = abs(fract((kmx * cos(ang) + kmy * sin(ang)) / (px * 0.8)) - 0.5);
 		float hach_line = (1.0 - smoothstep(0.04, 0.12, hach))
 				* clamp(slope_p * 1.6, 0.0, 1.0) * fade_ln;
-		// 平地：极淡横划
-		float dash = abs(fract((kmy) / (px * 1.6)) - 0.5);
-		float dash_line = (1.0 - smoothstep(0.01, 0.05, dash)) * 0.35 * fade_ln;
+		// 平地：极淡短划（以前是整行连续横线，一大片戈壁上像扫描线）
+		// 行位置加噪声抖动、沿行用第二层噪声断开，得到"断续短划"而不是长线
+		// 相位用高频噪声打散：否则几百公里内的短划会排成一列列扫描线
+		float jitA = texture(noise_tex, gp * 7.0 + vec2(0.31, 0.77)).r;
+		float jitB = texture(noise_tex, gp * 5.0 + vec2(0.63, 0.19)).r;
+		float dash_y = abs(fract(kmy / (px * 1.6) + jitA * 1.7) - 0.5);
+		float dash_x = abs(fract(kmx / (px * 0.8) + jitB * 1.3) - 0.5);
+		float dash_line = (1.0 - smoothstep(0.02, 0.06, dash_y))
+				* (1.0 - smoothstep(0.26, 0.40, dash_x)) * 0.35 * fade_ln;
 
 		// 符号类别/浓度来自 32×1 查表纹理（landform_db.gd 的 SYMBOL_KIND / SYMBOL_STRENGTH），
 		// shader 里不再写死地貌编号区间。
