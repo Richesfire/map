@@ -1248,7 +1248,7 @@ func _draw_settlements(sr: Rect2) -> void:
 			continue
 		# 真实尺寸换算：咸阳城墙约 3.7km 见方
 		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
-		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
+		var sz: float = clampf(3.7 / km_per_px, 8.0, 260.0)
 		var half := Vector2(sz, sz) * 0.5
 		var r := Rect2(p - half, Vector2(sz, sz))
 		map_root.draw_rect(r, Color(0.72, 0.62, 0.42, 0.85))
@@ -1376,7 +1376,7 @@ func _draw_world_cities(cr: Rect2) -> void:
 				and (_hover["ll"] as Vector2).is_equal_approx(w["ll"])
 		if tier <= 1:
 			# 城：双圈 + 中心点（看到就知道是城郭）
-			var r := clampf(3.6 + map_zoom * 0.05, 4.6, 9.0)
+			var r := clampf(3.2 + map_zoom * 0.04, 4.0, 8.0)
 			map_root.draw_arc(p, r, 0.0, TAU, 16, ink, 1.6)
 			map_root.draw_arc(p, r * 0.52, 0.0, TAU, 12, ink, 1.1)
 			map_root.draw_circle(p, maxf(r * 0.16, 0.9), ink)
@@ -1715,7 +1715,7 @@ func _poi_cands(pos: Vector2) -> Array:
 	for c in TG.cities():
 		var lat := float(c["lat"])
 		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
-		var sz: float = clampf(3.7 / km_per_px, 9.0, 260.0)
+		var sz: float = clampf(3.7 / km_per_px, 8.0, 260.0)
 		var ll := Vector2(float(c["lon"]), lat)
 		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 		if d < maxf(sz * 0.75, 12.0):

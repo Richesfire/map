@@ -113,6 +113,14 @@ void fragment() {
 	}
 	float is_water = (lid > 10.5 && lid < 11.5) ? 1.0 : 0.0;
 
+	// 高山雪：雪线随纬度（和 3D terrain.gdshader 的 snow_line 同一公式），只落在陆地上。
+	// 2D 以前只有极地冰盖，阿尔卑斯/喜马拉雅在图上都是灰褐色。
+	if (is_water < 0.5) {
+		float sn = clamp(4800.0 - 45.0 * abs(lat), 600.0, 5200.0);
+		float snow = smoothstep(sn, sn + 450.0, h) * 0.82;
+		if (snow > 0.002) c = mix(c, vec3(0.93, 0.93, 0.91), snow);
+	}
+
 	// 地貌符号层已移除（2026-11-17 用户要求：2D 舆图所有地形一律纯色，不画点阵/短划/晕滃）。
 	// 要恢复可查 git 历史（或重新接回一张类别查表纹理）。
 

@@ -1050,9 +1050,10 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 极端纬度：等距圆柱投影在这里把整行拉成一条线，统一按冰盖处理，避免出现拉伸色块
 	if lat > 84.0 or lat < -84.0:
 		return LF_ICE
-	if h < -8.0:
+	# 水：掩膜判水，或者"很低 + 贴着海"（海岸线跟着底图走）。
+	# 以前只看 h < -8，把约旦河谷（-325 m）、死亡谷（-86 m）这种内陆低地也画成海。
+	if h < -8.0 and (is_water(lon, lat) or _near_sea(lon, lat, 0.25)):
 		return LF_COAST
-	# 浅海/潮滩：高度刚到海平面上下、掩膜判水 → 也算水
 	if h < 0.0 and is_water(lon, lat):
 		return LF_COAST
 	var alat := absf(lat)
@@ -1130,7 +1131,10 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 			return LF_MTN_VOLCANIC
 		return LF_MTN_GRANITE
 	if slope > 7.0 or relief > 220.0:
-		if t > 15.0 and m > 0.50:
+		# 红壤只在中国南方与中南半岛（以前是全球热带，亚马逊/印度/东南亚全变红点）
+		var rj := (_vnoise(lon * 0.9 + 5.0, lat * 0.9 - 3.0, 5150) - 0.5) * 3.0
+		var red_region := (lon + rj > 100.0 and lon + rj < 125.0 and lat + rj > 15.0 and lat + rj < 33.0)
+		if red_region and t > 15.0 and m > 0.50:
 			return LF_HILL_RED
 		if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.18 and m < 0.46:
 			return LF_HILL_LOESS
