@@ -1050,11 +1050,10 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 极端纬度：等距圆柱投影在这里把整行拉成一条线，统一按冰盖处理，避免出现拉伸色块
 	if lat > 84.0 or lat < -84.0:
 		return LF_ICE
-	# 水：掩膜判水，或者"很低 + 贴着海"（海岸线跟着底图走）。
-	# 以前只看 h < -8，把约旦河谷（-325 m）、死亡谷（-86 m）这种内陆低地也画成海。
-	if h < -8.0 and (is_water(lon, lat) or _near_sea(lon, lat, 0.25)):
-		return LF_COAST
-	if h < 0.0 and is_water(lon, lat):
+	# 水：按高程判（海岸线跟 DEM 等高线走，任何倍率都平滑）。
+	# 曾经用 10 km 海陆掩膜判浅水 → 60 倍以上海岸是台阶、还和水线错位。
+	# 低于海平面的内陆洼地（约旦河谷/死海/死亡谷/阿法尔/盖塔拉/吐鲁番）用名单排除。
+	if h < -2.0 and not _in_deep_basin(lon, lat):
 		return LF_COAST
 	var alat := absf(lat)
 	# 极地冰盖：边界按经度起伏（真实冰缘受洋流影响，大西洋侧更北、太平洋侧更南）
@@ -1198,13 +1197,30 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	return LF_FOREST
 
 
-## 附近（半径 deg 度，8 个方向）有没有海/大湖：只给"三角洲"用。
-## 8 次掩膜查表约 1.5 µs，相对 landform_kind 的 31 µs 可以忽略。
+## 低于海平面、但不是海的内陆洼地（按高程判水后必须排除，否则会被涂成海）
+const DEEP_LAND_BOXES := [
+	[34.7, 36.3, 29.4, 33.6],     # 约旦河谷 / 死海 / 加利利海
+	[-117.6, -115.9, 34.8, 37.2], # 加州死亡谷
+	[40.3, 42.6, 10.6, 14.2],     # 埃塞俄比亚阿法尔
+	[25.8, 29.2, 28.8, 31.2],     # 埃及盖塔拉洼地
+	[88.6, 89.9, 41.6, 43.4],     # 吐鲁番盆地
+]
+
+
+static func _in_deep_basin(lon: float, lat: float) -> bool:
+	for b in DEEP_LAND_BOXES:
+		if lon > b[0] and lon < b[1] and lat > b[2] and lat < b[3]:
+			return true
+	return false
+
+
+## 附近（半径 deg 度，8 个方向）有没有水：给"三角洲"用。
+## 用高程判（h < -2），不用 10 km 海陆掩膜——掩膜会把三角洲切成方块（60 倍以上很明显）。
 static func _near_sea(lon: float, lat: float, deg: float = 0.5) -> bool:
 	var cosl := maxf(cos(deg_to_rad(lat)), 0.2)
 	for k in 8:
 		var a := TAU * float(k) / 8.0
-		if is_water(lon + cos(a) * deg / cosl, lat + sin(a) * deg):
+		if dem_at(lon + cos(a) * deg / cosl, lat + sin(a) * deg) < -2.0:
 			return true
 	return false
 

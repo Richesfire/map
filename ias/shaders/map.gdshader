@@ -88,7 +88,7 @@ void fragment() {
 	// 粗层：预烘焙编号图（8192，一格 2.3 km）
 	float lid = floor(texture(landform_tex, uv).r * 255.0 + 0.5);
 	float fw = max(fwidth(h), 0.5);
-	float coast = 1.0 - smoothstep(0.45, 1.50, abs(h + 8.0) / fw);
+	float coast = 1.0 - smoothstep(0.45, 1.50, abs(h + 2.0) / fw);
 	vec3 c = lf_color(lid);
 
 	// 细节层：贴在地理坐标上。A 通道 = 这块 texel 已烘好（块级 255/0），
