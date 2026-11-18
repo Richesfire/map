@@ -15,6 +15,12 @@ const APRON := 8          # 阴影差分需要的四周余量（texel）
 ## 调试开关：main 启动时按命令行参数设一次（别在每个块里调 OS.get_cmdline_user_args）
 static var dbg_state := false
 static var dbg_bakelog := false
+## 整张画布缓存：地形固定后，同一倍率+同一区域第二次打开直接读盘。
+## 改分类器/去斑/水线规则时把 CACHE_VER +1（旧缓存作废）。
+static var cache_on := true
+const CACHE_VER := 1
+const CACHE_DIR := "user://detail_cache"
+static var cache_files := -1      # 目录里已有多少张（太多就不再写）
 
 var tex: ImageTexture = null
 var img: Image = null
@@ -126,6 +132,11 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 		if tiles_done > 0:
 			first_ready = true
 			tex.update(img)
+	if _cache_try_load():
+		_stage = 3
+		if dbg_bakelog:
+			print("[细节] 整图缓存命中 ", _cache_key())
+		return
 	_start_full()
 
 
@@ -196,6 +207,7 @@ func poll() -> bool:
 			_set_chunk(_chunk_i)
 			return true
 		_all_done = true
+		_cache_save()
 		return true
 	_start_stage()
 	return false
@@ -399,6 +411,59 @@ static func _vote_int(a: int, b: int, c: int, d: int) -> int:
 
 
 ## 视口（经纬度矩形）对应的 texel 范围
+## ---------------- 整图缓存 ----------------
+func _cache_key() -> String:
+	return "%s/v%d/%d/%0.5f_%0.5f_%dx%d.png" % [CACHE_DIR, CACHE_VER,
+			int(round(1.0 / maxf(_dlon, 1e-9))), lon0, lat0, px_w, px_h]
+
+
+func _cache_try_load() -> bool:
+	if not cache_on:
+		return false
+	var path := _cache_key()
+	if not FileAccess.file_exists(path):
+		return false
+	var im := Image.load_from_file(path)
+	if im == null or im.is_empty():
+		return false
+	if im.get_width() != px_w or im.get_height() != px_h:
+		return false
+	if im.get_format() != Image.FORMAT_RGBA8:
+		im.convert(Image.FORMAT_RGBA8)
+	img = im
+	tex = ImageTexture.create_from_image(img)
+	tile_state.fill(1)
+	tiles_done = tiles_total
+	first_ready = true
+	_all_done = true
+	if dbg_state:
+		print("[细节] 整图缓存命中 %s" % path)
+	return true
+
+
+func _cache_save() -> void:
+	if not cache_on:
+		return
+	if cache_files < 0:
+		var d := DirAccess.open(CACHE_DIR)
+		cache_files = 0
+		if d != null:
+			for sub in d.get_directories():
+				var d2 := DirAccess.open(CACHE_DIR + "/" + sub)
+				if d2 != null:
+					cache_files += d2.get_files().size()
+	# 上限：别让 user:// 无限长（一张约 1-2 MB）
+	if cache_files > 300:
+		if dbg_state:
+			print("[细节] 缓存已到 300 张，本次不再写入")
+		return
+	var path := _cache_key()
+	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
+	if img.save_png(path) != OK:
+		return
+	cache_files += 1
+
+
 func texel_rect(r: Vector4) -> Rect2i:
 	var x0 := int(floor((r.x - lon0) / _dlon))
 	var x1 := int(ceil((r.z - lon0) / _dlon))

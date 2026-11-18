@@ -165,6 +165,7 @@ func _ready() -> void:
 	_parse_args()
 	MapDetail.dbg_state = _flags.has("--dbgstate")
 	MapDetail.dbg_bakelog = _flags.has("--bakelog")
+	MapDetail.cache_on = not _flags.has("--nocache")
 	if _flags.has("--bakebench"):
 		_bb_d = MapDetail.new()
 		_bb_d.setup(100.0, 27.0, 106.0, 23.0, 920, 570)
