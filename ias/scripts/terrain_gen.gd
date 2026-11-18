@@ -1100,7 +1100,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 
 	# 黄土高原：区域优先（水热条件不适用，这里是风积黄土堆积区）
 	var lj := (_vnoise(lon * 0.7 + 3.0, lat * 0.7 - 2.0, 7072) - 0.5) * 4.0
-	if lat + lj > 32.0 and lat + lj < 40.0 and lon + lj > 100.0 and lon + lj < 118.0 \
+	if lat + lj > 33.5 and lat + lj < 40.5 and lon + lj > 100.0 and lon + lj < 114.5 \
 			and h > 200.0 and h < 1900.0 and relief < 800.0:
 		return LF_LOESS if slope < 12.0 else LF_MTN_LOESS
 
@@ -1125,7 +1125,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 			return LF_MTN_ICE
 		if karst_region and m > 0.45:
 			return LF_MTN_KARST
-		if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.18 and m < 0.46 and h < 2200.0:
+		if lat > 33.0 and lat < 40.5 and lon > 100.0 and lon < 114.5 and m > 0.18 and m < 0.46 and h < 2200.0:
 			return LF_MTN_LOESS
 		if _vnoise(lon * 0.21 + 13.0, lat * 0.21 - 5.0, 9917) > 0.90:
 			return LF_MTN_VOLCANIC
@@ -1136,7 +1136,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		var red_region := (lon + rj > 100.0 and lon + rj < 125.0 and lat + rj > 15.0 and lat + rj < 33.0)
 		if red_region and t > 15.0 and m > 0.50:
 			return LF_HILL_RED
-		if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.18 and m < 0.46:
+		if lat > 33.0 and lat < 40.5 and lon > 100.0 and lon < 114.5 and m > 0.18 and m < 0.46:
 			return LF_HILL_LOESS
 		if relief > 180.0 and slope > 12.0 and h < 900.0:
 			return LF_HILL_DANXIA
@@ -1150,7 +1150,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	if m < 0.20 and h < 900.0 and slope < 1.5:
 		return LF_DUNE
 	# 黄土：中纬半干旱、台地边缘
-	if lat > 30.0 and lat < 42.0 and lon > 100.0 and lon < 118.0 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 5.0:
+	if lat > 33.0 and lat < 40.5 and lon > 100.0 and lon < 114.5 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 5.0:
 		return LF_LOESS
 	# 三角洲：只留真正贴着海/大湖的低平河口（以前"h<25 且湿润"把整个渤海平原
 	# 判成三角洲，地图上东部看起来像海）
