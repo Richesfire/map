@@ -65,6 +65,7 @@ var _debug_sitepanel := ""
 var _debug_countypanel := ""
 var _debug_mapcenter := Vector2(INF, INF)
 var _debug_mapzoom := 0.0
+var _debug_sheet := ""        # --sheet=char|troops|bag：开局直接打开整页界面（调试截图用）
 var _debug_yaw := INF
 var _debug_air := 0.0
 var _debug_air_y := 0.0
@@ -117,6 +118,11 @@ var _dead := false
 var tab_held := false
 var tab_sel := -1
 var tab_labels: Array = []                # 0上 1右 2下 3左；-1 = 未选
+# TAB 轮盘打开的整页界面（角色 / 部队 / 背包）
+var sheet_panel: Control
+var sheet_title: Label
+var sheet_body: Label
+var sheet_open := false
 var _tab_acc := Vector2.ZERO
 var _tab_locked := false
 var map_open := false
@@ -276,6 +282,8 @@ func _parse_args() -> void:
 					_debug_shots.append([bits[0], float(bits[1])])
 		elif a.begins_with("--mapzoom="):
 			_debug_mapzoom = float(a.substr(10))
+		elif a.begins_with("--sheet="):
+			_debug_sheet = a.substr(8)
 		elif a == "--nodetail":
 			_detail_off = true
 		elif a.begins_with("--dbgdetail="):
@@ -462,6 +470,52 @@ func _build_ui() -> void:
 	city_panel.get_node("Opt1").pressed.connect(func() -> void: _city_go("yamen"))
 	city_panel.visible = false
 
+	# —— 整页界面（TAB 轮盘：角色 / 部队 / 背包）——
+	sheet_panel = Control.new()
+	sheet_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sheet_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	sheet_panel.visible = false
+	ui_layer.add_child(sheet_panel)
+	var sd := ColorRect.new()
+	sd.color = Color(0.05, 0.04, 0.03, 0.72)
+	sd.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sheet_panel.add_child(sd)
+	var sp := Panel.new()
+	sp.set_anchors_preset(Control.PRESET_CENTER)
+	sp.offset_left = -380.0
+	sp.offset_top = -240.0
+	sp.offset_right = 380.0
+	sp.offset_bottom = 240.0
+	var sp_st := StyleBoxFlat.new()
+	sp_st.bg_color = Color(0.11, 0.09, 0.06, 0.98)
+	sp_st.border_color = Color(0.62, 0.50, 0.28)
+	sp_st.set_border_width_all(2)
+	sp_st.set_corner_radius_all(3)
+	sp.add_theme_stylebox_override("panel", sp_st)
+	sheet_panel.add_child(sp)
+	sheet_title = Label.new()
+	sheet_title.position = Vector2(0, 18)
+	sheet_title.size = Vector2(760, 40)
+	sheet_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sheet_title.add_theme_font_size_override("font_size", 28)
+	sheet_title.add_theme_color_override("font_color", Color(0.94, 0.84, 0.58))
+	sp.add_child(sheet_title)
+	sheet_body = Label.new()
+	sheet_body.position = Vector2(48, 86)
+	sheet_body.size = Vector2(664, 300)
+	sheet_body.add_theme_font_size_override("font_size", 19)
+	sheet_body.add_theme_color_override("font_color", Color(0.86, 0.80, 0.66))
+	sheet_body.add_theme_constant_override("line_spacing", 10)
+	sp.add_child(sheet_body)
+	var sh := Label.new()
+	sh.text = "ESC 或再按 TAB 关闭"
+	sh.position = Vector2(0, 424)
+	sh.size = Vector2(760, 22)
+	sh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sh.add_theme_font_size_override("font_size", 14)
+	sh.add_theme_color_override("font_color", Color(0.66, 0.60, 0.46))
+	sp.add_child(sh)
+
 	hud_minimap = Control.new()
 	hud_minimap.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	hud_minimap.position = Vector2(-200, 16)
@@ -537,7 +591,7 @@ func _build_ui() -> void:
 	ui_layer.add_child(tab_cross)
 	tab_cross.draw.connect(_draw_cross)
 
-	var names := ["角色", "任务", "地图", "日志"]
+	var names := ["角色", "部队", "地图", "背包"]
 	for nm in names:
 		var lb := Label.new()
 		lb.text = nm
@@ -705,6 +759,8 @@ func _start_game() -> void:
 		clock_min = _debug_hour * 60.0
 	if _debug_mapzoom > 0.0:
 		map_zoom = _debug_mapzoom
+	if _debug_sheet != "":
+		_open_sheet(_debug_sheet)
 	if _flags.has("--map"):
 		_open_map()
 	if _debug_mapcenter.x != INF:
@@ -775,6 +831,10 @@ func _input(e: InputEvent) -> void:
 			tab_cross.visible = k.pressed
 			if player != null:
 				player.look_locked = k.pressed
+			if k.pressed and sheet_open:
+				# 整页界面开着时，TAB 直接关掉
+				_close_sheet()
+				return
 			if k.pressed:
 				# 按下时不预选任何方向：不动鼠标松开就什么都不触发
 				tab_sel = -1
@@ -785,17 +845,21 @@ func _input(e: InputEvent) -> void:
 				if tab_sel == 2:
 					_open_map()
 				elif tab_sel == 0:
-					# 策划案 7.5：轮盘上箭头进入灵魂观察模式
-					if player != null:
-						player.enter_soul()
+					_open_sheet("char")
 				elif tab_sel == 1:
-					print("[菜单] 右：待实现（任务/势力）")
+					_open_sheet("troops")
 				elif tab_sel == 3:
-					print("[菜单] 左：待实现（日志/说明）")
+					_open_sheet("bag")
 			tab_cross.queue_redraw()
+		elif k.keycode == KEY_BACKSPACE and k.pressed and not k.echo:
+			# 灵魂观察模式改到退格键（以前挂在 TAB 轮盘的上箭头）
+			if player != null and not player.soul:
+				player.enter_soul()
 		elif k.keycode == KEY_ESCAPE and k.pressed:
-			# 先释放鼠标；已经释放时再关地图
-			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			# 先关整页界面，再释放鼠标，最后关地图
+			if sheet_open:
+				_close_sheet()
+			elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			else:
 				_close_map()
@@ -838,6 +902,53 @@ func _dir_of(d: Vector2) -> int:
 	if absf(d.x) > absf(d.y):
 		return 1 if d.x > 0 else 3
 	return 0 if d.y < 0 else 2
+
+
+## TAB 轮盘打开的整页界面：char=角色 / troops=部队 / bag=背包
+func _open_sheet(kind: String) -> void:
+	if sheet_panel == null:
+		return
+	sheet_open = true
+	sheet_panel.visible = true
+	if player != null:
+		player.look_locked = true
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	match kind:
+		"char":
+			sheet_title.text = "角 色"
+			sheet_body.text = _sheet_char_text()
+		"troops":
+			sheet_title.text = "部 队"
+			sheet_body.text = "还没有招募部队。\n\n招兵、粮草、士气这些还没做。"
+		_:
+			sheet_title.text = "背 包"
+			sheet_body.text = "还没有物品。\n\n物品、货币、交易这些还没做。"
+
+
+func _close_sheet() -> void:
+	if sheet_panel == null:
+		return
+	sheet_open = false
+	sheet_panel.visible = false
+	if player != null:
+		player.look_locked = false
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _sheet_char_text() -> String:
+	if terrain == null:
+		return "无名旅人"
+	var lon: float = terrain.center_lon
+	var lat: float = terrain.center_lat
+	var h: float = TG.macro_height(lon, lat)
+	var b: int = TG.biome_at(lon, lat, h)
+	var lf: int = TG.landform_kind(lon, lat, h)
+	var mode := "灵魂观察" if (player != null and player.soul) else "步行"
+	return "姓名　无名旅人\n时间　%s\n位置　东经 %.2f°　北纬 %.2f°\n海拔　%d 米\n地貌　%s · %s\n状态　%s" % [
+			_clock_text(), lon, lat, int(round(h)), TG.biome_name(b),
+			TG.LF_NAMES[clampi(lf, 0, TG.LF_COUNT - 1)], mode]
 
 
 func _open_map() -> void:
@@ -1777,7 +1888,7 @@ func _draw_cross() -> void:
 	# 背景压暗
 	tab_cross.draw_rect(Rect2(Vector2.ZERO, vs), Color(0.0, 0.0, 0.0, 0.35))
 
-	var names := ["角色", "任务", "地图", "日志"]
+	var names := ["角色", "部队", "地图", "背包"]
 	var sz := Vector2(150, 96)
 	var gap := 12.0
 	var centers := [

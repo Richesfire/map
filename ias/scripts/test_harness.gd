@@ -530,8 +530,14 @@ func _bug_test() -> void:
 	evup.pressed = false
 	Input.parse_input_event(evup)
 	await get_tree().process_frame
-	# 松开时选中“上”会进入灵魂模式（策划案 7.5），测试里先退出来
-	m.player.exit_soul()
+	# 松开时选中"上"会打开角色界面（轮盘：上=角色 / 右=部队 / 左=背包），测试里先关掉
+	var sheet_ok: bool = m.sheet_open
+	ok = ok and sheet_ok
+	print("[回归] 轮盘上=角色界面：sheet_open=%s → %s" % [sheet_ok, "OK" if sheet_ok else "FAIL"])
+	if m.sheet_open:
+		m._close_sheet()
+	# 无头模式下鼠标捕获可能被忽略，这里显式再设一次，后面的俯仰测试依赖它
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	await get_tree().physics_frame
 
 	# 1a2) 相机俯仰：鼠标上下要能改变俯仰，且相机高度跟着变
