@@ -610,10 +610,11 @@ func _bug_test() -> void:
 	await get_tree().process_frame
 	var map_reopened: bool = m.map_open
 	var look_free: bool = not m.player.look_locked
-	var b_tabmap: bool = map_closed and not map_reopened and look_free
+	var world_back: bool = m.terrain.visible
+	var b_tabmap: bool = map_closed and not map_reopened and look_free and world_back
 	ok = ok and b_tabmap
-	print("[回归] 地图开着再按 TAB：关上=%s 松开后重开=%s 镜头解锁=%s → %s"
-			% [map_closed, map_reopened, look_free, "OK" if b_tabmap else "FAIL"])
+	print("[回归] 地图开着再按 TAB：关上=%s 松开后重开=%s 镜头解锁=%s 3D恢复=%s → %s"
+			% [map_closed, map_reopened, look_free, world_back, "OK" if b_tabmap else "FAIL"])
 	if m.map_open:
 		m._close_map()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED

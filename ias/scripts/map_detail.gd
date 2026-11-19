@@ -10,6 +10,8 @@ const TG := preload("res://scripts/terrain_gen.gd")
 const MIN_PX := 32
 const MAX_PX := 4096      # 只做安全阀：正常窗口（含 4K）都不该触发；触发=texel 会变粗
 const TILE := 16          # 逻辑块边长（texel）：中心 1×1、中间 3×3、外围 6×6 一起烘
+const THREADS := 4        # 烘焙线程数：8 会把 CPU 打满（风扇狂转），4 足够
+const TEX_MIN_GAP := 100  # 两次纹理上传的最小间隔（ms）：以前每合一块就整张重传
 const APRON := 8          # 阴影差分需要的四周余量（texel）
 
 ## 调试开关：main 启动时按命令行参数设一次（别在每个块里调 OS.get_cmdline_user_args）
@@ -45,6 +47,8 @@ var _all_done := false
 var _nx := 0
 var _ny := 0
 var cancelled := false    # 被抛弃的窗口立刻停，别在后台抢线程
+var _dirty := false       # 画布有新内容、还没传到显存
+var _last_up := 0         # 上次上传的 tick（节流用）
 var _adopt = null   # 同缩放的旧窗口，重叠区直接搬
 
 var _dlon := 0.0
@@ -131,13 +135,14 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 		_steal_overlap()
 		if tiles_done > 0:
 			first_ready = true
-			tex.update(img)
+			_dirty = true
 	if _cache_try_load():
 		_stage = 3
 		if dbg_bakelog:
 			print("[细节] 整图缓存命中 ", _cache_key())
 		return
 	_start_full()
+	_flush_tex(true)
 
 
 ## 从 _adopt 搬重叠区：只搬“源窗口里已经烘好、且整块落在重叠区”的块
@@ -205,9 +210,11 @@ func poll() -> bool:
 		_chunk_i += 1
 		if _chunk_i < _chunks.size():
 			_set_chunk(_chunk_i)
+			_flush_tex(false)
 			return true
 		_all_done = true
 		_cache_save()
+		_flush_tex(true)
 		return true
 	_start_stage()
 	return false
@@ -217,11 +224,11 @@ func poll() -> bool:
 func _start_stage() -> void:
 	match _stage:
 		0:
-			_gid = WorkerThreadPool.add_group_task(_pass_height, _th + APRON * 2, 8, false, "md_a")
+			_gid = WorkerThreadPool.add_group_task(_pass_height, _th + APRON * 2, THREADS, false, "md_a")
 		1:
-			_gid = WorkerThreadPool.add_group_task(_pass_classify, _th, 8, false, "md_b")
+			_gid = WorkerThreadPool.add_group_task(_pass_classify, _th, THREADS, false, "md_b")
 		_:
-			_gid = WorkerThreadPool.add_group_task(_pass_filter, _th, 8, false, "md_c")
+			_gid = WorkerThreadPool.add_group_task(_pass_filter, _th, THREADS, false, "md_c")
 
 
 ## 放弃这个窗口：最多浪费正在跑的那一趟，不再启动新的
@@ -338,6 +345,18 @@ func _commit_full() -> void:
 
 
 ## 阶段一：这一块（含四周余量）的高程，供阴影差分用
+## 把画布传到显存。每块都传会把 2 MB 的图反复重传（81 次），所以按间隔节流；
+## force=true（烘完 / 首块）立刻传。
+func _flush_tex(force: bool) -> void:
+	if not _dirty:
+		return
+	if not force and Time.get_ticks_msec() - _last_up < TEX_MIN_GAP:
+		return
+	tex.update(img)
+	_dirty = false
+	_last_up = Time.get_ticks_msec()
+
+
 func _pass_height(ay: int) -> void:
 	var aw := _tw + APRON * 2
 	var lat: float = lat0 - (float(_ty0 + ay - APRON) + 0.5) * _dlat

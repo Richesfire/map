@@ -975,6 +975,10 @@ func _open_map() -> void:
 	_clamp_map_center()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.map_open = true
+	# 地图是整屏覆盖的，底下的 3D 世界看不见却还在渲染（显卡空转、风扇狂转）。
+	# 开图时把地形整棵子树藏掉，关图再放出来。
+	if terrain != null:
+		terrain.visible = false
 	_panel_placeholder()      # 面板常显：先摆空面板，点谁换谁
 	map_root.queue_redraw()
 
@@ -996,6 +1000,8 @@ func _close_map() -> void:
 	dragging = false
 	if player != null:
 		player.map_open = false
+	if terrain != null:
+		terrain.visible = true
 	# 回到游戏就把鼠标锁回去，否则关图后摄像机不跟鼠标
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
