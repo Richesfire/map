@@ -21,9 +21,9 @@ const TIME_SCALE := 1.0
 const MARCH_KM_PER_DAY := 45.0
 ## 玩家离网格中心超过这个距离就重建（碰撞跟着玩家走）
 const RECENTER_R := 4000.0
-## TAB 轮盘：中心死区（像素）与切换所需最小位移
-const TAB_DEAD_ZONE := 45.0
-const TAB_SWITCH_MIN := 70.0
+## TAB 轮盘：直接按鼠标移动方向判定（平滑后位移阈值 + 主方向优势比）
+const TAB_MOVE_MIN := 5.0
+const TAB_DIR_BIAS := 1.18
 const CLOCK_START := 8.0 * 60.0      # 前 209 年十月初一 辰时
 
 enum St { MENU, GAME }
@@ -867,55 +867,33 @@ func _input(e: InputEvent) -> void:
 
 	if tab_held and e is InputEventMouseMotion:
 		var mm := e as InputEventMouseMotion
-		# 中心死区：累积位移不够就不选；已选方向后要转足够角度才换
-		_tab_acc += mm.relative
-		var l := _tab_acc.length()
-		if l < TAB_DEAD_ZONE:
-			if tab_sel != -1:
-				tab_sel = -1
-				_layout_tab()
-				tab_cross.queue_redraw()
-		else:
-			var d := _dir_of(_tab_acc)
-			var changed := false
-			if tab_sel == -1:
-				tab_sel = d
-				_tab_locked = true
-				changed = true
-			elif tab_sel != d and l > TAB_SWITCH_MIN and _tab_angle_to(d) < 34.0:
-				# 以前只允许“换到对面方向”（gap > 1），斜着划（上→左上）永远切不过去，手感像卡住。
-				# 现在按角度判：离新方向中心 34° 以内就换（扇形边界 45°，留 11° 迟滞防抖）。
-				tab_sel = d
-				changed = true
-			if changed:
-				_layout_tab()
-				tab_cross.queue_redraw()
+		# 直接按“这一小段鼠标移动”判方向：往上移就选上、往右移就选右。
+		# 不再用“从按下点开始的累积位移”，所以斜着划（上→左上）能立刻换方向。
+		# 0.55 的短窗平滑只是压掉抖动；主方向要明显大于另一个轴才换（防 45° 处来回跳）。
+		_tab_acc = _tab_acc * 0.55 + mm.relative
+		var want := _tab_dir_of_motion(_tab_acc)
+		if want != -1 and want != tab_sel:
+			tab_sel = want
+			_tab_locked = true
+			_layout_tab()
+			tab_cross.queue_redraw()
 
 	if map_open:
 		_map_input(e)
 
 
-## 两个方向之间隔了几个方位（0 同向 / 1 相邻 / 2 相反）
-func _tab_gap(a: int, b: int) -> int:
-	var d: int = absi(a - b)
-	return mini(d, 4 - d)
-
-
-## 轮盘四个方向的方向中心角（屏幕坐标，y 向下）：上 = −90°、右 = 0°、下 = 90°、左 = 180°
-const TAB_DIR_CENTERS := [-90.0, 0.0, 90.0, 180.0]
-
-
-## 累积位移离某个方向中心差多少度（0 = 正对该方向）
-func _tab_angle_to(dir: int) -> float:
-	var a := rad_to_deg(atan2(_tab_acc.y, _tab_acc.x))
-	var c: float = TAB_DIR_CENTERS[dir]
-	return absf(fposmod(a - c + 180.0, 360.0) - 180.0)
-
-
-func _dir_of(d: Vector2) -> int:
-	if absf(d.x) > absf(d.y):
-		return 1 if d.x > 0 else 3
-	return 0 if d.y < 0 else 2
+## 按鼠标移动方向给方位（0 上 / 1 右 / 2 下 / 3 左）。
+## 几乎没动、或者正好卡在 45° 对角线上时返回 -1 —— 保持当前选中，不乱跳。
+func _tab_dir_of_motion(d: Vector2) -> int:
+	if d.length() < TAB_MOVE_MIN:
+		return -1
+	var ax := absf(d.x)
+	var ay := absf(d.y)
+	if ax > ay * TAB_DIR_BIAS:
+		return 1 if d.x > 0.0 else 3
+	if ay > ax * TAB_DIR_BIAS:
+		return 0 if d.y < 0.0 else 2
+	return -1
 
 
 ## TAB 轮盘打开的整页界面：char=角色 / troops=部队 / bag=背包
