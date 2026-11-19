@@ -2397,6 +2397,9 @@ func _draw_map() -> void:
 					vs.y * 0.5 - (LAT_LIMIT - map_center.y) * ppy2),
 			Vector2(content_w, content_h))
 	var scroll_rect := Rect2(content_rect.position - Vector2(pad_x, pad_y), Vector2(sheet_w, sheet_h))
+	_vec_org = content_rect.position
+	_vec_ppd = ppd2
+	_vec_ppy = ppy2
 	_content_w = content_w
 	_content_h = content_h
 	if _flags.has("--mapsize"):
@@ -3202,6 +3205,9 @@ var _vec_order := PackedInt32Array()
 var _vec_buckets := {}
 var _vec_loaded := false
 var _vec_on := false
+var _vec_org := Vector2.ZERO
+var _vec_ppd := 1.0
+var _vec_ppy := 1.0
 const VEC_BUCKET := 10.0
 
 
@@ -3262,15 +3268,14 @@ func _load_vec_terrain() -> void:
 func _draw_vec_terrain() -> void:
 	if not _vec_on or _vec_cls.is_empty():
 		return
-	# 用和 _lonlat_to_screen_off 同一套投影反推可见范围
+	# 和贴图完全同一套变换：content_rect + 每度像素数
 	var vs := get_viewport().get_visible_rect().size
-	var pr := _proj()
-	var sx: float = float(pr[0])
-	var sy: float = float(pr[1])
-	var lon_min: float = maxf(float(pr[2]) - (vs.x * 0.5) / sx, -180.0)
-	var lon_max: float = minf(float(pr[2]) + (vs.x * 0.5) / sx, 180.0)
-	var lat_max: float = minf(float(pr[3]) + (vs.y * 0.5) / sy, LAT_LIMIT)
-	var lat_min: float = maxf(float(pr[3]) - (vs.y * 0.5) / sy, -LAT_LIMIT)
+	var sx := _vec_ppd
+	var sy := _vec_ppy
+	var lon_min: float = maxf((0.0 - _vec_org.x) / sx - 180.0, -180.0)
+	var lon_max: float = minf((vs.x - _vec_org.x) / sx - 180.0, 180.0)
+	var lat_max: float = minf(LAT_LIMIT - (0.0 - _vec_org.y) / sy, LAT_LIMIT)
+	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
 	var px2: float = sx * sy
 	var min_area: float = 1.2 / maxf(px2, 1e-9)
 	var cand := PackedInt32Array()
@@ -3308,7 +3313,7 @@ func _draw_vec_terrain() -> void:
 		arr.resize(n)
 		for k in n:
 			var o := (st + k) * 2
-			arr[k] = _lonlat_to_screen_off(Vector2(_vec_pts[o], _vec_pts[o + 1]), 0.0)
+			arr[k] = _vec_org + Vector2((_vec_pts[o] + 180.0) * sx, (LAT_LIMIT - _vec_pts[o + 1]) * sy)
 		map_root.draw_colored_polygon(arr, LFDB.COLORS[_vec_cls[i]])
 		drawn += 1
 	if _flags.has("--vecdbg"):
