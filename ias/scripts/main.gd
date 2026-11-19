@@ -138,7 +138,7 @@ var _world_tex: ImageTexture = null
 var _shade_tex: ImageTexture = null
 
 # —— 高倍细节层：zoom 大时按真源现烘“可见屏幕+外扩”，分块流式填进来 ——
-const DETAIL_ZOOM := 250.0    # 到这个倍率才烘细节层（用户 2026-11-19：60→250，平时浏览不烘）
+const DETAIL_ZOOM := 9999.0   # 细节层停用（改矢量地形，用户 2026-11-19）
 const DETAIL_SCALE := 2.0     # 细档：2 屏幕像素 / texel（靠距离场保持边缘柔和）
 const DETAIL_SCALE_CO := 2.0  # 粗档也用 2 屏幕像素 / texel
 const DETAIL_KEEP := 4        # 缓存几个窗口（拖回去直接命中）
@@ -167,7 +167,7 @@ func _ready() -> void:
 	MapDetail.dbg_state = _flags.has("--dbgstate")
 	MapDetail.dbg_bakelog = _flags.has("--bakelog")
 	MapDetail.cache_on = not _flags.has("--nocache")
-	_vec_on = _flags.has("--vec")
+	_vec_on = not _flags.has("--novec")
 	if _flags.has("--bakebench"):
 		_bb_d = MapDetail.new()
 		_bb_d.setup(100.0, 27.0, 106.0, 23.0, 920, 570)
@@ -977,8 +977,6 @@ func _open_map() -> void:
 	_clamp_map_center()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.map_open = true
-	if _vec_on:
-		_load_vec_terrain()
 	# 地图是整屏覆盖的，底下的 3D 世界看不见却还在渲染（显卡空转、风扇狂转）。
 	# 开图时把地形整棵子树藏掉，关图再放出来。
 	if terrain != null:
@@ -3209,6 +3207,8 @@ var _vec_org := Vector2.ZERO
 var _vec_ppd := 1.0
 var _vec_ppy := 1.0
 const VEC_BUCKET := 10.0
+const VEC_ZOOM := 60.0     # 到这个倍率切矢量（以下用粗光栅图）
+const VEC_FADE := 24.0     # 交叉淡入的倍率宽度
 
 
 func _load_vec_terrain() -> void:
@@ -3266,8 +3266,23 @@ func _load_vec_terrain() -> void:
 
 
 func _draw_vec_terrain() -> void:
-	if not _vec_on or _vec_cls.is_empty():
+	if not _vec_on:
 		return
+	if map_zoom < VEC_ZOOM:
+		return
+	if not _vec_loaded:
+		_load_vec_terrain()
+	if _vec_cls.is_empty():
+		return
+	# 交叉淡入：60 倍刚出现是半透明，84 倍以上完全不透明
+	var alpha: float = clampf((map_zoom - VEC_ZOOM) / VEC_FADE + 0.25, 0.0, 1.0)
+	# 矢量全不透明时把下面的光栅图藏掉，避免多边形之间的缝里露出方块
+	if _map_shader_ok:
+		map_surface.visible = alpha < 0.999
+	# 先铺一层水色当底，缝隙里露出来也是水而不是方块
+	var wc: Color = LFDB.COLORS[11]
+	map_root.draw_rect(Rect2(_vec_org, Vector2(360.0 * _vec_ppd, LAT_LIMIT * 2.0 * _vec_ppy)),
+			Color(wc.r, wc.g, wc.b, alpha))
 	# 和贴图完全同一套变换：content_rect + 每度像素数
 	var vs := get_viewport().get_visible_rect().size
 	var sx := _vec_ppd
@@ -3314,7 +3329,13 @@ func _draw_vec_terrain() -> void:
 		for k in n:
 			var o := (st + k) * 2
 			arr[k] = _vec_org + Vector2((_vec_pts[o] + 180.0) * sx, (LAT_LIMIT - _vec_pts[o + 1]) * sy)
-		map_root.draw_colored_polygon(arr, LFDB.COLORS[_vec_cls[i]])
+		var vc: Color = LFDB.COLORS[_vec_cls[i]]
+		vc.a = alpha
+		map_root.draw_colored_polygon(arr, vc)
+		if n >= 3:
+			var closed := arr.duplicate()
+			closed.append(arr[0])
+			map_root.draw_polyline(closed, vc, 2.0, true)
 		drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
