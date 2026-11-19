@@ -135,6 +135,9 @@ void fragment() {
 	float lum = dot(c, vec3(0.35, 0.45, 0.20));
 	vec3 paper = vec3(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04);
 	c = mix(c, paper, 0.07);
+	// 越放大越往纸色靠（最高 30%）、顺带降对比 —— 地形只是旅行图的底。
+	float paperize = clamp((zoom - 3.0) / 50.0, 0.0, 1.0) * 0.30;
+	c = mix(c, paper, paperize);
 
 	// 阴影叠上去
 	c = mix(c, vec3(0.30, 0.27, 0.22) * (0.45 + 0.75 * shade), shade_alpha);

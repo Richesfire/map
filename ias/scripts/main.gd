@@ -3330,6 +3330,11 @@ func _draw_vec_terrain() -> void:
 			var o := (st + k) * 2
 			arr[k] = _vec_org + Vector2((_vec_pts[o] + 180.0) * sx, (LAT_LIMIT - _vec_pts[o + 1]) * sy)
 		var vc: Color = LFDB.COLORS[_vec_cls[i]]
+		# 和 shader 同一套：越放大越往纸色靠（最高 30%），地形只当底
+		var pz: float = clampf((map_zoom - 3.0) / 50.0, 0.0, 1.0) * 0.30
+		var lum: float = vc.r * 0.35 + vc.g * 0.45 + vc.b * 0.20
+		var pap := Color(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04)
+		vc = vc.lerp(pap, pz)
 		vc.a = alpha
 		map_root.draw_colored_polygon(arr, vc)
 		if n >= 3:
