@@ -540,6 +540,36 @@ func _bug_test() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	await get_tree().physics_frame
 
+	# 1a1b) TAB 轮盘斜划：先向上、再往左上甩 —— 应该能切到“左”
+	# （以前只允许换到对面方向，相邻方向永远切不过去，手感像卡住）
+	var evp2 := InputEventKey.new()
+	evp2.keycode = KEY_TAB
+	evp2.pressed = true
+	Input.parse_input_event(evp2)
+	await get_tree().process_frame
+	var m_up2 := InputEventMouseMotion.new()
+	m_up2.relative = Vector2(0.0, -90.0)
+	Input.parse_input_event(m_up2)
+	await get_tree().process_frame
+	var s_up2: int = m.tab_sel
+	var m_diag := InputEventMouseMotion.new()
+	m_diag.relative = Vector2(-300.0, -96.0)
+	Input.parse_input_event(m_diag)
+	await get_tree().process_frame
+	var s_left: int = m.tab_sel
+	var b_diag: bool = (s_up2 == 0 and s_left == 3)
+	ok = ok and b_diag
+	print("[回归] 轮盘斜划：上→左上 选中 %d→%d → %s" % [s_up2, s_left, "OK" if b_diag else "FAIL"])
+	var evr2 := InputEventKey.new()
+	evr2.keycode = KEY_TAB
+	evr2.pressed = false
+	Input.parse_input_event(evr2)
+	await get_tree().process_frame
+	if m.sheet_open:
+		m._close_sheet()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	await get_tree().physics_frame
+
 	# 1a2) 相机俯仰：鼠标上下要能改变俯仰，且相机高度跟着变
 	var p0: float = m.player.pitch
 	var cy0: float = m.player.cam.global_position.y

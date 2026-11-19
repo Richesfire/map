@@ -882,7 +882,9 @@ func _input(e: InputEvent) -> void:
 				tab_sel = d
 				_tab_locked = true
 				changed = true
-			elif tab_sel != d and l > TAB_SWITCH_MIN and _tab_gap(tab_sel, d) > 1:
+			elif tab_sel != d and l > TAB_SWITCH_MIN and _tab_angle_to(d) < 34.0:
+				# 以前只允许“换到对面方向”（gap > 1），斜着划（上→左上）永远切不过去，手感像卡住。
+				# 现在按角度判：离新方向中心 34° 以内就换（扇形边界 45°，留 11° 迟滞防抖）。
 				tab_sel = d
 				changed = true
 			if changed:
@@ -897,6 +899,17 @@ func _input(e: InputEvent) -> void:
 func _tab_gap(a: int, b: int) -> int:
 	var d: int = absi(a - b)
 	return mini(d, 4 - d)
+
+
+## 轮盘四个方向的方向中心角（屏幕坐标，y 向下）：上 = −90°、右 = 0°、下 = 90°、左 = 180°
+const TAB_DIR_CENTERS := [-90.0, 0.0, 90.0, 180.0]
+
+
+## 累积位移离某个方向中心差多少度（0 = 正对该方向）
+func _tab_angle_to(dir: int) -> float:
+	var a := rad_to_deg(atan2(_tab_acc.y, _tab_acc.x))
+	var c: float = TAB_DIR_CENTERS[dir]
+	return absf(fposmod(a - c + 180.0, 360.0) - 180.0)
 
 
 func _dir_of(d: Vector2) -> int:
