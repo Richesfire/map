@@ -3319,7 +3319,9 @@ func _draw_vec_terrain() -> void:
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
 				drawn, cand.size(), lon_min, lon_max, lat_min, lat_max, sx])
-		if cand.size() > 0:
-			var q := cand[0]
-			print("  样本 bbox %.2f,%.2f..%.2f,%.2f" % [
-					_vec_bbox[q * 4], _vec_bbox[q * 4 + 1], _vec_bbox[q * 4 + 2], _vec_bbox[q * 4 + 3]])
+		for qi in mini(3, cand.size()):
+			var q := cand[qi]
+			var o0 := _vec_start[q] * 2
+			print("  环%d cls=%d n=%d bbox %.2f,%.2f..%.2f,%.2f 首点 %.2f,%.2f" % [
+					q, _vec_cls[q], _vec_len[q], _vec_bbox[q*4], _vec_bbox[q*4+1],
+					_vec_bbox[q*4+2], _vec_bbox[q*4+3], _vec_pts[o0], _vec_pts[o0+1]])

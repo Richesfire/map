@@ -218,7 +218,7 @@ def main():
     if bin_out:
         binf = open(bin_out, "wb")
         binf.write(b"TCON")
-        binf.write(np.uint32(1).tobytes())
+        binf.write(np.uint32(2).tobytes())
         binf.write(np.uint32(len(order)).tobytes())
 
     img = Image.new("RGB", (sub.shape[1], sub.shape[0]), (235, 228, 210))
@@ -249,13 +249,14 @@ def main():
             for sp in ring_buf:
                 arr = np.asarray(sp, dtype=np.float64)
                 n = arr.shape[0]
+                # 格子坐标 → 经纬度（float32，运行时直接可用）
+                ll = np.empty((n, 2), dtype=np.float32)
+                ll[:, 0] = (x0 + arr[:, 0] * step) / W * 360.0 - 180.0
+                ll[:, 1] = 90.0 - (y0 + arr[:, 1] * step) / H * 180.0
                 binf.write(np.uint32(n).tobytes())
-                binf.write(arr.min(axis=0).astype(np.float32).tobytes())
-                binf.write(arr.max(axis=0).astype(np.float32).tobytes())
-                q = np.empty((n, 2), dtype=np.int16)
-                q[:, 0] = np.round(arr[:, 0] * (32767.0 / 180.0))
-                q[:, 1] = np.round(arr[:, 1] * (32767.0 / 90.0))
-                binf.write(q.tobytes())
+                binf.write(ll.min(axis=0).astype(np.float32).tobytes())
+                binf.write(ll.max(axis=0).astype(np.float32).tobytes())
+                binf.write(ll.tobytes())
             end = binf.tell()
             binf.seek(pos)
             binf.write(np.uint32(len(ring_buf)).tobytes())
