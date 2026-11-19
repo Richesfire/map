@@ -3262,18 +3262,19 @@ func _load_vec_terrain() -> void:
 func _draw_vec_terrain() -> void:
 	if not _vec_on or _vec_cls.is_empty():
 		return
-	var sc := _map_scale()
+	# 用和 _lonlat_to_screen_off 同一套投影反推可见范围
 	var vs := get_viewport().get_visible_rect().size
-	var ll0 := _screen_to_lonlat(Vector2.ZERO)
-	var ll1 := _screen_to_lonlat(vs)
-	var lon_min: float = minf(ll0.x, ll1.x)
-	var lon_max: float = maxf(ll0.x, ll1.x)
-	var lat_min: float = minf(ll0.y, ll1.y)
-	var lat_max: float = maxf(ll0.y, ll1.y)
-	var px2: float = sc.x * sc.y
+	var pr := _proj()
+	var sx: float = float(pr[0])
+	var sy: float = float(pr[1])
+	var lon_min: float = maxf(float(pr[2]) - (vs.x * 0.5) / sx, -180.0)
+	var lon_max: float = minf(float(pr[2]) + (vs.x * 0.5) / sx, 180.0)
+	var lat_max: float = minf(float(pr[3]) + (vs.y * 0.5) / sy, LAT_LIMIT)
+	var lat_min: float = maxf(float(pr[3]) - (vs.y * 0.5) / sy, -LAT_LIMIT)
+	var px2: float = sx * sy
 	var min_area: float = 1.2 / maxf(px2, 1e-9)
 	var cand := PackedInt32Array()
-	if sc.x < 60.0:
+	if sx < 60.0:
 		for i in _vec_order:
 			var w: float = _vec_bbox[i * 4 + 2] - _vec_bbox[i * 4]
 			var h: float = _vec_bbox[i * 4 + 3] - _vec_bbox[i * 4 + 1]
@@ -3311,4 +3312,9 @@ func _draw_vec_terrain() -> void:
 		map_root.draw_colored_polygon(arr, LFDB.COLORS[_vec_cls[i]])
 		drawn += 1
 	if _flags.has("--vecdbg"):
-		print("[矢量] 本帧画 %d 环（候选 %d）" % [drawn, cand.size()])
+		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
+				drawn, cand.size(), lon_min, lon_max, lat_min, lat_max, sx])
+		if cand.size() > 0:
+			var q := cand[0]
+			print("  样本 bbox %.2f,%.2f..%.2f,%.2f" % [
+					_vec_bbox[q * 4], _vec_bbox[q * 4 + 1], _vec_bbox[q * 4 + 2], _vec_bbox[q * 4 + 3]])
