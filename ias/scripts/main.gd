@@ -1967,7 +1967,7 @@ func _zoom_at(target_zoom: float) -> void:
 	var sc0 := _map_scale()
 	var before := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc0.x,
 			map_center.y - (mp.y - vs.y * 0.5) / sc0.y)
-	map_zoom = clampf(target_zoom, _zoom_min(), 120.0)
+	map_zoom = clampf(target_zoom, _zoom_min(), 500.0)
 	var sc1 := _map_scale()
 	var after := Vector2(map_center.x + (mp.x - vs.x * 0.5) / sc1.x,
 			map_center.y - (mp.y - vs.y * 0.5) / sc1.y)
@@ -2203,8 +2203,6 @@ func _grow_canvas(core: Vector4) -> void:
 
 func _bind_canvas(c: MapDetail) -> void:
 	_map_mat.set_shader_parameter("detail_tex", c.tex)
-	_map_mat.set_shader_parameter("detail_dist", c.dist_tex)
-	_map_mat.set_shader_parameter("detail_sdf", 1.0 if c.sdf_ready else 0.0)
 	_map_mat.set_shader_parameter("detail_org", Vector2(c.ox, c.oy))
 	_map_mat.set_shader_parameter("detail_span", Vector2(c.sx, c.sy))
 	_map_mat.set_shader_parameter("detail_on", 1.0)
@@ -2225,7 +2223,7 @@ func _pan_probe(delta: float) -> void:
 	if _pan_acc < 5.0:
 		return
 	if _zoom_test > 0.0:
-		map_zoom = clampf(_zoom_test, _zoom_min(), 120.0)
+		map_zoom = clampf(_zoom_test, _zoom_min(), 500.0)
 		_clamp_map_center()
 		print("[缩放] 切到 %.2f" % map_zoom)
 		_zoom_test = 0.0

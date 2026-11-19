@@ -15,8 +15,6 @@ uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。
 // 贴在地理坐标上，拖动时留在原位；未烘到的区域仍显示编号图。
 uniform sampler2D detail_tex : filter_nearest, repeat_disable;
-uniform sampler2D detail_dist : filter_linear, repeat_disable;  // 到类别边界的距离（texel 单位）
-uniform float detail_sdf = 0.0;            // 1 = 距离场可用
 uniform vec2 detail_org = vec2(0.0, 0.0);    // 细节层左上角（世界 uv）
 uniform vec2 detail_span = vec2(1.0, 1.0);   // 细节层覆盖的 uv 范围
 uniform float detail_on = 0.0;
@@ -107,31 +105,10 @@ void fragment() {
 		g_duv = duv;
 		if (cov > 0.002) {
 			float lid_d = floor(dt.r * 255.0 + 0.5);
-			vec3 dc = lf_color(lid_d);
-			// 邻居平均色（边界处要和中心色混合）
-			vec2 t2 = 0.5 / vec2(textureSize(detail_tex, 0));
-			vec4 s0 = texture(detail_tex, clamp(duv + vec2(-t2.x, -t2.y), 0.0, 1.0));
-			vec4 s1 = texture(detail_tex, clamp(duv + vec2( t2.x, -t2.y), 0.0, 1.0));
-			vec4 s2 = texture(detail_tex, clamp(duv + vec2(-t2.x,  t2.y), 0.0, 1.0));
-			vec4 s3 = texture(detail_tex, clamp(duv + vec2( t2.x,  t2.y), 0.0, 1.0));
-			vec3 acc = lf_color(floor(s0.r * 255.0 + 0.5)) * s0.a
-					 + lf_color(floor(s1.r * 255.0 + 0.5)) * s1.a
-					 + lf_color(floor(s2.r * 255.0 + 0.5)) * s2.a
-					 + lf_color(floor(s3.r * 255.0 + 0.5)) * s3.a;
-			float wsum = s0.a + s1.a + s2.a + s3.a;
-			vec3 avg = wsum > 1e-3 ? acc / wsum : dc;
-			// 过渡权重：距离场是连续量（线性采样），所以边界位置是亚像素的，
-			// 过渡宽度按 texel 算，和 texel 大小无关 —— 4px 的格子也能得到 ~1.5px 的软边。
-			float w = 1.0;
-			float dline = 0.0;
-			if (detail_sdf > 0.5) {
-				dline = texture(detail_dist, clamp(duv, 0.0, 1.0)).r * 3.0;
-				w = 1.0 - smoothstep(0.05, 0.40, dline);
-			}
-			c = mix(c, mix(dc, avg, w), cov);
+			// 用户 2026-11-19：细版不要模糊，边界保持锐利（不加抗锯齿/距离场混合）
+			c = mix(c, lf_color(lid_d), cov);
 			shade = mix(shade, dt.g, cov);
-			float bl = detail_sdf > 0.5 ? (1.0 - smoothstep(0.05, 0.35, dline)) : 1.0;
-			coast = max(coast * (1.0 - cov), dt.b * bl * cov);
+			coast = max(coast * (1.0 - cov), dt.b * cov);
 			lid = mix(lid, lid_d, cov);
 		}
 	}

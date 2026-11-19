@@ -48,9 +48,7 @@ var _nx := 0
 var _ny := 0
 var cancelled := false    # 被抛弃的窗口立刻停，别在后台抢线程
 var _dirty := false       # 画布有新内容、还没传到显存
-var dist_tex: ImageTexture = null   # 到类别边界的距离（texel 单位，R8，线性过滤）
-var sdf_ready := false
-var _dist_bytes := PackedByteArray()
+
 var _last_up := 0         # 上次上传的 tick（节流用）
 var _adopt = null   # 同缩放的旧窗口，重叠区直接搬
 
@@ -113,11 +111,7 @@ func setup(p_lon0: float, p_lat0: float, p_lon1: float, p_lat1: float, pw: int, 
 	img = Image.create(px_w, px_h, false, Image.FORMAT_RGBA8)
 	img.fill(Color(0, 0, 0, 0))
 	tex = ImageTexture.create_from_image(img)
-	# 距离场：烘完再算（见 _build_sdf），先占个空纹理，shader 里 detail_sdf=0 时走老路径
-	var dzero := Image.create(px_w, px_h, false, Image.FORMAT_R8)
-	dzero.fill(Color(1, 0, 0, 1))
-	dist_tex = ImageTexture.create_from_image(dzero)
-	sdf_ready = false
+
 
 	# 分块 + 由近到远排序（先出屏幕中心那一块）
 	var nx := int(ceil(float(px_w) / float(TILE)))
@@ -221,7 +215,6 @@ func poll() -> bool:
 			_flush_tex(false)
 			return true
 		_all_done = true
-		_build_sdf()
 		_cache_save()
 		_flush_tex(true)
 		return true
@@ -354,56 +347,6 @@ func _commit_full() -> void:
 
 
 ## 阶段一：这一块（含四周余量）的高程，供阴影差分用
-## 类别边界距离场：烘完后整张算一遍（4 邻域两遍 chamfer），存成 R8（texel 单位，封顶 3）。
-## shader 里用线性采样 + smoothstep 做亚像素级过渡，边界柔和且与 texel 大小无关。
-func _build_sdf() -> void:
-	var w := img.get_width()
-	var h := img.get_height()
-	if w <= 0 or h <= 0:
-		return
-	var ids := img.get_data()
-	var n := w * h
-	var dist := PackedFloat32Array()
-	dist.resize(n)
-	var big := 99.0
-	for y in h:
-		var row := y * w
-		for x in w:
-			var i := (row + x) * 4
-			var v := ids[i]
-			var b := (x == 0 or y == 0 or x == w - 1 or y == h - 1)
-			if not b:
-				b = ids[i - 4] != v or ids[i + 4] != v or ids[i - w * 4] != v or ids[i + w * 4] != v
-			dist[row + x] = 0.0 if b else big
-	for y in h:
-		var row := y * w
-		for x in w:
-			var idx := row + x
-			var m := dist[idx]
-			if x > 0:
-				m = minf(m, dist[idx - 1] + 1.0)
-			if y > 0:
-				m = minf(m, dist[idx - w] + 1.0)
-			dist[idx] = m
-	for y in range(h - 1, -1, -1):
-		var row := y * w
-		for x in range(w - 1, -1, -1):
-			var idx := row + x
-			var m := dist[idx]
-			if x < w - 1:
-				m = minf(m, dist[idx + 1] + 1.0)
-			if y < h - 1:
-				m = minf(m, dist[idx + w] + 1.0)
-			dist[idx] = m
-	var out := PackedByteArray()
-	out.resize(n)
-	for i in n:
-		out[i] = int(clampf(dist[i] / 3.0, 0.0, 1.0) * 255.0)
-	_dist_bytes = out
-	dist_tex = ImageTexture.create_from_image(Image.create_from_data(w, h, false, Image.FORMAT_R8, out))
-	sdf_ready = true
-
-
 ## 把画布传到显存。每块都传会把 2 MB 的图反复重传（81 次），所以按间隔节流；
 ## force=true（烘完 / 首块）立刻传。
 func _flush_tex(force: bool) -> void:
@@ -510,17 +453,6 @@ func _cache_try_load() -> bool:
 		im.convert(Image.FORMAT_RGBA8)
 	img = im
 	tex = ImageTexture.create_from_image(img)
-	# 距离场（没有就退回老的 4 点平均）
-	var dpath := path.get_basename() + "_d.png"
-	sdf_ready = false
-	if FileAccess.file_exists(dpath):
-		var dim := Image.load_from_file(dpath)
-		if dim != null and not dim.is_empty() and dim.get_width() == px_w and dim.get_height() == px_h:
-			if dim.get_format() != Image.FORMAT_R8:
-				dim.convert(Image.FORMAT_R8)
-			_dist_bytes = dim.get_data()
-			dist_tex = ImageTexture.create_from_image(dim)
-			sdf_ready = true
 	tile_state.fill(1)
 	tiles_done = tiles_total
 	first_ready = true
@@ -550,10 +482,6 @@ func _cache_save() -> void:
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	if img.save_png(path) != OK:
 		return
-	# 距离场单独一张（PNG 灰度），缓存命中时一起读
-	if sdf_ready and _dist_bytes.size() == px_w * px_h:
-		var dimg := Image.create_from_data(px_w, px_h, false, Image.FORMAT_R8, _dist_bytes)
-		dimg.save_png(path.get_basename() + "_d.png")
 	cache_files += 1
 
 
