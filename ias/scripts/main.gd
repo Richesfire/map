@@ -3337,10 +3337,6 @@ func _draw_vec_terrain() -> void:
 		vc = vc.lerp(pap, pz)
 		vc.a = alpha
 		map_root.draw_colored_polygon(arr, vc)
-		if n >= 3:
-			var closed := arr.duplicate()
-			closed.append(arr[0])
-			map_root.draw_polyline(closed, vc, clampf(sx * 0.010, 2.0, 14.0), true)
 		drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
