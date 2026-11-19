@@ -22,8 +22,8 @@ const MARCH_KM_PER_DAY := 45.0
 ## 玩家离网格中心超过这个距离就重建（碰撞跟着玩家走）
 const RECENTER_R := 4000.0
 ## TAB 轮盘：直接按鼠标移动方向判定（平滑后位移阈值 + 主方向优势比）
-const TAB_MOVE_MIN := 5.0
-const TAB_DIR_BIAS := 1.18
+const TAB_MOVE_MIN := 8.0
+const TAB_DIR_BIAS := 1.45
 const CLOCK_START := 8.0 * 60.0      # 前 209 年十月初一 辰时
 
 enum St { MENU, GAME }
@@ -833,8 +833,14 @@ func _input(e: InputEvent) -> void:
 			if player != null:
 				player.look_locked = k.pressed
 			if k.pressed and sheet_open:
-				# 整页界面开着时，TAB 直接关掉
+				# 界面开着时再按 TAB：只负责关掉。
+				# 轮盘状态必须一起清掉，否则松开 TAB 会拿旧方向再开一次（关了又弹出来）。
 				_close_sheet()
+				tab_held = false
+				tab_sel = -1
+				_tab_acc = Vector2.ZERO
+				tab_cross.visible = false
+				tab_cross.queue_redraw()
 				return
 			if k.pressed:
 				# 按下时不预选任何方向：不动鼠标松开就什么都不触发

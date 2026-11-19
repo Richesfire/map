@@ -570,6 +570,30 @@ func _bug_test() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	await get_tree().physics_frame
 
+	# 1a1c) 界面开着时再按 TAB 只负责关掉，松开不能再弹回来
+	m._open_sheet("char")
+	await get_tree().process_frame
+	var evp3 := InputEventKey.new()
+	evp3.keycode = KEY_TAB
+	evp3.pressed = true
+	Input.parse_input_event(evp3)
+	await get_tree().process_frame
+	var closed_ok: bool = not m.sheet_open
+	var evr3 := InputEventKey.new()
+	evr3.keycode = KEY_TAB
+	evr3.pressed = false
+	Input.parse_input_event(evr3)
+	await get_tree().process_frame
+	var reopened: bool = m.sheet_open
+	var b_tabclose: bool = closed_ok and not reopened
+	ok = ok and b_tabclose
+	print("[回归] 界面开着再按 TAB：关上=%s 松开后重开=%s → %s"
+			% [closed_ok, reopened, "OK" if b_tabclose else "FAIL"])
+	if m.sheet_open:
+		m._close_sheet()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	await get_tree().physics_frame
+
 	# 1a2) 相机俯仰：鼠标上下要能改变俯仰，且相机高度跟着变
 	var p0: float = m.player.pitch
 	var cy0: float = m.player.cam.global_position.y
