@@ -1,4 +1,4 @@
-shader_type canvas_item;
+﻿shader_type canvas_item;
 render_mode unshaded;
 
 // 世界地图：逐像素从高程纹理算地势阴影；地貌配色来自预烘焙编号图，
@@ -15,6 +15,8 @@ uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。
 // 贴在地理坐标上，拖动时留在原位；未烘到的区域仍显示编号图。
 uniform sampler2D detail_tex : filter_nearest, repeat_disable;
+uniform sampler2D detail_dist : filter_linear, repeat_disable;  // 到类别边界的距离（texel 单位）
+uniform float detail_sdf = 0.0;            // 1 = 距离场可用
 uniform vec2 detail_org = vec2(0.0, 0.0);    // 细节层左上角（世界 uv）
 uniform vec2 detail_span = vec2(1.0, 1.0);   // 细节层覆盖的 uv 范围
 uniform float detail_on = 0.0;
@@ -105,24 +107,31 @@ void fragment() {
 		g_duv = duv;
 		if (cov > 0.002) {
 			float lid_d = floor(dt.r * 255.0 + 0.5);
-			// 边缘抗锯齿：编号不能插值，就取 2×2 半格偏移的编号、把**颜色**平均。
-			// 格子内部四个采样点落在同一格 → 颜色不变；只有跨格边界才被柔化。
 			vec3 dc = lf_color(lid_d);
+			// 邻居平均色（边界处要和中心色混合）
 			vec2 t2 = 0.5 / vec2(textureSize(detail_tex, 0));
 			vec4 s0 = texture(detail_tex, clamp(duv + vec2(-t2.x, -t2.y), 0.0, 1.0));
 			vec4 s1 = texture(detail_tex, clamp(duv + vec2( t2.x, -t2.y), 0.0, 1.0));
 			vec4 s2 = texture(detail_tex, clamp(duv + vec2(-t2.x,  t2.y), 0.0, 1.0));
 			vec4 s3 = texture(detail_tex, clamp(duv + vec2( t2.x,  t2.y), 0.0, 1.0));
-			vec3 acc = dc;
-			float wsum = 1.0;
-			acc += lf_color(floor(s0.r * 255.0 + 0.5)) * s0.a; wsum += s0.a;
-			acc += lf_color(floor(s1.r * 255.0 + 0.5)) * s1.a; wsum += s1.a;
-			acc += lf_color(floor(s2.r * 255.0 + 0.5)) * s2.a; wsum += s2.a;
-			acc += lf_color(floor(s3.r * 255.0 + 0.5)) * s3.a; wsum += s3.a;
-			dc = acc / max(wsum, 1e-4);
-			c = mix(c, dc, cov);
+			vec3 acc = lf_color(floor(s0.r * 255.0 + 0.5)) * s0.a
+					 + lf_color(floor(s1.r * 255.0 + 0.5)) * s1.a
+					 + lf_color(floor(s2.r * 255.0 + 0.5)) * s2.a
+					 + lf_color(floor(s3.r * 255.0 + 0.5)) * s3.a;
+			float wsum = s0.a + s1.a + s2.a + s3.a;
+			vec3 avg = wsum > 1e-3 ? acc / wsum : dc;
+			// 过渡权重：距离场是连续量（线性采样），所以边界位置是亚像素的，
+			// 过渡宽度按 texel 算，和 texel 大小无关 —— 4px 的格子也能得到 ~1.5px 的软边。
+			float w = 1.0;
+			float dline = 0.0;
+			if (detail_sdf > 0.5) {
+				dline = texture(detail_dist, clamp(duv, 0.0, 1.0)).r * 3.0;
+				w = 1.0 - smoothstep(0.05, 0.40, dline);
+			}
+			c = mix(c, mix(dc, avg, w), cov);
 			shade = mix(shade, dt.g, cov);
-			coast = max(coast * (1.0 - cov), dt.b * cov);
+			float bl = detail_sdf > 0.5 ? (1.0 - smoothstep(0.05, 0.35, dline)) : 1.0;
+			coast = max(coast * (1.0 - cov), dt.b * bl * cov);
 			lid = mix(lid, lid_d, cov);
 		}
 	}
