@@ -138,7 +138,7 @@ var _shade_tex: ImageTexture = null
 
 # —— 高倍细节层：zoom 大时按真源现烘“可见屏幕+外扩”，分块流式填进来 ——
 const DETAIL_ZOOM := 60.0     # 到这个倍率才启用（编号图一格约 5.5 px 以上）
-const DETAIL_SCALE := 2.0     # 细档：2 屏幕像素 / texel（90 倍以上用，基本不糊）
+const DETAIL_SCALE := 2.0     # 细档：2 屏幕像素 / texel（配合 shader 抗锯齿）
 const DETAIL_SCALE_CO := 2.0  # 粗档也用 2 屏幕像素 / texel
 const DETAIL_KEEP := 4        # 缓存几个窗口（拖回去直接命中）
 const DETAIL_MARGIN := 8.0    # 边缘多烘几像素，避免采样到边界

@@ -105,7 +105,22 @@ void fragment() {
 		g_duv = duv;
 		if (cov > 0.002) {
 			float lid_d = floor(dt.r * 255.0 + 0.5);
-			c = mix(c, lf_color(lid_d), cov);
+			// 边缘抗锯齿：编号不能插值，就取 2×2 半格偏移的编号、把**颜色**平均。
+			// 格子内部四个采样点落在同一格 → 颜色不变；只有跨格边界才被柔化。
+			vec3 dc = lf_color(lid_d);
+			vec2 t2 = 0.5 / vec2(textureSize(detail_tex, 0));
+			vec4 s0 = texture(detail_tex, clamp(duv + vec2(-t2.x, -t2.y), 0.0, 1.0));
+			vec4 s1 = texture(detail_tex, clamp(duv + vec2( t2.x, -t2.y), 0.0, 1.0));
+			vec4 s2 = texture(detail_tex, clamp(duv + vec2(-t2.x,  t2.y), 0.0, 1.0));
+			vec4 s3 = texture(detail_tex, clamp(duv + vec2( t2.x,  t2.y), 0.0, 1.0));
+			vec3 acc = dc;
+			float wsum = 1.0;
+			acc += lf_color(floor(s0.r * 255.0 + 0.5)) * s0.a; wsum += s0.a;
+			acc += lf_color(floor(s1.r * 255.0 + 0.5)) * s1.a; wsum += s1.a;
+			acc += lf_color(floor(s2.r * 255.0 + 0.5)) * s2.a; wsum += s2.a;
+			acc += lf_color(floor(s3.r * 255.0 + 0.5)) * s3.a; wsum += s3.a;
+			dc = acc / max(wsum, 1e-4);
+			c = mix(c, dc, cov);
 			shade = mix(shade, dt.g, cov);
 			coast = max(coast * (1.0 - cov), dt.b * cov);
 			lid = mix(lid, lid_d, cov);
