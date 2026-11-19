@@ -137,7 +137,7 @@ var _world_tex: ImageTexture = null
 var _shade_tex: ImageTexture = null
 
 # —— 高倍细节层：zoom 大时按真源现烘“可见屏幕+外扩”，分块流式填进来 ——
-const DETAIL_ZOOM := 60.0     # 到这个倍率才启用（编号图一格约 5.5 px 以上）
+const DETAIL_ZOOM := 250.0    # 到这个倍率才烘细节层（用户 2026-11-19：60→250，平时浏览不烘）
 const DETAIL_SCALE := 2.0     # 细档：2 屏幕像素 / texel（靠距离场保持边缘柔和）
 const DETAIL_SCALE_CO := 2.0  # 粗档也用 2 屏幕像素 / texel
 const DETAIL_KEEP := 4        # 缓存几个窗口（拖回去直接命中）
@@ -2016,7 +2016,7 @@ func _detail_core() -> Vector4:
 ##   I4 reveal_r 只跟“当前屏幕中心 + 已烘前沿”有关，前沿每次现算
 ## ── 高倍细节层：跟着视野的一张画布 + 一块一块显示 ─────────────────────────
 ## 规则：
-##   1. zoom < DETAIL_ZOOM(60)：细版整体渐隐，粗版渐显，淡完释放画布
+##   1. zoom < DETAIL_ZOOM(250)：细版整体渐隐，粗版渐显，淡完释放画布
 ##   2. zoom >= 60：烘好一块就显示一块（按离屏幕中心由近到远），不做圆环遮罩
 ##   3. 拖动：烘的优先级跟着屏幕中心变；已烘 texel 全部保留
 ##   4. 换倍率 / 跳区：旧图渐隐退回粗图，新窗口从头烘
