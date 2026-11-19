@@ -2,6 +2,7 @@ extends Node3D
 ## 主控：主菜单 → 游戏；小地图 + TAB 十字 + 大地图 + 世界时间
 
 const TG := preload("res://scripts/terrain_gen.gd")
+const LFDB := preload("res://scripts/landform_db.gd")
 const MapDetail := preload("res://scripts/map_detail.gd")
 const TestHarness := preload("res://scripts/test_harness.gd")
 
@@ -166,6 +167,7 @@ func _ready() -> void:
 	MapDetail.dbg_state = _flags.has("--dbgstate")
 	MapDetail.dbg_bakelog = _flags.has("--bakelog")
 	MapDetail.cache_on = not _flags.has("--nocache")
+	_vec_on = _flags.has("--vec")
 	if _flags.has("--bakebench"):
 		_bb_d = MapDetail.new()
 		_bb_d.setup(100.0, 27.0, 106.0, 23.0, 920, 570)
@@ -975,6 +977,8 @@ func _open_map() -> void:
 	_clamp_map_center()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.map_open = true
+	if _vec_on:
+		_load_vec_terrain()
 	# 地图是整屏覆盖的，底下的 3D 世界看不见却还在渲染（显卡空转、风扇狂转）。
 	# 开图时把地形整棵子树藏掉，关图再放出来。
 	if terrain != null:
@@ -2466,6 +2470,7 @@ func _draw_map() -> void:
 	var _t1 := Time.get_ticks_usec()
 	_draw_world_cities(content_rect)
 	_draw_counties(content_rect)
+	_draw_vec_terrain()
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)
 	_place_map_panel(content_rect, vs)
@@ -3184,3 +3189,126 @@ func _pick_probe() -> void:
 			_poi_open(hit)     # 连面板一起验（配合 --shots 截图）
 			return
 	get_tree().quit()
+
+
+## ---------------- 矢量地形（实验） ----------------
+## 数据由 ias/tools/build_terrain_contours.py 生成：TCON v2（float32 经纬度）
+var _vec_pts := PackedFloat32Array()
+var _vec_start := PackedInt32Array()
+var _vec_len := PackedInt32Array()
+var _vec_cls := PackedByteArray()
+var _vec_bbox := PackedFloat32Array()
+var _vec_order := PackedInt32Array()
+var _vec_buckets := {}
+var _vec_loaded := false
+var _vec_on := false
+const VEC_BUCKET := 10.0
+
+
+func _load_vec_terrain() -> void:
+	if _vec_loaded:
+		return
+	_vec_loaded = true
+	var path := "res://data/terrain_contours.bin"
+	if not FileAccess.file_exists(path):
+		print("[矢量] 没有数据：", path)
+		return
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return
+	if f.get_buffer(4).get_string_from_ascii() != "TCON":
+		return
+	f.get_32()
+	var ncls := f.get_32()
+	var t0 := Time.get_ticks_msec()
+	for ci in ncls:
+		var cls := f.get_32()
+		var nr := f.get_32()
+		for ri in nr:
+			var n := f.get_32()
+			var bx0 := f.get_float()
+			var by0 := f.get_float()
+			var bx1 := f.get_float()
+			var by1 := f.get_float()
+			var buf := f.get_buffer(n * 8)
+			_vec_start.append(_vec_pts.size() / 2)
+			_vec_len.append(n)
+			_vec_cls.append(cls)
+			_vec_bbox.append_array(PackedFloat32Array([bx0, by0, bx1, by1]))
+			_vec_pts.append_array(buf.to_float32_array())
+	var nr := _vec_len.size()
+	var idx: Array = []
+	for i in nr:
+		var w: float = _vec_bbox[i * 4 + 2] - _vec_bbox[i * 4]
+		var h: float = _vec_bbox[i * 4 + 3] - _vec_bbox[i * 4 + 1]
+		idx.append([w * h, i])
+	idx.sort_custom(func(a, b): return float(a[0]) > float(b[0]))
+	for a in idx:
+		_vec_order.append(int(a[1]))
+	for i in nr:
+		var x0 := int(floor((_vec_bbox[i * 4] + 180.0) / VEC_BUCKET))
+		var x1 := int(floor((_vec_bbox[i * 4 + 2] + 180.0) / VEC_BUCKET))
+		var y0 := int(floor((90.0 - _vec_bbox[i * 4 + 3]) / VEC_BUCKET))
+		var y1 := int(floor((90.0 - _vec_bbox[i * 4 + 1]) / VEC_BUCKET))
+		for by in range(y0, y1 + 1):
+			for bx in range(x0, x1 + 1):
+				var k := Vector2i(bx, by)
+				var arr: PackedInt32Array = _vec_buckets.get(k, PackedInt32Array())
+				arr.append(i)
+				_vec_buckets[k] = arr
+	print("[矢量] %d 环 / %d 点，加载 %d ms" % [nr, _vec_pts.size() / 2, Time.get_ticks_msec() - t0])
+
+
+func _draw_vec_terrain() -> void:
+	if not _vec_on or _vec_cls.is_empty():
+		return
+	var sc := _map_scale()
+	var vs := get_viewport().get_visible_rect().size
+	var ll0 := _screen_to_lonlat(Vector2.ZERO)
+	var ll1 := _screen_to_lonlat(vs)
+	var lon_min: float = minf(ll0.x, ll1.x)
+	var lon_max: float = maxf(ll0.x, ll1.x)
+	var lat_min: float = minf(ll0.y, ll1.y)
+	var lat_max: float = maxf(ll0.y, ll1.y)
+	var px2: float = sc.x * sc.y
+	var min_area: float = 1.2 / maxf(px2, 1e-9)
+	var cand := PackedInt32Array()
+	if sc.x < 60.0:
+		for i in _vec_order:
+			var w: float = _vec_bbox[i * 4 + 2] - _vec_bbox[i * 4]
+			var h: float = _vec_bbox[i * 4 + 3] - _vec_bbox[i * 4 + 1]
+			if w * h < min_area:
+				break
+			cand.append(i)
+	else:
+		var seen := {}
+		var bx0 := int(floor((lon_min + 180.0) / VEC_BUCKET))
+		var bx1 := int(floor((lon_max + 180.0) / VEC_BUCKET))
+		var by0 := int(floor((90.0 - lat_max) / VEC_BUCKET))
+		var by1 := int(floor((90.0 - lat_min) / VEC_BUCKET))
+		for by in range(by0, by1 + 1):
+			for bx in range(bx0, bx1 + 1):
+				var arr: PackedInt32Array = _vec_buckets.get(Vector2i(bx, by), PackedInt32Array())
+				for i in arr:
+					if not seen.has(i):
+						seen[i] = true
+						cand.append(i)
+	var drawn := 0
+	for i in cand:
+		var bx0: float = _vec_bbox[i * 4]
+		var by0: float = _vec_bbox[i * 4 + 1]
+		var bx1: float = _vec_bbox[i * 4 + 2]
+		var by1: float = _vec_bbox[i * 4 + 3]
+		if bx1 < lon_min or bx0 > lon_max or by1 < lat_min or by0 > lat_max:
+			continue
+		var n := _vec_len[i]
+		var st := _vec_start[i]
+		var arr := PackedVector2Array()
+		arr.resize(n)
+		for k in n:
+			var o := (st + k) * 2
+			arr[k] = _lonlat_to_screen_off(Vector2(_vec_pts[o], _vec_pts[o + 1]), 0.0)
+		map_root.draw_colored_polygon(arr, LFDB.COLORS[_vec_cls[i]])
+		drawn += 1
+	if _flags.has("--vecdbg"):
+		print("[矢量] 本帧画 %d 环（候选 %d）" % [drawn, cand.size()])
