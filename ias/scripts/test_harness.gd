@@ -594,6 +594,31 @@ func _bug_test() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	await get_tree().physics_frame
 
+	# 1a1d) 地图开着时按 TAB 也只负责关掉，松开不能重开，镜头要解锁
+	m._open_map()
+	await get_tree().process_frame
+	var evp4 := InputEventKey.new()
+	evp4.keycode = KEY_TAB
+	evp4.pressed = true
+	Input.parse_input_event(evp4)
+	await get_tree().process_frame
+	var map_closed: bool = not m.map_open
+	var evr4 := InputEventKey.new()
+	evr4.keycode = KEY_TAB
+	evr4.pressed = false
+	Input.parse_input_event(evr4)
+	await get_tree().process_frame
+	var map_reopened: bool = m.map_open
+	var look_free: bool = not m.player.look_locked
+	var b_tabmap: bool = map_closed and not map_reopened and look_free
+	ok = ok and b_tabmap
+	print("[回归] 地图开着再按 TAB：关上=%s 松开后重开=%s 镜头解锁=%s → %s"
+			% [map_closed, map_reopened, look_free, "OK" if b_tabmap else "FAIL"])
+	if m.map_open:
+		m._close_map()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	await get_tree().physics_frame
+
 	# 1a2) 相机俯仰：鼠标上下要能改变俯仰，且相机高度跟着变
 	var p0: float = m.player.pitch
 	var cy0: float = m.player.cam.global_position.y

@@ -842,6 +842,17 @@ func _input(e: InputEvent) -> void:
 				tab_cross.visible = false
 				tab_cross.queue_redraw()
 				return
+			if k.pressed and map_open:
+				# 地图开着时按 TAB：也只负责关掉（和整页界面一致）
+				_close_map()
+				tab_held = false
+				tab_sel = -1
+				_tab_acc = Vector2.ZERO
+				tab_cross.visible = false
+				if player != null:
+					player.look_locked = false   # 上面按 TAB 时锁过，关图后要放开，否则镜头不动
+				tab_cross.queue_redraw()
+				return
 			if k.pressed:
 				# 按下时不预选任何方向：不动鼠标松开就什么都不触发
 				tab_sel = -1
