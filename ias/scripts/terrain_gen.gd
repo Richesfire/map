@@ -1093,13 +1093,13 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 	# 喀斯特只在中国西南（桂黔滇）与中南半岛北部出现，不再全球热带都算
 	# 喀斯特区：边界用噪声抖动，避免出现矩形
 	# 区域边界抖动：单层噪声是圆斑，边界会变成"人工圆"；改用 3–4 层 fbm，边界是碎的
-	var kj := _fbm(lon * 0.9, lat * 0.9, 6061, 4) * 1.8
+	var kj := _fbm(lon * 0.9, lat * 0.9, 6061, 2) * 1.8
 	var karst_region := (lon + kj > 104.0 and lon + kj < 112.5 and lat + kj > 21.0 and lat + kj < 29.0)
 	if karst_region and m > 0.45 and h > 60.0 and h < 1800.0 and relief < 700.0:
 		return LF_KARST
 
 	# 黄土高原：区域优先（水热条件不适用，这里是风积黄土堆积区）
-	var lj := _fbm(lon * 0.7 + 3.0, lat * 0.7 - 2.0, 7072, 4) * 2.2
+	var lj := _fbm(lon * 0.7 + 3.0, lat * 0.7 - 2.0, 7072, 2) * 2.2
 	if lat + lj > 33.5 and lat + lj < 40.5 and lon + lj > 100.0 and lon + lj < 114.5 \
 			and h > 200.0 and h < 1900.0 and relief < 800.0:
 		return LF_LOESS if slope < 12.0 else LF_MTN_LOESS
@@ -1132,7 +1132,7 @@ static func landform_kind(lon: float, lat: float, h: float) -> int:
 		return LF_MTN_GRANITE
 	if slope > 7.0 or relief > 220.0:
 		# 红壤只在中国南方与中南半岛（以前是全球热带，亚马逊/印度/东南亚全变红点）
-		var rj := _fbm(lon * 0.9 + 5.0, lat * 0.9 - 3.0, 5150, 4) * 1.8
+		var rj := _fbm(lon * 0.9 + 5.0, lat * 0.9 - 3.0, 5150, 2) * 1.8
 		var red_region := (lon + rj > 100.0 and lon + rj < 125.0 and lat + rj > 15.0 and lat + rj < 33.0)
 		if red_region and t > 15.0 and m > 0.50:
 			return LF_HILL_RED
@@ -1582,7 +1582,7 @@ const MONSOON_BOXES := [
 static func _monsoon(lon: float, lat: float) -> float:
 	var best := 0.0
 	# 抖动噪声与盒子无关，算一次即可（原先在循环里算了 8 次）
-	var wob := _fbm(lon * 1.5 + 5.0, lat * 1.5, 9191, 3) * 0.24
+	var wob := _fbm(lon * 1.5 + 5.0, lat * 1.5, 9191, 2) * 0.24
 	for b in MONSOON_BOXES:
 		var cx: float = (b[0] + b[1]) * 0.5
 		var cy: float = (b[2] + b[3]) * 0.5
@@ -1612,7 +1612,7 @@ static func moist_at(lon: float, lat: float) -> float:
 		dyn = maxf(dyn, 0.92 - abslat * 0.02)
 	# 大陆内部沙漠（塔克拉玛干、戈壁、伊朗、卡拉库姆、阿塔卡马、巴塔哥尼亚、卡拉哈里、澳洲中部）
 	# 抖动噪声与盒子无关，循环外算一次（原来每个盒子算一遍，8 倍浪费）
-	var wob2 := _fbm(lon * 1.5, lat * 1.5, 8181, 3) * 0.26
+	var wob2 := _fbm(lon * 1.5, lat * 1.5, 8181, 2) * 0.26
 	for b in ARID_BOXES:
 		var cx2: float = (b[0] + b[1]) * 0.5
 		var cy2: float = (b[2] + b[3]) * 0.5

@@ -20,7 +20,7 @@ static var dbg_bakelog := false
 ## 整张画布缓存：地形固定后，同一倍率+同一区域第二次打开直接读盘。
 ## 改分类器/去斑/水线规则时把 CACHE_VER +1（旧缓存作废）。
 static var cache_on := true
-const CACHE_VER := 5   # 2026-11-19：细节层加距离场 + 4px texel，旧缓存作废
+const CACHE_VER := 6   # 2026-11-19：噪声层数减半（分类结果变了），旧缓存作废
 const CACHE_DIR := "user://detail_cache"
 static var cache_files := -1      # 目录里已有多少张（太多就不再写）
 
