@@ -2472,7 +2472,7 @@ func _draw_map() -> void:
 	var _t1 := Time.get_ticks_usec()
 	_draw_world_cities(content_rect)
 	_draw_counties(content_rect)
-	_draw_contours()
+	_draw_ink_lines()
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)
 	_place_map_panel(content_rect, vs)
@@ -3447,7 +3447,7 @@ func _load_lines() -> void:
 	if _line_loaded:
 		return
 	_line_loaded = true
-	var path := "res://data/terrain_lines.bin"
+	var path := "res://data/map_contour.bin"
 	if not FileAccess.file_exists(path):
 		return
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -3477,6 +3477,8 @@ func _load_lines() -> void:
 
 
 func _draw_ink_lines() -> void:
+	if map_zoom < 40.0:
+		return    # 缩小看地图不画等高线（省 CPU）
 	if not _line_loaded:
 		_load_lines()
 	if _line_len.is_empty():
@@ -3488,8 +3490,8 @@ func _draw_ink_lines() -> void:
 	var lon_max: float = minf((vs.x - _vec_org.x) / sx - 180.0, 180.0)
 	var lat_max: float = minf(LAT_LIMIT - (0.0 - _vec_org.y) / sy, LAT_LIMIT)
 	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
-	var alpha: float = clampf((map_zoom - VEC_ZOOM) / VEC_FADE + 0.25, 0.0, 1.0)
-	var ink := Color(0.26, 0.19, 0.11, 0.55 * alpha)
+	var alpha: float = clampf((map_zoom - 8.0) / 20.0, 0.0, 1.0)
+	var ink := Color(0.32, 0.24, 0.15, 0.55 * alpha)
 	var bx0 := int(floor((lon_min + 180.0) / VEC_BUCKET))
 	var bx1 := int(floor((lon_max + 180.0) / VEC_BUCKET))
 	var by0 := int(floor((90.0 - lat_max) / VEC_BUCKET))
@@ -3511,7 +3513,10 @@ func _draw_ink_lines() -> void:
 				for k in cnt:
 					var o := (st + k) * 2
 					arr[k] = _vec_org + Vector2((_line_pts[o] + 180.0) * sx, (LAT_LIMIT - _line_pts[o + 1]) * sy)
-				map_root.draw_polyline(arr, ink, 2.2, true)
+				# 笔触感：先粗而淡的一道（墨晕），再细而实的一道（笔心）
+				var halo := Color(ink.r, ink.g, ink.b, ink.a * 0.35)
+				map_root.draw_polyline(arr, halo, 3.6, true)
+				map_root.draw_polyline(arr, ink, 1.3, true)
 				drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[线稿] 画 %d 条" % drawn)
