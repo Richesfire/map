@@ -3282,9 +3282,13 @@ func _draw_vec_terrain() -> void:
 	# 纯色纸底（高倍不再填地形色，只画轮廓线）——古地图的"素底"。
 	var paper_bg := Color(0.90, 0.86, 0.74, alpha)
 	map_root.draw_rect(Rect2(_vec_org, Vector2(360.0 * _vec_ppd, LAT_LIMIT * 2.0 * _vec_ppy)), paper_bg)
+	# 纸纹：一层很淡的纤维噪点，让素底不像纯色块
+	map_root.draw_texture_rect(_paper_tex(), Rect2(_vec_org,
+			Vector2(360.0 * _vec_ppd, LAT_LIMIT * 2.0 * _vec_ppy)), true,
+			Color(1, 1, 1, 0.55 * alpha))
 	var water_col: Color = LFDB.COLORS[11]
 	water_col = Color(water_col.r, water_col.g, water_col.b, alpha * 0.55)
-	var ink := Color(0.30, 0.23, 0.15, alpha * 0.38)
+	var ink := Color(0.24, 0.17, 0.10, alpha * 0.62)
 	# 和贴图完全同一套变换：content_rect + 每度像素数
 	var vs := get_viewport().get_visible_rect().size
 	var sx := _vec_ppd
@@ -3294,7 +3298,7 @@ func _draw_vec_terrain() -> void:
 	var lat_max: float = minf(LAT_LIMIT - (0.0 - _vec_org.y) / sy, LAT_LIMIT)
 	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
 	var px2: float = sx * sy
-	var min_area: float = 1.2 / maxf(px2, 1e-9)
+	var min_area: float = 9.0 / maxf(px2, 1e-9)
 	var cand := PackedInt32Array()
 	if sx < 60.0:
 		for i in _vec_order:
@@ -3363,9 +3367,18 @@ func _draw_vec_terrain() -> void:
 		if _vec_cls[i] == 11:
 			map_root.draw_colored_polygon(arr, water_col)
 		if n >= 3:
-			var closed := arr.duplicate()
-			closed.append(arr[0])
-			map_root.draw_polyline(closed, ink, 1.2, true)
+			# 风格化：画面用的线再做一次 Chaikin，把 4.9km 的折角磨圆，像手绘
+			var sp := arr
+			if n >= 6:
+				sp = PackedVector2Array()
+				for k in n:
+					var q0 := arr[k]
+					var q1 := arr[(k + 1) % n]
+					sp.append(q0 * 0.75 + q1 * 0.25)
+					sp.append(q0 * 0.25 + q1 * 0.75)
+			var closed := sp.duplicate()
+			closed.append(sp[0])
+			map_root.draw_polyline(closed, ink, 1.8, true)
 		drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
@@ -3376,3 +3389,24 @@ func _draw_vec_terrain() -> void:
 			print("  环%d cls=%d n=%d bbox %.2f,%.2f..%.2f,%.2f 首点 %.2f,%.2f" % [
 					q, _vec_cls[q], _vec_len[q], _vec_bbox[q*4], _vec_bbox[q*4+1],
 					_vec_bbox[q*4+2], _vec_bbox[q*4+3], _vec_pts[o0], _vec_pts[o0+1]])
+
+
+## 纸张纤维纹理（一次生成，平铺）
+static var _paper_tex_cache: ImageTexture
+
+
+func _paper_tex() -> ImageTexture:
+	if _paper_tex_cache != null:
+		return _paper_tex_cache
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261120
+	for y in n:
+		for x in n:
+			var v: float = rng.randf() * 0.5 + 0.5
+			# 横向纤维：每 2 行拉长一点
+			var fiber: float = rng.randf() * 0.06
+			img.set_pixel(x, y, Color(0.88 + v * 0.06 + fiber, 0.84 + v * 0.05, 0.72 + v * 0.04, 1.0))
+	_paper_tex_cache = ImageTexture.create_from_image(img)
+	return _paper_tex_cache
