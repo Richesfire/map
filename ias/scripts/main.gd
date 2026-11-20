@@ -3507,39 +3507,36 @@ func _draw_ink_lines() -> void:
 func _draw_contours() -> void:
 	if map_zoom < 25.0 or terrain == null:
 		return
+	var sx := _vec_ppd
+	var sy := _vec_ppy
+	if sx <= 0.0:
+		return
 	var vs := get_viewport().get_visible_rect().size
-	var sc := _proj()
-	var sx: float = float(sc[0])
-	var sy: float = float(sc[1])
-	var lon_min: float = float(sc[2]) - (vs.x * 0.5) / sx
-	var lon_max: float = float(sc[2]) + (vs.x * 0.5) / sx
-	var lat_max: float = float(sc[3]) + (vs.y * 0.5) / sy
-	var lat_min: float = float(sc[3]) - (vs.y * 0.5) / sy
-	# 网格：每格约 6 px
+	var lon_min: float = maxf((0.0 - _vec_org.x) / sx - 180.0, -180.0)
+	var lon_max: float = minf((vs.x - _vec_org.x) / sx - 180.0, 180.0)
+	var lat_max: float = minf(LAT_LIMIT - (0.0 - _vec_org.y) / sy, LAT_LIMIT)
+	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
+	if lon_max - lon_min < 0.01 or lat_max - lat_min < 0.01:
+		return
 	var step_deg: float = maxf(6.0 / sx, 0.004)
 	var nx: int = clampi(int((lon_max - lon_min) / step_deg) + 1, 2, 150)
 	var ny: int = clampi(int((lat_max - lat_min) / step_deg) + 1, 2, 110)
 	var dx: float = (lon_max - lon_min) / float(nx - 1)
 	var dy: float = (lat_max - lat_min) / float(ny - 1)
-	# 采样
 	var hh := PackedFloat32Array()
 	hh.resize(nx * ny)
 	for j in ny:
 		var lat: float = lat_max - dy * float(j)
 		for i in nx:
 			hh[j * nx + i] = TG.dem_at(lon_min + dx * float(i), lat)
-	# 阈值：低倍 500 m 一条，高倍 250 m
 	var interval: float = 500.0 if map_zoom < 90.0 else 250.0
-	var base: float = interval
-	var ink := Color(0.36, 0.28, 0.18, 0.22)
-	var ink2 := Color(0.36, 0.28, 0.18, 0.10)
-	var t: float = base
-	var th_list: Array = []
-	while t < 6000.0:
-		th_list.append(t)
-		t += interval
-	for th in th_list:
-		var col: Color = ink if int(th) % 1000 == 0 else ink2
+	var to_scr := func(lon: float, lat: float) -> Vector2:
+		return _vec_org + Vector2((lon + 180.0) * sx, (LAT_LIMIT - lat) * sy)
+	var th: float = interval
+	while th < 6000.0:
+		var col: Color = Color(0.36, 0.28, 0.18, 0.26) if int(th) % 1000 == 0 else Color(0.36, 0.28, 0.18, 0.13)
+		# 收集线段，按端点接成折线，避免画成断片
+		var segs: Array = []
 		for j in ny - 1:
 			for i in nx - 1:
 				var a := 0
@@ -3557,20 +3554,57 @@ func _draw_contours() -> void:
 				var p_r := Vector2(x1, y0 - dy * 0.5)
 				var p_b := Vector2(x0 + dx * 0.5, y1)
 				var p_l := Vector2(x0, y0 - dy * 0.5)
-				var segs := []
 				match a:
-					1, 14: segs = [[p_l, p_b]]
-					2, 13: segs = [[p_b, p_r]]
-					3, 12: segs = [[p_l, p_r]]
-					4, 11: segs = [[p_t, p_r]]
-					6, 9: segs = [[p_t, p_b]]
-					7, 8: segs = [[p_l, p_t]]
-					5: segs = [[p_l, p_t], [p_b, p_r]]
-					10: segs = [[p_t, p_r], [p_l, p_b]]
-				var org := _vec_org if _vec_ppd > 0.0 else Vector2.ZERO
-				for sg in segs:
-					var q0: Vector2 = sg[0]
-					var q1: Vector2 = sg[1]
-					var s0 := _lonlat_to_screen_off(q0, 0.0)
-					var s1 := _lonlat_to_screen_off(q1, 0.0)
-					map_root.draw_line(s0, s1, col, 1.0, true)
+					1, 14: segs.append([p_l, p_b])
+					2, 13: segs.append([p_b, p_r])
+					3, 12: segs.append([p_l, p_r])
+					4, 11: segs.append([p_t, p_r])
+					6, 9: segs.append([p_t, p_b])
+					7, 8: segs.append([p_l, p_t])
+					5: segs.append([p_l, p_t]); segs.append([p_b, p_r])
+					10: segs.append([p_t, p_r]); segs.append([p_l, p_b])
+		if segs.is_empty():
+			th += interval
+			continue
+		# 端点吸附量化后接链
+		var key := func(v: Vector2) -> Vector2i:
+			return Vector2i(int(round(v.x / 0.002)), int(round(v.y / 0.002)))
+		var adj := {}
+		for sg in segs:
+			var k0: Vector2i = key.call(sg[0])
+			var k1: Vector2i = key.call(sg[1])
+			if not adj.has(k0): adj[k0] = []
+			if not adj.has(k1): adj[k1] = []
+			(adj[k0] as Array).append(sg[1])
+			(adj[k1] as Array).append(sg[0])
+		var used := {}
+		for sg in segs:
+			var k0: Vector2i = key.call(sg[0])
+			if used.has(k0): continue
+			var chain := PackedVector2Array()
+			var cur: Vector2 = sg[0]
+			var nxt: Vector2 = sg[1]
+			chain.append(to_scr.call(cur.x, cur.y))
+			var guard := 0
+			while guard < 400:
+				guard += 1
+				chain.append(to_scr.call(nxt.x, nxt.y))
+				used[key.call(nxt)] = true
+				var nkey: Vector2i = key.call(nxt)
+				var cands: Array = adj.get(nkey, [])
+				var mn := Vector2.ZERO
+				var found := false
+				for c in cands:
+					if key.call(c) != key.call(cur):
+						mn = c
+						found = true
+						break
+				if not found:
+					break
+				cur = nxt
+				nxt = mn
+			if chain.size() >= 2:
+				map_root.draw_polyline(chain, col, 1.0, true)
+		th += interval
+
+
