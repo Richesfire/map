@@ -2664,6 +2664,21 @@ func _setup_map_shader() -> void:
 			ImageTexture.create_from_image(
 					Image.create_from_data(32, 1, false, Image.FORMAT_RGB8, pal)))
 	# 舆图符号层已经取消（用户要求 2D 地图纯色）。landform_db 里的 SYMBOL_* 表暂时留着不用。
+	# 离线底图：高程配色 + Hillshade（build_map_layers.py 生成）
+	var cf := FileAccess.open("res://data/map_color.bin", FileAccess.READ)
+	if cf != null:
+		var cb := cf.get_buffer(cf.get_length())
+		cf.close()
+		var cimg := Image.create_from_data(8192, 4096, false, Image.FORMAT_RGB8, cb)
+		_map_mat.set_shader_parameter("color_tex", ImageTexture.create_from_image(cimg))
+		print("[地图] 配色底图 %d MB" % int(cb.size() / 1048576))
+	var sf := FileAccess.open("res://data/map_shade.bin", FileAccess.READ)
+	if sf != null:
+		var sb := sf.get_buffer(sf.get_length())
+		sf.close()
+		var simg := Image.create_from_data(8192, 4096, false, Image.FORMAT_R8, sb)
+		_map_mat.set_shader_parameter("hill_tex", ImageTexture.create_from_image(simg))
+		print("[地图] 阴影底图 %d MB" % int(sb.size() / 1048576))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
 	_map_mat.set_shader_parameter("lat_limit", LAT_LIMIT)
 	# 细节层占位（1×1），就绪前 detail_on=0 走编号图
@@ -3505,6 +3520,8 @@ func _draw_ink_lines() -> void:
 ## ---------------- 等高线（按高程，Marching Squares） ----------------
 ## 只在放大后画；网格步长按屏幕像素挑，最多 150x110 格，避免高倍时算太多。
 func _draw_contours() -> void:
+	if true:   # 旧版运行时等高线已废弃（改离线底图），留着代码备查
+		return
 	if map_zoom < 25.0 or terrain == null:
 		return
 	var sx := _vec_ppd

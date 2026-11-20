@@ -9,7 +9,9 @@ uniform vec2 dem_size = vec2(8192.0, 4096.0);
 uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
 uniform float lat_limit = 85.0;
-uniform sampler2D palette_tex : filter_nearest, repeat_disable;   // 29 类本色（唯一一套调色板）
+uniform sampler2D palette_tex : filter_nearest, repeat_disable;
+uniform sampler2D color_tex : filter_linear, repeat_disable;   // 离线高程配色
+uniform sampler2D hill_tex : filter_linear, repeat_disable;    // 离线 Hillshade   // 29 类本色（唯一一套调色板）
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。
@@ -107,6 +109,13 @@ void fragment() {
 	float fw = max(fwidth(h), 0.5);
 	float coast = 1.0 - smoothstep(0.45, 1.50, abs(h + 2.0) / fw);
 	vec3 c = lf_color(lid);
+	// 有离线底图就直接用它（高程配色），不再走分类色
+	float sh2 = 1.0;
+	if (textureSize(color_tex, 0).x > 1) {
+		vec2 cuv = vec2(uv.x, clamp(uv.y, 0.0, 1.0));
+		c = texture(color_tex, cuv).rgb;
+		sh2 = texture(hill_tex, cuv).r;
+	}
 
 	// 细节层：贴在地理坐标上。A 通道 = 这块 texel 已烘好（块级 255/0），
 	// 所以粗细交界就是烘焙前沿——烘好一块显示一块，不做任何圆环/云雾遮罩。
@@ -163,7 +172,8 @@ void fragment() {
 	c = mix(c, paper, paperize);
 
 	// 阴影叠上去
-	c = mix(c, vec3(0.30, 0.27, 0.22) * (0.45 + 0.75 * shade), shade_alpha);
+	c = mix(c, c * (0.66 + 0.42 * sh2), 0.85);
+	c = mix(c, vec3(0.30, 0.27, 0.22) * (0.45 + 0.75 * shade), shade_alpha * 0.35);
 	if (dbg2 > 0.5) {
 		c = (dbg2 > 1.5) ? vec3(g_duv, 0.0) : vec3(g_cov, 0.0, 0.0);
 	}
