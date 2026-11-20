@@ -3518,7 +3518,7 @@ func _draw_contours() -> void:
 	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
 	if lon_max - lon_min < 0.01 or lat_max - lat_min < 0.01:
 		return
-	var step_deg: float = maxf(6.0 / sx, 0.004)
+	var step_deg: float = maxf(6.0 / sx, 0.022)   # 不细于高程数据本身（0.022°），否则等高线全是锯齿
 	var nx: int = clampi(int((lon_max - lon_min) / step_deg) + 1, 2, 150)
 	var ny: int = clampi(int((lat_max - lat_min) / step_deg) + 1, 2, 110)
 	var dx: float = (lon_max - lon_min) / float(nx - 1)
@@ -3534,7 +3534,7 @@ func _draw_contours() -> void:
 		return _vec_org + Vector2((lon + 180.0) * sx, (LAT_LIMIT - lat) * sy)
 	var th: float = interval
 	while th < 6000.0:
-		var col: Color = Color(0.36, 0.28, 0.18, 0.26) if int(th) % 1000 == 0 else Color(0.36, 0.28, 0.18, 0.13)
+		var col: Color = Color(0.34, 0.26, 0.16, 0.45) if int(th) % 1000 == 0 else Color(0.34, 0.26, 0.16, 0.22)
 		# 收集线段，按端点接成折线，避免画成断片
 		var segs: Array = []
 		for j in ny - 1:
@@ -3566,45 +3566,12 @@ func _draw_contours() -> void:
 		if segs.is_empty():
 			th += interval
 			continue
-		# 端点吸附量化后接链
-		var key := func(v: Vector2) -> Vector2i:
-			return Vector2i(int(round(v.x / 0.002)), int(round(v.y / 0.002)))
-		var adj := {}
+		# 每段两端各延长 1.2 px：碎片互相咬合，看起来是连续的线
 		for sg in segs:
-			var k0: Vector2i = key.call(sg[0])
-			var k1: Vector2i = key.call(sg[1])
-			if not adj.has(k0): adj[k0] = []
-			if not adj.has(k1): adj[k1] = []
-			(adj[k0] as Array).append(sg[1])
-			(adj[k1] as Array).append(sg[0])
-		var used := {}
-		for sg in segs:
-			var k0: Vector2i = key.call(sg[0])
-			if used.has(k0): continue
-			var chain := PackedVector2Array()
-			var cur: Vector2 = sg[0]
-			var nxt: Vector2 = sg[1]
-			chain.append(to_scr.call(cur.x, cur.y))
-			var guard := 0
-			while guard < 400:
-				guard += 1
-				chain.append(to_scr.call(nxt.x, nxt.y))
-				used[key.call(nxt)] = true
-				var nkey: Vector2i = key.call(nxt)
-				var cands: Array = adj.get(nkey, [])
-				var mn := Vector2.ZERO
-				var found := false
-				for c in cands:
-					if key.call(c) != key.call(cur):
-						mn = c
-						found = true
-						break
-				if not found:
-					break
-				cur = nxt
-				nxt = mn
-			if chain.size() >= 2:
-				map_root.draw_polyline(chain, col, 1.0, true)
+			var a0: Vector2 = to_scr.call(sg[0].x, sg[0].y)
+			var a1: Vector2 = to_scr.call(sg[1].x, sg[1].y)
+			var dir: Vector2 = (a1 - a0).normalized()
+			map_root.draw_line(a0 - dir * 1.2, a1 + dir * 1.2, col, 1.0, true)
 		th += interval
 
 
