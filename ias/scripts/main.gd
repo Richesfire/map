@@ -416,14 +416,15 @@ func _build_ui() -> void:
 	# 不是屏幕左上角（时间/坐标 HUD 在地图外，不会打架）。
 	# 位置每帧由 _place_map_panel() 按 content_rect 重算，所以拖动/缩放时它跟着地图走。
 	city_panel = Control.new()
-	city_panel.anchor_left = 0.0
+	# 贴右上角（不随地图缩放移动）
+	city_panel.anchor_left = 1.0
 	city_panel.anchor_top = 0.0
-	city_panel.anchor_right = 0.0
+	city_panel.anchor_right = 1.0
 	city_panel.anchor_bottom = 0.0
-	city_panel.offset_left = 0.0
-	city_panel.offset_top = 0.0
-	city_panel.offset_right = 300.0
-	city_panel.offset_bottom = 430.0
+	city_panel.offset_left = -316.0
+	city_panel.offset_top = 8.0
+	city_panel.offset_right = -16.0
+	city_panel.offset_bottom = 438.0
 	city_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	city_panel.visible = false
 	ui_layer.add_child(city_panel)
@@ -450,8 +451,8 @@ func _build_ui() -> void:
 	# 展示图（定居点详情页的图，之后按配置表的 image 字段换）
 	var cp_pic := TextureRect.new()
 	cp_pic.name = "Pic"
-	cp_pic.position = Vector2(16, 52)
-	cp_pic.size = Vector2(268, 150)
+	cp_pic.position = Vector2(16, 64)
+	cp_pic.size = Vector2(268, 146)
 	cp_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	cp_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	cp_pic.texture = _settle_icon("city")
@@ -465,7 +466,7 @@ func _build_ui() -> void:
 	city_panel.add_child(cp_sub)
 	var cp_desc := Label.new()
 	cp_desc.name = "Desc"
-	cp_desc.position = Vector2(18, 212)
+	cp_desc.position = Vector2(18, 220)
 	cp_desc.size = Vector2(264, 78)
 	cp_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	cp_desc.add_theme_font_size_override("font_size", 14)
@@ -803,6 +804,10 @@ func _start_game() -> void:
 				best = v
 		if not best.is_empty():
 			_open_village_panel({"ll": best["ll"], "name": best["name"], "kind": "village"})
+	if _flags.has("--panelopen"):
+		var f := TG.cities()
+		if f.size() > 0:
+			_open_city_panel(f[0])
 	if _flags.has("--pickcenter"):
 		# 调试：打印"屏幕中心点到了什么"，用来校验 _poi_pick 的优先级和半径
 		_pick_probe()
@@ -1003,6 +1008,8 @@ func _open_map() -> void:
 	# 开图时把地形整棵子树藏掉，关图再放出来。
 	if terrain != null:
 		terrain.visible = false
+	# 每次开图都清一次图标缓存：换了同名 PNG 也能立刻生效
+	_icon_cache.clear()
 	_panel_placeholder()      # 面板常显：先摆空面板，点谁换谁
 	map_root.queue_redraw()
 
@@ -1517,7 +1524,8 @@ func _place_map_panel(cr: Rect2, vs: Vector2) -> void:
 	if city_panel == null or not city_panel.visible:
 		return
 	var sz := city_panel.size
-	var p := cr.position + Vector2(14, 14)
+	# 贴地图内容区右上角
+	var p := Vector2(cr.position.x + cr.size.x - sz.x - 14.0, cr.position.y + 14.0)
 	p.x = clampf(p.x, 8.0, maxf(8.0, vs.x - sz.x - 8.0))
 	p.y = clampf(p.y, 8.0, maxf(8.0, vs.y - sz.y - 8.0))
 	city_panel.position = p
@@ -2302,12 +2310,13 @@ func _open_city_panel(c: Dictionary) -> void:
 	var title: Label = city_panel.get_node("Title")
 	title.text = String(c["name"])
 	var b0 := city_panel.get_node("Opt0") as Button
-	b0.text = "街道"
+	b0.text = "快速前往"
 	b0.visible = true
 	var b1 := city_panel.get_node("Opt1") as Button
-	b1.text = "府衙"
+	b1.text = "查看详情"
 	b1.visible = true
 	(city_panel.get_node("Sub") as Label).text = ""
+	_settle_fill_panel(String(c["name"]))
 	# 面板必须在地图图层之上
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
@@ -2388,6 +2397,32 @@ func _open_site_panel(hit: Dictionary) -> void:
 func _open_county_panel(hit: Dictionary) -> void:
 	var c: Dictionary = hit["county"]
 	_open_place_panel(String(c.get("n", "")), "", hit["ll"])
+
+
+## 用配置表填充详情页（图 / 简介 / 副标题）。找不到就保持原样。
+func _settle_fill_panel(nm: String) -> void:
+	_load_settlements()
+	var row: Dictionary = _settle_by_name.get(nm, {})
+	if row.is_empty():
+		return
+	var img_name := String(row.get("image", "")).strip_edges()
+	if img_name == "":
+		img_name = "default"
+	if img_name.ends_with(".png"):
+		img_name = img_name.substr(0, img_name.length() - 4)
+	var pic := city_panel.get_node("Pic") as TextureRect
+	if pic != null:
+		var tex := _settle_icon(img_name)
+		pic.texture = tex
+		pic.visible = tex != null
+	var desc := city_panel.get_node("Desc") as Label
+	if desc != null:
+		desc.text = String(row.get("note", ""))
+	var sub := city_panel.get_node("Sub") as Label
+	if sub != null:
+		var fac := String(row.get("faction", ""))
+		var tname := String(row.get("type", ""))
+		sub.text = "%s · %s" % [fac, tname] if fac != "" else tname
 
 
 ## 街道 = 城中心；府衙 = 城北偏内
@@ -3670,6 +3705,8 @@ func _settle_icon(kind: String) -> Texture2D:
 	if _icon_cache.has(kind):
 		return _icon_cache[kind]
 	var path := ICON_DIR + "/" + kind + ".png"
+	if kind.begins_with("settle_images/") or kind == "default":
+		path = "res://assets/" + (kind if kind.begins_with("settle_images/") else "settle_images/" + kind) + ".png"
 	var tex: Texture2D = null
 	if FileAccess.file_exists(path):
 		var img := Image.new()
@@ -3681,8 +3718,9 @@ func _settle_icon(kind: String) -> Texture2D:
 
 ## ---------------- 配置表驱动的聚落层 ----------------
 var _settle_rows: Array = []
+var _settle_by_name := {}
 var _settle_mtime: int = -1
-const SETTLE_CFG := "res://data/settlements/settlements.json"
+const SETTLE_CFG := "res://data/settlements.json"
 
 
 func _load_settlements() -> void:
@@ -3702,6 +3740,9 @@ func _load_settlements() -> void:
 	if typeof(js) != TYPE_DICTIONARY:
 		return
 	_settle_rows = js.get("settlements", [])
+	_settle_by_name.clear()
+	for row in _settle_rows:
+		_settle_by_name[String(row.get("name", ""))] = row
 	print("[聚落] 配置表 %d 条" % _settle_rows.size())
 
 
@@ -3740,16 +3781,38 @@ func _draw_settle_layer(cr: Rect2) -> void:
 		var p := _map_point_pub(lon, lat)
 		if not cr.has_point(p):
 			continue
-		var sz: float = 6.0 if t == "town" else 4.0
-		var ico := _settle_icon(t)
+		# 尺寸按等级（屏幕像素，不随缩放变粗）
+		var sz: float = 5.0
+		if t == "capital": sz = 16.0
+		elif t == "city": sz = 12.0
+		elif t == "town" or t == "fort": sz = 7.5
+		# 图标：优先用配置表的 icon 字段，留空则按 type
+		var icon_name := String(r.get("icon", "")).strip_edges()
+		if icon_name == "":
+			icon_name = t
+		if icon_name.ends_with(".png"):
+			icon_name = icon_name.substr(0, icon_name.length() - 4)
+		var ico := _settle_icon(icon_name)
 		if ico != null:
 			map_root.draw_texture_rect(ico, Rect2(p - Vector2(sz, sz), Vector2(sz, sz) * 2.0), false)
 		else:
-			var col := Color(0.42, 0.30, 0.16) if t == "town" else Color(0.55, 0.42, 0.24)
+			var col := Color(0.42, 0.30, 0.16) if t != "village" else Color(0.55, 0.42, 0.24)
 			if t == "fort":
-				map_root.draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, false, 1.2)
+				map_root.draw_rect(Rect2(p - Vector2(4, 4), Vector2(8, 8)), col, false, 1.3)
 			else:
 				map_root.draw_circle(p, sz * 0.5, col)
+
+
+func _draw_settle_name(p: Vector2, nm: String, sz: float) -> void:
+	if nm == "":
+		return
+	var font := ThemeDB.fallback_font
+	var fs := 13
+	var w := font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	var pos := Vector2(p.x - w * 0.5, p.y + sz + 14.0)
+	# 底衬：深色小条，避免压在纸上看不清
+	map_root.draw_rect(Rect2(pos.x - 3, pos.y - 12, w + 6, 16), Color(0.16, 0.12, 0.08, 0.72))
+	map_root.draw_string(font, pos, nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.94, 0.86, 0.66))
 
 
 func _map_point_pub(lon: float, lat: float) -> Vector2:

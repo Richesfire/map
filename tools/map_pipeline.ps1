@@ -1,4 +1,4 @@
-# 地图管线一键脚本
+﻿# 地图管线一键脚本
 # 用法：
 #   powershell -NoProfile -ExecutionPolicy Bypass -File tools\map_pipeline.ps1 -Test
 #   ... -Rebake                          改分类器后重烘 8192 编号图（约 6-8 分钟）
@@ -42,7 +42,7 @@ if ($Test) {
 }
 
 if ($Contours) {
-    & $py -X utf8 (Join-Path $root 'ias\tools\build_terrain_contours.py') `
+    & $py -X utf8 (Join-Path $root 'tools\\map\\build_terrain_contours.py') `
         --step 1 --out "$env:TEMP\contours_world.png" `
         --bin (Join-Path $root 'ias-core\data\terrain_contours.bin') `
         --preview 1600 --eps 0.8 --smooth 2
@@ -60,7 +60,7 @@ if ($Rebake) {
 
 if ($Preview) {
     if (-not $Out) { $Out = "$env:TEMP\terrain_preview.png" }
-    & $py -X utf8 (Join-Path $root 'ias\tools\build_terrain_contours.py') `
+    & $py -X utf8 (Join-Path $root 'tools\\map\\build_terrain_contours.py') `
         --region $Region --step $Step --out $Out --preview 1200 --eps 0.8 --smooth 2
     return
 }

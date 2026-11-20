@@ -13,10 +13,9 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "ias-core" / "data"
 CFG = DATA / "settlements"
-CFG.mkdir(parents=True, exist_ok=True)
-XLSX = CFG / "settlements.xlsx"
-JSON = CFG / "settlements.json"
-BACKUP = CFG / "settlements.bak.json"
+XLSX = ROOT / "配置表" / "settlements.xlsx"
+JSON = DATA / "settlements.json"
+BACKUP = DATA / "settlements.bak.json"
 
 TYPES = {"capital", "city", "town", "village", "fort"}
 COLS = ["id", "name", "type", "faction", "rank", "lon", "lat", "icon", "image", "note"]

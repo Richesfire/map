@@ -115,7 +115,7 @@ def main():
     for r in kept:
         r.pop("_pri", None)
         r.pop("_src", None)
-    CFG.joinpath("settlements.json").write_text(
+    DATA.joinpath("settlements.json").write_text(
         json.dumps({"_comment": "由 merge_settlements.py 生成；改表请用 settlements.xlsx + sync_settlements.bat",
                     "version": 1, "settlements": kept}, ensure_ascii=False, indent=1),
         encoding="utf-8")
@@ -128,8 +128,8 @@ def main():
     for r in kept:
         ws.append([r.get(c, "") for c in COLS])
     ws.freeze_panes = "A2"
-    CFG.mkdir(parents=True, exist_ok=True)
-    wb.save(CFG / "settlements.xlsx")
+    (ROOT / "配置表").mkdir(parents=True, exist_ok=True)
+    wb.save(ROOT / "配置表" / "settlements.xlsx")
     print("settlements.xlsx", len(kept), "行")
 
 

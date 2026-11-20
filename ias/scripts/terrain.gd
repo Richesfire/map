@@ -27,11 +27,50 @@ var center_lon := 113.72
 var center_lat := 36.00
 
 
+## 3D 海面：一个跟随镜头的大平面（y=0）。地形在 0 以下是海床，陆地自然遮住它。
+var _ocean: MeshInstance3D
+var _ocean_dbg := false
+
+
+func _ready_ocean() -> void:
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(400000.0, 400000.0)
+	pm.subdivide_width = 0
+	pm.subdivide_depth = 0
+	_ocean = MeshInstance3D.new()
+	_ocean.mesh = pm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.17, 0.33, 0.46, 0.92)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.roughness = 0.15
+	mat.metallic = 0.1
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_ocean.material_override = mat
+	_ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_ocean)
+	print("[海面] 平面已创建 size=", pm.size)
+
+
+func _process(_dt: float) -> void:
+	# 海面跟着镜头走（世界坐标很大，平面不能放在原点）
+	if _ocean == null:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var cp := cam.global_position
+	_ocean.global_position = Vector3(cp.x, 0.0, cp.z)
+	if not _ocean_dbg:
+		_ocean_dbg = true
+		print("[海面] 跟随镜头 ", _ocean.global_position)
+
+
 func _ready() -> void:
 	TG.ensure_loaded()
 
-
 # ---------------- 地形真源 ----------------
+	_ready_ocean()
+
 func dem_at(lon: float, lat: float) -> float:
 	TG.ensure_loaded()
 	return TG.dem_at(lon, lat)
@@ -350,7 +389,7 @@ func _build_water(verts: PackedVector3Array, idx: PackedInt32Array) -> void:
 	var riv := 0
 	for r in _hydro_rivers:
 		var pts: Array = r["p"]
-		var w := clampf(110.0 * pow(1.7, 6.0 - float(r.get("r", 5))), 80.0, 1600.0)
+		var w := clampf(110.0 * pow(1.7, 6.0 - float(r.get("r", 5))), 60.0, 1200.0)
 		var prev := Vector2(INF, INF)
 		var prev_h := 0.0
 		for q in pts:
@@ -358,7 +397,7 @@ func _build_water(verts: PackedVector3Array, idx: PackedInt32Array) -> void:
 			if xz.length() > edge:
 				prev = Vector2(INF, INF)
 				continue
-			var h := height_xyz(xz.x, xz.y) + 0.6
+			var h := height_xyz(xz.x, xz.y) + 0.15   # 压到贴水面，避免在浅谷里穿出地面
 			if prev.x != INF:
 				var d := (xz - prev)
 				if d.length() > 0.5:
