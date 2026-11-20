@@ -3367,18 +3367,9 @@ func _draw_vec_terrain() -> void:
 		if _vec_cls[i] == 11:
 			map_root.draw_colored_polygon(arr, water_col)
 		if n >= 3:
-			# 风格化：画面用的线再做一次 Chaikin，把 4.9km 的折角磨圆，像手绘
-			var sp := arr
-			if n >= 6:
-				sp = PackedVector2Array()
-				for k in n:
-					var q0 := arr[k]
-					var q1 := arr[(k + 1) % n]
-					sp.append(q0 * 0.75 + q1 * 0.25)
-					sp.append(q0 * 0.25 + q1 * 0.75)
-			var closed := sp.duplicate()
-			closed.append(sp[0])
-			map_root.draw_polyline(closed, ink, 1.8, true)
+			var closed := arr.duplicate()
+			closed.append(arr[0])
+			map_root.draw_polyline(closed, ink, 1.2, true)
 		drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
