@@ -1343,6 +1343,7 @@ func _draw_settlements(sr: Rect2) -> void:
 ## 地图上**不落文字**，只画朱砂色 + 米色描边的舆图符号（底图村庄是褐色小方块/圆环，
 ## 不带描边的话分不出来）；名字和年代走点击面板，悬停只用高亮表示"这个是可点的"。
 func _draw_sites(cr: Rect2) -> void:
+	if true: return   # 改由 settlements.json 统一绘制
 	var list := TG.sites()
 	if list.is_empty():
 		return
@@ -1426,6 +1427,7 @@ func _site_marker(p: Vector2, kind: String, s: float, a: float) -> void:
 ## 域外定居点（world_settlements.json）：城邦=褐圈+圆心点（1 倍就可见），
 ## 附邑/镇=更小的空心圈（2 倍淡入）。只画图上，不写文字。
 func _draw_world_cities(cr: Rect2) -> void:
+	if true: return   # 改由 settlements.json 统一绘制
 	if map_zoom < 1.0:
 		return
 	var list := TG.world_settlements()
@@ -1470,6 +1472,7 @@ func _draw_world_cities(cr: Rect2) -> void:
 ## 汉书·地理志的县（CHGIS V6 点位，1134 处）：一群小空心方框，20 倍淡入。
 ## 只画图标不写文字；和聚落的实心方块/关城的朱砂方块分开，悬停才高亮。
 func _draw_counties(cr: Rect2) -> void:
+	if true: return   # 改由 settlements.json 统一绘制
 	var list := TG.counties()
 	if list.is_empty():
 		return
@@ -2526,6 +2529,7 @@ func _draw_map() -> void:
 	_draw_world_cities(content_rect)
 	_draw_counties(content_rect)
 	_draw_settlements(content_rect)
+	_draw_settle_layer(content_rect)
 	_draw_sites(content_rect)
 	_place_map_panel(content_rect, vs)
 	if map_hydro != null:
@@ -3673,3 +3677,66 @@ func _settle_icon(kind: String) -> Texture2D:
 			tex = ImageTexture.create_from_image(img)
 	_icon_cache[kind] = tex
 	return tex
+
+
+## ---------------- 配置表驱动的聚落层 ----------------
+var _settle_rows: Array = []
+var _settle_mtime: int = -1
+const SETTLE_CFG := "res://data/settlements/settlements.json"
+
+
+func _load_settlements() -> void:
+	var fi := FileAccess.open(SETTLE_CFG, FileAccess.READ)
+	if fi == null:
+		return
+	var t := fi.get_modified_time(SETTLE_CFG)
+	fi.close()
+	if t == _settle_mtime:
+		return
+	_settle_mtime = t
+	var f := FileAccess.open(SETTLE_CFG, FileAccess.READ)
+	if f == null:
+		return
+	var js: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(js) != TYPE_DICTIONARY:
+		return
+	_settle_rows = js.get("settlements", [])
+	print("[聚落] 配置表 %d 条" % _settle_rows.size())
+
+
+func _draw_settle_layer(cr: Rect2) -> void:
+	_load_settlements()
+	if _settle_rows.is_empty():
+		return
+	var sc := _proj()
+	var sx: float = float(sc[0])
+	var ll0 := _screen_to_lonlat(cr.position)
+	var ll1 := _screen_to_lonlat(cr.position + cr.size)
+	for r in _settle_rows:
+		var t: String = String(r.get("type", "village"))
+		if t == "capital" or t == "city":
+			continue      # 这 16 座由 _draw_settlements 画（带 3D 建筑）
+		var lon := float(r.get("lon", 0.0))
+		var lat := float(r.get("lat", 0.0))
+		if lon < minf(ll0.x, ll1.x) or lon > maxf(ll0.x, ll1.x):
+			continue
+		if lat < minf(ll0.y, ll1.y) or lat > maxf(ll0.y, ll1.y):
+			continue
+		var p := _map_point_pub(lon, lat)
+		if not cr.has_point(p):
+			continue
+		var sz: float = 6.0 if t == "town" else 4.0
+		var ico := _settle_icon(t)
+		if ico != null:
+			map_root.draw_texture_rect(ico, Rect2(p - Vector2(sz, sz), Vector2(sz, sz) * 2.0), false)
+		else:
+			var col := Color(0.42, 0.30, 0.16) if t == "town" else Color(0.55, 0.42, 0.24)
+			if t == "fort":
+				map_root.draw_rect(Rect2(p - Vector2(3, 3), Vector2(6, 6)), col, false, 1.2)
+			else:
+				map_root.draw_circle(p, sz * 0.5, col)
+
+
+func _map_point_pub(lon: float, lat: float) -> Vector2:
+	return _vec_org + Vector2((lon + 180.0) * _vec_ppd, (LAT_LIMIT - lat) * _vec_ppy)
