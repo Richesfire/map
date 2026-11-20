@@ -1287,7 +1287,7 @@ func _draw_settlements(sr: Rect2) -> void:
 			continue
 		# 真实尺寸换算：咸阳城墙约 3.7km 见方
 		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
-		var sz: float = clampf(3.7 / km_per_px, 8.0, 260.0)
+		var sz: float = clampf(3.7 / km_per_px, 15.0, 260.0)
 		var half := Vector2(sz, sz) * 0.5
 		var r := Rect2(p - half, Vector2(sz, sz))
 		# 优先用 map_icons/ 里的 PNG（可热替换）；没有就画剪影
@@ -1788,7 +1788,7 @@ func _poi_cands(pos: Vector2) -> Array:
 	for c in TG.cities():
 		var lat := float(c["lat"])
 		var km_per_px: float = 40075.0 * maxf(cos(deg_to_rad(lat)), 0.05) / (_map_scale().x * 360.0)
-		var sz: float = clampf(3.7 / km_per_px, 8.0, 260.0)
+		var sz: float = clampf(3.7 / km_per_px, 15.0, 260.0)
 		var ll := Vector2(float(c["lon"]), lat)
 		var d := _lonlat_to_screen_off(ll, 0.0).distance_to(pos)
 		if d < maxf(sz * 0.75, 12.0):
@@ -3715,8 +3715,22 @@ func _draw_settle_layer(cr: Rect2) -> void:
 	var ll1 := _screen_to_lonlat(cr.position + cr.size)
 	for r in _settle_rows:
 		var t: String = String(r.get("type", "village"))
+		# 分级显示：都城常显 → 城 8 倍 → 镇/关 30 倍 → 邑 120 倍
+		var need := 1.0
+		if t == "city": need = 8.0
+		elif t == "town" or t == "fort": need = 30.0
+		elif t == "village": need = 120.0
+		if map_zoom < need:
+			continue
+		# 中国 16 座城由 _draw_settlements 画（带 3D 建筑），这里跳过
 		if t == "capital" or t == "city":
-			continue      # 这 16 座由 _draw_settlements 画（带 3D 建筑）
+			var is_cn := false
+			for ct in TG.cities():
+				if String(ct["name"]) == String(r.get("name", "")):
+					is_cn = true
+					break
+			if is_cn:
+				continue
 		var lon := float(r.get("lon", 0.0))
 		var lat := float(r.get("lat", 0.0))
 		if lon < minf(ll0.x, ll1.x) or lon > maxf(ll0.x, ll1.x):
