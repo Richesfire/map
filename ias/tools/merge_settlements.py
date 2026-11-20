@@ -20,7 +20,15 @@ KIND2TYPE = {
     "城": "city", "关": "fort", "邑": "village", "津": "fort", "渡": "fort",
     "镇": "town", "村": "village", "都": "capital",
 }
-COLS = ["id", "name", "type", "civ", "lon", "lat", "tier", "icon", "image", "note"]
+FACTIONS = {
+    "咸阳": ("秦", "capital"), "雒阳": ("秦", "city"), "晋阳": ("秦", "city"),
+    "成都": ("秦", "city"), "宛": ("秦", "city"), "陈": ("秦", "city"),
+    "琅琊": ("秦", "city"), "邯郸": ("赵", "capital"), "巨鹿": ("赵", "city"),
+    "临淄": ("齐", "capital"), "寿春": ("楚", "capital"), "郢": ("楚", "city"),
+    "彭城": ("楚", "city"), "薛": ("楚", "city"), "会稽": ("楚", "city"),
+    "蓟": ("燕", "capital"),
+}
+COLS = ["id", "name", "type", "faction", "rank", "lon", "lat", "icon", "image", "note"]
 
 
 def load(name, key):
@@ -35,10 +43,11 @@ def main():
     rows = []
     # ① 3D 手作城（最高优先级）
     for c in load("cities.json", "cities"):
+        fac, typ = FACTIONS.get(c["name"], ("", "city"))
         rows.append({
-            "id": c["id"], "name": c["name"],
-            "type": "capital" if c["name"] == "咸阳" else "city",
-            "civ": "", "lon": c["lon"], "lat": c["lat"], "tier": 1,
+            "id": c["id"], "name": c["name"], "type": typ,
+            "faction": fac, "rank": 1,
+            "lon": c["lon"], "lat": c["lat"],
             "icon": "", "image": "", "note": c.get("note", ""),
             "_pri": 0, "_src": "cities",
         })
@@ -47,7 +56,7 @@ def main():
         rows.append({
             "id": s["id"], "name": s["name"],
             "type": KIND2TYPE.get(s.get("kind", "城"), "village"),
-            "civ": "", "lon": s["lon"], "lat": s["lat"], "tier": 2,
+            "faction": "", "rank": 2, "lon": s["lon"], "lat": s["lat"],
             "icon": "", "image": "", "note": s.get("src", ""),
             "_pri": 1, "_src": "sites",
         })
@@ -55,8 +64,8 @@ def main():
     for i, s in enumerate(load("counties_han.json", "counties")):
         rows.append({
             "id": "han_%04d" % i, "name": s["n"],
-            "type": "village", "civ": "",
-            "lon": s["lon"], "lat": s["lat"], "tier": 3,
+            "type": "village", "faction": "", "rank": 3,
+            "lon": s["lon"], "lat": s["lat"],
             "icon": "", "image": "", "note": s.get("loc", ""),
             "_pri": 2, "_src": "counties",
         })
@@ -66,8 +75,8 @@ def main():
         rows.append({
             "id": "w_%04d" % i, "name": s["name"],
             "type": "city" if t == 1 else ("town" if t == 2 else "village"),
-            "civ": s.get("region", ""), "lon": s["lon"], "lat": s["lat"],
-            "tier": t, "icon": "", "image": "",
+            "faction": s.get("region", ""), "rank": t, "lon": s["lon"], "lat": s["lat"],
+            "icon": "", "image": "",
             "note": s.get("note", ""), "_pri": 3, "_src": "world",
         })
 

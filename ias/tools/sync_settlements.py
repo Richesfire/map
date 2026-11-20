@@ -18,8 +18,8 @@ XLSX = CFG / "settlements.xlsx"
 JSON = CFG / "settlements.json"
 BACKUP = CFG / "settlements.bak.json"
 
-TYPES = {"capital", "city", "town", "village", "fort", "ruins"}
-COLS = ["id", "name", "type", "civ", "lon", "lat", "tier", "icon", "image", "note"]
+TYPES = {"capital", "city", "town", "village", "fort"}
+COLS = ["id", "name", "type", "faction", "rank", "lon", "lat", "icon", "image", "note"]
 
 
 def main() -> int:
@@ -72,14 +72,22 @@ def main() -> int:
             errors.append(f"第{n}行：经纬度越界 ({lon}, {lat})")
             continue
         try:
-            tier = int(rec["tier"]) if str(rec["tier"]).strip() != "" else 2
+            tier = int(rec["rank"]) if str(rec["rank"]).strip() != "" else 2
         except ValueError:
             tier = 2
         out.append({
             "id": rid, "name": str(rec["name"]), "type": t,
-            "civ": str(rec["civ"]), "lon": lon, "lat": lat, "tier": tier,
+            "faction": str(rec["faction"]), "rank": tier, "lon": lon, "lat": lat,
             "icon": str(rec["icon"]), "image": str(rec["image"]), "note": str(rec["note"]),
         })
+
+    caps = {}
+    for r in out:
+        if r["type"] == "capital":
+            caps[r["faction"]] = caps.get(r["faction"], 0) + 1
+    for f, n in caps.items():
+        if n > 1:
+            errors.append(f"势力「{f}」有 {n} 个都城，只能有一个")
 
     if errors:
         print("发现 %d 个问题，未写入：" % len(errors))
