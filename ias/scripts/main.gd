@@ -2434,7 +2434,8 @@ func _draw_map() -> void:
 		map_surface.position = Vector2(-2, -2)
 		map_surface.size = content_rect.size + Vector2(4, 4)
 		_map_mat.set_shader_parameter("shade_alpha",
-				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.34)
+				clampf((map_zoom - 1.2) / 9.0, 0.0, 1.0) * 0.46)
+		_map_mat.set_shader_parameter("shade_gain", 1.7)
 		_map_mat.set_shader_parameter("zoom", map_zoom)
 		_map_mat.set_shader_parameter("dbg2", float(_detail_dbg))
 	else:
@@ -3213,7 +3214,7 @@ var _vec_org := Vector2.ZERO
 var _vec_ppd := 1.0
 var _vec_ppy := 1.0
 const VEC_BUCKET := 10.0
-const VEC_ZOOM := 60.0     # 到这个倍率切矢量（以下用粗光栅图）
+const VEC_ZOOM := 99999.0  # 矢量层暂时停用（高倍改走高程配色 + 阴影）
 const VEC_FADE := 24.0     # 交叉淡入的倍率宽度
 
 

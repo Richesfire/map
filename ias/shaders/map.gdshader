@@ -66,6 +66,23 @@ vec3 biome(float lat, float h, float moist) {
 	return c;
 }
 
+
+// 高程配色：低饱和羊皮纸色系，按海拔连续过渡（古行军图底）
+vec3 elev_color(float h) {
+	if (h < 0.0) {
+		// 海：浅蓝灰 → 深蓝灰
+		float d = clamp(-h / 4000.0, 0.0, 1.0);
+		return mix(vec3(0.56, 0.62, 0.66), vec3(0.26, 0.34, 0.44), d);
+	}
+	vec3 c = vec3(0.90, 0.85, 0.70);                       // 平原：淡米
+	c = mix(c, vec3(0.80, 0.74, 0.58), smoothstep(50.0, 300.0, h));
+	c = mix(c, vec3(0.72, 0.63, 0.47), smoothstep(300.0, 900.0, h));
+	c = mix(c, vec3(0.68, 0.58, 0.44), smoothstep(900.0, 2000.0, h));
+	c = mix(c, vec3(0.58, 0.50, 0.40), smoothstep(2000.0, 3500.0, h));
+	c = mix(c, vec3(0.50, 0.44, 0.37), smoothstep(3500.0, 5000.0, h));
+	return c;
+}
+
 void fragment() {
 	// 可见区是 ±lat_limit，贴图仍是整幅世界：把屏幕 uv 映射到世界 uv
 	float v0 = (90.0 - lat_limit) / 180.0;
@@ -111,6 +128,12 @@ void fragment() {
 			coast = max(coast * (1.0 - cov), dt.b * cov);
 			lid = mix(lid, lid_d, cov);
 		}
+	}
+	// LOD：放大后改用高程连续配色（分类纯色只留给低倍总览）
+	float elev_on = smoothstep(18.0, 45.0, zoom);
+	if (elev_on > 0.001) {
+		vec3 ec = elev_color(h);
+		c = mix(c, ec, elev_on);
 	}
 	float is_water = (lid > 10.5 && lid < 11.5) ? 1.0 : 0.0;
 
