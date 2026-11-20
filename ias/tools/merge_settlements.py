@@ -14,6 +14,7 @@ from openpyxl import Workbook
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "ias-core" / "data"
+CFG = DATA / "settlements"
 
 KIND2TYPE = {
     "城": "city", "关": "fort", "邑": "village", "津": "fort", "渡": "fort",
@@ -85,7 +86,7 @@ def main():
     for r in kept:
         r.pop("_pri", None)
         r.pop("_src", None)
-    DATA.joinpath("settlements.json").write_text(
+    CFG.joinpath("settlements.json").write_text(
         json.dumps({"_comment": "由 merge_settlements.py 生成；改表请用 settlements.xlsx + sync_settlements.bat",
                     "version": 1, "settlements": kept}, ensure_ascii=False, indent=1),
         encoding="utf-8")
@@ -98,7 +99,8 @@ def main():
     for r in kept:
         ws.append([r.get(c, "") for c in COLS])
     ws.freeze_panes = "A2"
-    wb.save(DATA / "settlements.xlsx")
+    CFG.mkdir(parents=True, exist_ok=True)
+    wb.save(CFG / "settlements.xlsx")
     print("settlements.xlsx", len(kept), "行")
 
 
