@@ -3279,10 +3279,12 @@ func _draw_vec_terrain() -> void:
 	# 矢量全不透明时把下面的光栅图藏掉，避免多边形之间的缝里露出方块
 	if _map_shader_ok:
 		map_surface.visible = alpha < 0.999
-	# 先铺一层水色当底，缝隙里露出来也是水而不是方块
-	var wc: Color = LFDB.COLORS[11]
-	map_root.draw_rect(Rect2(_vec_org, Vector2(360.0 * _vec_ppd, LAT_LIMIT * 2.0 * _vec_ppy)),
-			Color(wc.r, wc.g, wc.b, alpha))
+	# 纯色纸底（高倍不再填地形色，只画轮廓线）——古地图的"素底"。
+	var paper_bg := Color(0.90, 0.86, 0.74, alpha)
+	map_root.draw_rect(Rect2(_vec_org, Vector2(360.0 * _vec_ppd, LAT_LIMIT * 2.0 * _vec_ppy)), paper_bg)
+	var water_col: Color = LFDB.COLORS[11]
+	water_col = Color(water_col.r, water_col.g, water_col.b, alpha * 0.55)
+	var ink := Color(0.30, 0.23, 0.15, alpha * 0.38)
 	# 和贴图完全同一套变换：content_rect + 每度像素数
 	var vs := get_viewport().get_visible_rect().size
 	var sx := _vec_ppd
@@ -3329,6 +3331,28 @@ func _draw_vec_terrain() -> void:
 		for k in n:
 			var o := (st + k) * 2
 			arr[k] = _vec_org + Vector2((_vec_pts[o] + 180.0) * sx, (LAT_LIMIT - _vec_pts[o + 1]) * sy)
+		# 共享边界：把每个多边形沿法线往外扩一点点，相邻的就重叠，Chaikin 收缩造成的缝被盖住
+		var area2 := 0.0
+		for k in n:
+			var a0 := _vec_pts[(_vec_start[i] + k) * 2]
+			var a1 := _vec_pts[(_vec_start[i] + (k + 1) % n) * 2]
+			var b0 := _vec_pts[(_vec_start[i] + k) * 2 + 1]
+			var b1 := _vec_pts[(_vec_start[i] + (k + 1) % n) * 2 + 1]
+			area2 += a0 * b1 - a1 * b0
+		var sgn := 1.0 if area2 > 0.0 else -1.0
+		var pad: float = 0.012 / maxf(sx, 0.001)
+		for k in n:
+			var o := (st + k) * 2
+			var ox := _vec_pts[o]
+			var oy := _vec_pts[o + 1]
+			var op := (st + (k - 1 + n) % n) * 2
+			var on := (st + (k + 1) % n) * 2
+			var tx := _vec_pts[on] - _vec_pts[op]
+			var ty := _vec_pts[on + 1] - _vec_pts[op + 1]
+			var tl := maxf(sqrt(tx * tx + ty * ty), 1e-9)
+			var nx := -ty / tl * sgn
+			var ny := tx / tl * sgn
+			arr[k] = _vec_org + Vector2((ox + nx * pad + 180.0) * sx, (LAT_LIMIT - (oy + ny * pad)) * sy)
 		var vc: Color = LFDB.COLORS[_vec_cls[i]]
 		# 和 shader 同一套：越放大越往纸色靠（最高 30%），地形只当底
 		var pz: float = clampf((map_zoom - 3.0) / 50.0, 0.0, 1.0) * 0.30
@@ -3336,7 +3360,12 @@ func _draw_vec_terrain() -> void:
 		var pap := Color(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04)
 		vc = vc.lerp(pap, pz)
 		vc.a = alpha
-		map_root.draw_colored_polygon(arr, vc)
+		if _vec_cls[i] == 11:
+			map_root.draw_colored_polygon(arr, water_col)
+		if n >= 3:
+			var closed := arr.duplicate()
+			closed.append(arr[0])
+			map_root.draw_polyline(closed, ink, 1.2, true)
 		drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
