@@ -2953,7 +2953,7 @@ func _process(delta: float) -> void:
 	if state != St.GAME:
 		return
 	if compass != null and player != null:
-		compass.visible = true
+		compass.visible = false   # 地图上不要罗盘（用户 2026-11-20）
 		if absf(player.yaw - _compass_yaw) > 0.0004:
 			_compass_yaw = player.yaw
 			compass.queue_redraw()
