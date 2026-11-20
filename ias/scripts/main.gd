@@ -3,6 +3,9 @@ extends Node3D
 
 const TG := preload("res://scripts/terrain_gen.gd")
 const LFDB := preload("res://scripts/landform_db.gd")
+## 聚落图标：直接用原始 PNG，换图不用重新导入
+const ICON_DIR := "res://assets/map_icons"
+static var _icon_cache := {}
 const MapDetail := preload("res://scripts/map_detail.gd")
 const TestHarness := preload("res://scripts/test_harness.gd")
 
@@ -1268,8 +1271,39 @@ func _draw_settlements(sr: Rect2) -> void:
 		var sz: float = clampf(3.7 / km_per_px, 8.0, 260.0)
 		var half := Vector2(sz, sz) * 0.5
 		var r := Rect2(p - half, Vector2(sz, sz))
-		map_root.draw_rect(r, Color(0.72, 0.62, 0.42, 0.85))
-		map_root.draw_rect(r, Color(0.26, 0.18, 0.10), false, maxf(sz * 0.10, 1.5))
+		# 优先用 map_icons/ 里的 PNG（可热替换）；没有就画剪影
+		var kind := "capital" if String(ct.get("name", "")) == "咸阳" else "city"
+		var ico := _settle_icon(kind)
+		if ico != null:
+			var s2: float = sz * 2.0
+			map_root.draw_texture_rect(ico, Rect2(p - Vector2(s2, s2) * 0.5, Vector2(s2, s2)), false)
+			if not _hover.is_empty() and String(_hover.get("kind", "")) == "city" \
+					and (_hover["ll"] as Vector2).is_equal_approx(Vector2(float(ct["lon"]), float(ct["lat"]))):
+				map_root.draw_arc(p, sz * 1.3, 0.0, TAU, 24, Color(0.98, 0.84, 0.44, 0.95), 2.0)
+			continue
+		# 古城剪影：城墙 + 两个城楼 + 旗杆
+		var wall_h := sz * 0.42
+		var wall := Rect2(p.x - sz * 0.5, p.y + sz * 0.18, sz, wall_h)
+		map_root.draw_rect(wall, Color(0.70, 0.60, 0.40, 0.95))
+		map_root.draw_rect(wall, Color(0.24, 0.16, 0.09), false, maxf(sz * 0.06, 1.2))
+		for sx2 in [-0.28, 0.28]:
+			var tx: float = p.x + sz * sx2
+			var tower := Rect2(tx - sz * 0.16, p.y + sz * 0.02, sz * 0.32, sz * 0.22)
+			map_root.draw_rect(tower, Color(0.66, 0.56, 0.36, 0.98))
+			map_root.draw_rect(tower, Color(0.22, 0.15, 0.08), false, maxf(sz * 0.05, 1.0))
+			var roof := PackedVector2Array([
+				Vector2(tx - sz * 0.22, p.y + sz * 0.02),
+				Vector2(tx, p.y - sz * 0.10),
+				Vector2(tx + sz * 0.22, p.y + sz * 0.02)])
+			map_root.draw_colored_polygon(roof, Color(0.30, 0.20, 0.12))
+		# 旗
+		var flag_x: float = p.x
+		map_root.draw_line(Vector2(flag_x, p.y - sz * 0.10), Vector2(flag_x, p.y - sz * 0.38),
+				Color(0.25, 0.18, 0.10), maxf(sz * 0.04, 1.0))
+		map_root.draw_colored_polygon(PackedVector2Array([
+			Vector2(flag_x, p.y - sz * 0.38),
+			Vector2(flag_x + sz * 0.22, p.y - sz * 0.32),
+			Vector2(flag_x, p.y - sz * 0.26)]), Color(0.55, 0.16, 0.12))
 		if not _hover.is_empty() and String(_hover.get("kind", "")) == "city" \
 				and (_hover["ll"] as Vector2).is_equal_approx(Vector2(float(ct["lon"]), float(ct["lat"]))):
 			map_root.draw_arc(p, sz * 0.85, 0.0, TAU, 24, Color(0.98, 0.84, 0.44, 0.95), 2.0)
@@ -2472,7 +2506,6 @@ func _draw_map() -> void:
 	var _t1 := Time.get_ticks_usec()
 	_draw_world_cities(content_rect)
 	_draw_counties(content_rect)
-	_draw_ink_lines()
 	_draw_settlements(content_rect)
 	_draw_sites(content_rect)
 	_place_map_panel(content_rect, vs)
@@ -3477,7 +3510,7 @@ func _load_lines() -> void:
 
 
 func _draw_ink_lines() -> void:
-	if map_zoom < 40.0:
+	if map_zoom < 100.0:
 		return    # 缩小看地图不画等高线（省 CPU）
 	if not _line_loaded:
 		_load_lines()
@@ -3490,7 +3523,7 @@ func _draw_ink_lines() -> void:
 	var lon_max: float = minf((vs.x - _vec_org.x) / sx - 180.0, 180.0)
 	var lat_max: float = minf(LAT_LIMIT - (0.0 - _vec_org.y) / sy, LAT_LIMIT)
 	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
-	var alpha: float = clampf((map_zoom - 8.0) / 20.0, 0.0, 1.0)
+	var alpha: float = clampf((map_zoom - 120.0) / 60.0 + 0.15, 0.0, 1.0)   # 120 倍开始渐显
 	var ink := Color(0.32, 0.24, 0.15, 0.55 * alpha)
 	var bx0 := int(floor((lon_min + 180.0) / VEC_BUCKET))
 	var bx1 := int(floor((lon_max + 180.0) / VEC_BUCKET))
@@ -3512,11 +3545,21 @@ func _draw_ink_lines() -> void:
 				arr.resize(cnt)
 				for k in cnt:
 					var o := (st + k) * 2
-					arr[k] = _vec_org + Vector2((_line_pts[o] + 180.0) * sx, (LAT_LIMIT - _line_pts[o + 1]) * sy)
+					# 手绘感：每个点轻微抖动（按线号+点号确定，稳定不闪）
+					var jx: float = sin(float(k) * 12.9898 + float(i) * 78.233) * 1.1
+					var jy: float = sin(float(k) * 39.346 + float(i) * 11.135) * 1.1
+					arr[k] = _vec_org + Vector2((_line_pts[o] + 180.0) * sx, (LAT_LIMIT - _line_pts[o + 1]) * sy) + Vector2(jx, jy)
 				# 笔触感：先粗而淡的一道（墨晕），再细而实的一道（笔心）
-				var halo := Color(ink.r, ink.g, ink.b, ink.a * 0.35)
-				map_root.draw_polyline(arr, halo, 3.6, true)
-				map_root.draw_polyline(arr, ink, 1.3, true)
+				var halo := Color(ink.r, ink.g, ink.b, ink.a * 0.30)
+				map_root.draw_polyline(arr, halo, 3.2, true)
+				map_root.draw_polyline(arr, ink, 1.25, true)
+				# 第二笔错开 0.7px，模拟手绘复描
+				var shifted := PackedVector2Array()
+				shifted.resize(arr.size())
+				for q in arr.size():
+					shifted[q] = arr[q] + Vector2(0.7, -0.5)
+				var ink2 := Color(ink.r, ink.g, ink.b, ink.a * 0.45)
+				map_root.draw_polyline(shifted, ink2, 1.0, true)
 				drawn += 1
 	if _flags.has("--vecdbg"):
 		print("[线稿] 画 %d 条" % drawn)
@@ -3597,3 +3640,17 @@ func _draw_contours() -> void:
 		th += interval
 
 
+
+
+## 读一张图标 PNG（原始文件，不走导入链路）。没有文件返回 null。
+func _settle_icon(kind: String) -> Texture2D:
+	if _icon_cache.has(kind):
+		return _icon_cache[kind]
+	var path := ICON_DIR + "/" + kind + ".png"
+	var tex: Texture2D = null
+	if FileAccess.file_exists(path):
+		var img := Image.new()
+		if img.load(path) == OK:
+			tex = ImageTexture.create_from_image(img)
+	_icon_cache[kind] = tex
+	return tex
