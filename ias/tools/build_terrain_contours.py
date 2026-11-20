@@ -178,6 +178,78 @@ def chaikin(pts, iters):
     return pts
 
 
+
+
+
+def extract_lines(ids, x0, y0, step, out_path):
+    """共享边界线：每对相邻且类别不同的格子只输出一条边，接成折线后简化 + 圆角。
+    和"按类别取环"不同，这里同一条边只出现一次，所以不会出现双线。"""
+    import collections
+    h, w = ids.shape
+    hor = ids[:, :-1] != ids[:, 1:]
+    ver = ids[:-1, :] != ids[1:, :]
+    segs = []
+    ys, xs = np.nonzero(hor)
+    for yy, xx in zip(ys.tolist(), xs.tolist()):
+        segs.append(((xx + 1, yy), (xx + 1, yy + 1)))
+    ys, xs = np.nonzero(ver)
+    for yy, xx in zip(ys.tolist(), xs.tolist()):
+        segs.append(((xx, yy + 1), (xx + 1, yy + 1)))
+    print('   边界线段', len(segs))
+    adj = collections.defaultdict(list)
+    for a, b in segs:
+        adj[a].append(b)
+        adj[b].append(a)
+    used = set()
+    chains = []
+    for a, b in segs:
+        if (a, b) in used or (b, a) in used:
+            continue
+        chain = [a, b]
+        used.add((a, b))
+        # 向两端延伸
+        for end in (0, 1):
+            while True:
+                tip = chain[-1] if end == 1 else chain[0]
+                if len(adj[tip]) != 2:
+                    break   # 三岔口就停，别顺着别的边界穿过去（会画成交叉线）
+                nxt = None
+                for c in adj[tip]:
+                    if (tip, c) not in used and (c, tip) not in used:
+                        nxt = c
+                        break
+                if nxt is None or len(chain) > 20000:
+                    break
+                used.add((tip, nxt))
+                if end == 1:
+                    chain.append(nxt)
+                else:
+                    chain.insert(0, nxt)
+        if len(chain) >= 4:
+            pts = [(float(x), float(y)) for x, y in chain]
+            pts = dp_simplify(pts, 0.8)
+            pts = chaikin(pts, 2)
+            chains.append(pts)
+    print('   折线', len(chains))
+    with open(out_path, 'wb') as f:
+        f.write(b'TLIN')
+        f.write(np.uint32(1).tobytes())
+        f.write(np.uint32(len(chains)).tobytes())
+        arr_all = 0
+        for pts in chains:
+            a = np.asarray(pts, dtype=np.float64)
+            n = a.shape[0]
+            ll = np.empty((n, 2), dtype=np.float32)
+            ll[:, 0] = (x0 + a[:, 0] * step) / W * 360.0 - 180.0
+            ll[:, 1] = 90.0 - (y0 + a[:, 1] * step) / H * 180.0
+            f.write(np.uint32(n).tobytes())
+            f.write(ll.min(axis=0).astype(np.float32).tobytes())
+            f.write(ll.max(axis=0).astype(np.float32).tobytes())
+            f.write(ll.tobytes())
+            arr_all += n
+    print('   顶点', arr_all)
+
+
 def main():
     args = sys.argv[1:]
 
@@ -192,6 +264,7 @@ def main():
     preview_w = int(arg("--preview", 1400))
     out = Path(arg("--out", "contours_preview.png"))
     bin_out = arg("--bin", None)
+    lines_out = arg("--lines", None)
     region = arg("--region", None)
 
     ids = np.fromfile(DATA, dtype=np.uint8).reshape(H, W)
@@ -208,6 +281,10 @@ def main():
     sub = ids[y0:y1:step, x0:x1:step]
     print(f"区域 {sub.shape[1]}×{sub.shape[0]} 格（每格 {360.0/W*step*111:.1f} km 纬向）")
 
+    if lines_out:
+        extract_lines(sub, x0, y0, step, lines_out)
+        print('线条：', lines_out, Path(lines_out).stat().st_size // 1024, 'KB')
+        return
     classes, counts = np.unique(sub, return_counts=True)
     cols = load_colors()
     order = [int(c) for c in classes]

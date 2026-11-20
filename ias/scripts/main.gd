@@ -3201,6 +3201,12 @@ var _vec_cls := PackedByteArray()
 var _vec_bbox := PackedFloat32Array()
 var _vec_order := PackedInt32Array()
 var _vec_buckets := {}
+var _line_pts := PackedFloat32Array()
+var _line_start := PackedInt32Array()
+var _line_len := PackedInt32Array()
+var _line_bbox := PackedFloat32Array()
+var _line_buckets := {}
+var _line_loaded := false
 var _vec_loaded := false
 var _vec_on := false
 var _vec_org := Vector2.ZERO
@@ -3299,6 +3305,25 @@ func _draw_vec_terrain() -> void:
 	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
 	var px2: float = sx * sy
 	var min_area: float = 9.0 / maxf(px2, 1e-9)
+	# 计里画方：古地图的方格网。间距挑到屏幕上 90-180 px 一格。
+	var grid_deg := 10.0
+	for cand_g in [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]:
+		if float(cand_g) * sx >= 90.0:
+			grid_deg = float(cand_g)
+			break
+	var gcol := Color(0.32, 0.24, 0.15, 0.16 * alpha)
+	var gx0: float = ceil(lon_min / grid_deg) * grid_deg
+	var gy0: float = ceil(lat_min / grid_deg) * grid_deg
+	var gx: float = gx0
+	while gx <= lon_max:
+		var gpx: float = _vec_org.x + (gx + 180.0) * sx
+		map_root.draw_line(Vector2(gpx, 0), Vector2(gpx, get_viewport().get_visible_rect().size.y), gcol, 1.0)
+		gx += grid_deg
+	var gy: float = gy0
+	while gy <= lat_max:
+		var gpy: float = _vec_org.y + (LAT_LIMIT - gy) * sy
+		map_root.draw_line(Vector2(0, gpy), Vector2(get_viewport().get_visible_rect().size.x, gpy), gcol, 1.0)
+		gy += grid_deg
 	var cand := PackedInt32Array()
 	if sx < 60.0:
 		for i in _vec_order:
@@ -3366,11 +3391,9 @@ func _draw_vec_terrain() -> void:
 		vc.a = alpha
 		if _vec_cls[i] == 11:
 			map_root.draw_colored_polygon(arr, water_col)
-		if n >= 3:
-			var closed := arr.duplicate()
-			closed.append(arr[0])
-			map_root.draw_polyline(closed, ink, 1.2, true)
 		drawn += 1
+	# 边界线改用"共享边"数据（每段只出现一次），不再按类别各画一遍
+	_draw_ink_lines()
 	if _flags.has("--vecdbg"):
 		print("[矢量] 画 %d/%d 环 视图 lon %.1f..%.1f lat %.1f..%.1f sc=%.2f" % [
 				drawn, cand.size(), lon_min, lon_max, lat_min, lat_max, sx])
@@ -3401,3 +3424,78 @@ func _paper_tex() -> ImageTexture:
 			img.set_pixel(x, y, Color(0.88 + v * 0.06 + fiber, 0.84 + v * 0.05, 0.72 + v * 0.04, 1.0))
 	_paper_tex_cache = ImageTexture.create_from_image(img)
 	return _paper_tex_cache
+
+
+## ---------------- 共享边界线（TLIN） ----------------
+func _load_lines() -> void:
+	if _line_loaded:
+		return
+	_line_loaded = true
+	var path := "res://data/terrain_lines.bin"
+	if not FileAccess.file_exists(path):
+		return
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return
+	if f.get_buffer(4).get_string_from_ascii() != "TLIN":
+		return
+	f.get_32()
+	var n := f.get_32()
+	var t0 := Time.get_ticks_msec()
+	for i in n:
+		var cnt := f.get_32()
+		var bx0 := f.get_float()
+		var by0 := f.get_float()
+		var bx1 := f.get_float()
+		var by1 := f.get_float()
+		var buf := f.get_buffer(cnt * 8)
+		_line_start.append(_line_pts.size() / 2)
+		_line_len.append(cnt)
+		_line_bbox.append_array(PackedFloat32Array([bx0, by0, bx1, by1]))
+		_line_pts.append_array(buf.to_float32_array())
+		var k := Vector2i(int(floor((bx0 + 180.0) / VEC_BUCKET)), int(floor((90.0 - by1) / VEC_BUCKET)))
+		var arr: PackedInt32Array = _line_buckets.get(k, PackedInt32Array())
+		arr.append(i)
+		_line_buckets[k] = arr
+	print("[线稿] %d 条 / %d 点，加载 %d ms" % [n, _line_pts.size() / 2, Time.get_ticks_msec() - t0])
+
+
+func _draw_ink_lines() -> void:
+	if not _line_loaded:
+		_load_lines()
+	if _line_len.is_empty():
+		return
+	var vs := get_viewport().get_visible_rect().size
+	var sx := _vec_ppd
+	var sy := _vec_ppy
+	var lon_min: float = maxf((0.0 - _vec_org.x) / sx - 180.0, -180.0)
+	var lon_max: float = minf((vs.x - _vec_org.x) / sx - 180.0, 180.0)
+	var lat_max: float = minf(LAT_LIMIT - (0.0 - _vec_org.y) / sy, LAT_LIMIT)
+	var lat_min: float = maxf(LAT_LIMIT - (vs.y - _vec_org.y) / sy, -LAT_LIMIT)
+	var alpha: float = clampf((map_zoom - VEC_ZOOM) / VEC_FADE + 0.25, 0.0, 1.0)
+	var ink := Color(0.26, 0.19, 0.11, 0.55 * alpha)
+	var bx0 := int(floor((lon_min + 180.0) / VEC_BUCKET))
+	var bx1 := int(floor((lon_max + 180.0) / VEC_BUCKET))
+	var by0 := int(floor((90.0 - lat_max) / VEC_BUCKET))
+	var by1 := int(floor((90.0 - lat_min) / VEC_BUCKET))
+	var drawn := 0
+	for by in range(by0, by1 + 1):
+		for bx in range(bx0, bx1 + 1):
+			for i in _line_buckets.get(Vector2i(bx, by), PackedInt32Array()):
+				var lx0: float = _line_bbox[i * 4]
+				var ly0: float = _line_bbox[i * 4 + 1]
+				var lx1: float = _line_bbox[i * 4 + 2]
+				var ly1: float = _line_bbox[i * 4 + 3]
+				if lx1 < lon_min or lx0 > lon_max or ly1 < lat_min or ly0 > lat_max:
+					continue
+				var cnt := _line_len[i]
+				var st := _line_start[i]
+				var arr := PackedVector2Array()
+				arr.resize(cnt)
+				for k in cnt:
+					var o := (st + k) * 2
+					arr[k] = _vec_org + Vector2((_line_pts[o] + 180.0) * sx, (LAT_LIMIT - _line_pts[o + 1]) * sy)
+				map_root.draw_polyline(arr, ink, 2.2, true)
+				drawn += 1
+	if _flags.has("--vecdbg"):
+		print("[线稿] 画 %d 条" % drawn)
