@@ -423,7 +423,7 @@ func _build_ui() -> void:
 	city_panel.offset_left = 0.0
 	city_panel.offset_top = 0.0
 	city_panel.offset_right = 300.0
-	city_panel.offset_bottom = 172.0
+	city_panel.offset_bottom = 430.0
 	city_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	city_panel.visible = false
 	ui_layer.add_child(city_panel)
@@ -447,6 +447,15 @@ func _build_ui() -> void:
 	# 副标题：关城/邑的类别与年代（城市与村庄留空）
 	var cp_sub := Label.new()
 	cp_sub.name = "Sub"
+	# 展示图（定居点详情页的图，之后按配置表的 image 字段换）
+	var cp_pic := TextureRect.new()
+	cp_pic.name = "Pic"
+	cp_pic.position = Vector2(16, 52)
+	cp_pic.size = Vector2(268, 150)
+	cp_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	cp_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	cp_pic.texture = _settle_icon("city")
+	city_panel.add_child(cp_pic)
 	cp_sub.position = Vector2(0, 46)
 	cp_sub.size = Vector2(300, 16)
 	cp_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -454,10 +463,18 @@ func _build_ui() -> void:
 	cp_sub.add_theme_font_size_override("font_size", 12)
 	cp_sub.add_theme_color_override("font_color", Color(0.74, 0.66, 0.50))
 	city_panel.add_child(cp_sub)
+	var cp_desc := Label.new()
+	cp_desc.name = "Desc"
+	cp_desc.position = Vector2(18, 212)
+	cp_desc.size = Vector2(264, 78)
+	cp_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	cp_desc.add_theme_font_size_override("font_size", 14)
+	cp_desc.add_theme_color_override("font_color", Color(0.80, 0.73, 0.58))
+	city_panel.add_child(cp_desc)
 	for i in 2:
 		var b := Button.new()
 		b.name = "Opt%d" % i
-		b.position = Vector2(24, 62 + i * 46)
+		b.position = Vector2(24, 300 + i * 54)
 		b.size = Vector2(252, 38)
 		b.add_theme_font_size_override("font_size", 17)
 		b.add_theme_color_override("font_color", Color(0.90, 0.82, 0.60))
@@ -472,6 +489,8 @@ func _build_ui() -> void:
 		b.add_theme_stylebox_override("hover", bh)
 		b.add_theme_stylebox_override("pressed", bh)
 		city_panel.add_child(b)
+	city_panel.get_node("Opt0").text = "快速前往"
+	city_panel.get_node("Opt1").text = "查看详情"
 	city_panel.get_node("Opt0").pressed.connect(func() -> void: _city_go("street"))
 	city_panel.get_node("Opt1").pressed.connect(func() -> void: _city_go("yamen"))
 	city_panel.visible = false
@@ -2289,7 +2308,7 @@ func _open_city_panel(c: Dictionary) -> void:
 	# 面板必须在地图图层之上
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
-	city_panel.offset_bottom = 172.0
+	city_panel.offset_bottom = 430.0
 	city_panel.visible = true
 	map_root.queue_redraw()
 
@@ -2307,7 +2326,7 @@ func _open_village_panel(v: Dictionary) -> void:
 	(city_panel.get_node("Sub") as Label).text = ""
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
-	city_panel.offset_bottom = 172.0
+	city_panel.offset_bottom = 430.0
 	city_panel.visible = true
 	map_root.queue_redraw()
 
@@ -2348,7 +2367,7 @@ func _open_place_panel(title_txt: String, sub_txt: String, ll: Vector2) -> void:
 	(city_panel.get_node("Opt1") as Button).visible = false
 	if ui_layer != null and city_panel.get_parent() == ui_layer:
 		ui_layer.move_child(city_panel, ui_layer.get_child_count() - 1)
-	city_panel.offset_bottom = 172.0
+	city_panel.offset_bottom = 430.0
 	city_panel.visible = true
 	map_root.queue_redraw()
 
