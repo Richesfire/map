@@ -8,20 +8,81 @@
       "json_key": "settlements",
       "key": "id",
       "fields": {
-        "id":      { "type": "string", "required": true, "desc": "唯一标识" },
-        "name":    { "type": "string", "required": true, "desc": "显示名" },
-        "type":    { "type": "enum", "values": ["capital", "city", "town", "fort", "village"], "desc": "等级" },
-        "faction": { "type": "string", "desc": "所属势力" },
-        "rank":    { "type": "int", "desc": "同级排序" },
-        "lon":     { "type": "float", "min": -180.0, "max": 180.0, "desc": "经度" },
-        "lat":     { "type": "float", "min": -90.0, "max": 90.0, "desc": "纬度" },
-        "icon":    { "type": "string", "desc": "图标 PNG 名" },
-        "image":   { "type": "string", "desc": "详情页展示图" },
-        "note":    { "type": "string", "desc": "一句话简介" }
+        "id": {
+          "type": "string",
+          "required": true,
+          "desc": "唯一标识"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "desc": "显示名"
+        },
+        "type": {
+          "type": "enum",
+          "values": [
+            "capital",
+            "city",
+            "town",
+            "fort",
+            "village"
+          ],
+          "desc": "等级"
+        },
+        "faction": {
+          "type": "string",
+          "desc": "所属势力"
+        },
+        "rank": {
+          "type": "int",
+          "desc": "同级排序"
+        },
+        "lon": {
+          "type": "float",
+          "min": -180.0,
+          "max": 180.0,
+          "desc": "经度"
+        },
+        "lat": {
+          "type": "float",
+          "min": -90.0,
+          "max": 90.0,
+          "desc": "纬度"
+        },
+        "icon": {
+          "type": "string",
+          "desc": "图标 PNG 名"
+        },
+        "image": {
+          "type": "string",
+          "desc": "详情页展示图"
+        },
+        "note": {
+          "type": "string",
+          "desc": "一句话简介"
+        }
       },
       "checks": [
-        { "kind": "unique", "field": "id" },
-        { "kind": "unique_pair", "field": "type", "group_by": "faction", "value": "capital", "message": "每个势力只能有一个都城" }
+        {
+          "kind": "unique",
+          "field": "id"
+        },
+        {
+          "kind": "unique_pair",
+          "field": "type",
+          "group_by": "faction",
+          "value": "capital",
+          "message": "每个势力只能有一个都城"
+        },
+        {
+          "kind": "requires",
+          "when": {
+            "field": "type",
+            "value": "capital"
+          },
+          "field": "faction",
+          "message": "都城必须属于某个势力"
+        }
       ]
     }
   }

@@ -140,6 +140,15 @@ def compile_table(name, tspec, errors, warns):
                 seen[k] = it["_row"]
 
     for chk in tspec.get("checks", []):
+        if chk["kind"] == "requires":
+            # 当 when.field == when.value 时，field 必须有值
+            wf = chk["when"]["field"]
+            wv = chk["when"]["value"]
+            for it in out:
+                if it.get(wf) == wv and not str(it.get(chk["field"]) or "").strip():
+                    errors.append("%s 第%d行：%s"
+                                  % (tspec["file"], it["_row"], chk["message"]))
+            continue
         if chk["kind"] == "unique_pair":
             buckets = {}
             for it in out:
