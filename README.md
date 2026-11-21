@@ -1,80 +1,103 @@
 # 秦末 209BC —— 开放世界原型（Godot 4.7）
 
-秦末（公元前 209 年）题材的开放世界原型：程序化地形 + 2D 卷轴地图 + 快速旅行。
-地形和地貌全部由游戏自己的分类器从同一份高程数据求出（"一套数据"原则）；
-地图上不写任何文字，只画舆图符号，名字只在点开的面板里看。
+秦末（公元前 209 年）题材的开放世界原型：程序化地形 + 2D 舆图 + 快速旅行。
+地形和地貌全部由游戏自己的分类器从同一份高程数据求出（"一套数据"原则）。
 
-> 技术交接（架构、数据链、分类规则、踩过的坑）看 **[交接_地图系统.md](交接_地图系统.md)**。
-> 数据与仓库说明看 **[DATA.md](DATA.md)**。
+> 技术交接（架构、数据链、分类规则、踩过的坑）：[docs/交接/交接_地图系统.md](docs/交接/交接_地图系统.md)
+> 数据与仓库说明：[DATA.md](DATA.md)
+
+## 目录结构
+
+```
+FengDi/
+├─ Play.bat                启动游戏
+├─ run_tests.bat           一键测试（6 项）
+├─ config/                 配置表（人改的地方）
+│   ├─ settlements.xlsx
+│   ├─ schema.json         表结构 / 校验规则
+│   └─ 同步配置表.bat       改完双击 → 生成 JSON
+├─ game/                   Godot 工程
+│   ├─ project.godot
+│   ├─ scenes/ scripts/ shaders/ assets/
+│   └─ data/
+│      ├─ raw/             原始数据（高程、Hydro、城池源表）
+│      ├─ generated/       工具生成（settlements.json、map_color.bin…）
+│      ├─ textures/ biomes/
+├─ tools/
+│   ├─ map/                Python 数据工具（建图层、生成轮廓、编译配置表）
+│   └─ test/               run_tests.ps1、map_pipeline.ps1
+├─ artifacts/              截图 / 输出（不进 git）
+└─ docs/                   策划、故事、模型、截图、交接
+```
 
 ## 快速开始
 
-环境：Godot **4.7**（Forward+）、Python **3.8+**。
+环境：Godot **4.7**（Forward+）、Python **3.8+**（需要 openpyxl；装数据需要 numpy）。
 
 ```bash
-git clone https://github.com/Richesfire/map.git
-cd map
-python tools/get_data.py       # 下载约 280 MB 数据包，并建好 ias/data 目录联接
+python tools/get_data.py       # 下载约 280 MB 数据包到 game/data/raw/
 ```
 
 然后任选一种：
 
-- Windows：双击 `ias\Play.bat`（Godot 不在默认位置时先设环境变量 `GODOT_EXE`）
-- 或用 Godot 打开 `ias/project.godot`
+- Windows：双击 `Play.bat`
+- 或用 Godot 打开 `game/project.godot`
 
-`get_data.py` 会把数据解压到 `ias-core/data/`，并在 `ias/` 下建一个指向它的目录联接——
-游戏里所有资源都走 `res://data/`，**没有这个联接就看不到数据**（游戏会退化成一片平地，
-只打印一行 `[地形] 没有高程数据，用平地`）。数据已在别处时，只需补联接：
+Godot 不在默认位置时，先设环境变量 `GODOT_EXE`。
 
-```bash
-python tools/get_data.py --link-only
+## 改配置表
+
+```
+1. 打开 config\settlements.xlsx 改数据 → 保存 → 关闭
+2. 双击 config\同步配置表.bat
+3. 看到"已写出 settlements.json：1500 条" → 切回游戏，按 M 关掉地图再打开
 ```
 
-`landform_id.bin`（32 MB 预烘焙地貌编号图）不在数据包里。缺它游戏仍能跑，但 3D 撒点会退回
-实时分类（慢几十倍）。需要时现烘（约 5 分钟，中途别中断）：
-
-```powershell
-godot --headless --path ias --script res://tools/bake_landform_id.gd
-```
-
-## 目录
-
-| 路径 | 内容 |
-|---|---|
-| `ias/` | Godot 工程：`scripts/` 逻辑、`shaders/` 着色器、`scenes/` 场景、`tools/` 烘焙与诊断工具 |
-| `ias/data` | 指向 `ias-core/data` 的目录联接（不跟踪、不单独存一份） |
-| `ias-core/data/` | 高程、水系、城池/史事/汉县、地貌配置；`*.bin` 不进 git |
-| `tools/` | `get_data.py`（下载数据）、`run_tests.ps1`（回归测试） |
-| `docs/` | `策划/` 策划案与兵种表、`故事/` 设定、`模型/` 武器模型、`截图/<日期>/` 各轮验证截图（都不参与构建） |
+- 表头三行固定：`##var`（字段名）/ `##type`（类型）/ `##`（说明），A 列只是指令列；
+- 字段、类型、枚举、范围、唯一键、"每势力只能一个都城"等规则写在 `config/schema.json`；
+- 校验不过会打印「第几行哪一列错」，**不写文件**，旧数据保持；
+- 换图标/展示图：覆盖 `game/assets/map_icons/`、`game/assets/settle_images/` 里的同名 PNG，
+  不用重新导入编辑器，开图即生效。
 
 ## 测试
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1
+```
+双击 run_tests.bat
 ```
 
-6 项，约 70 秒。改了 `main.gd` 先单独跑一次
-`godot --headless --path ias --check-only --script res://scripts/main.gd`；
+六项：`citytest`（城市场景）、`seamtest`（地形接缝）、`probe`（采样）、`selftest`（综合）、
+`maptest`（2D 地图）、`bugtest`（窗口化交互，最慢约 40 s）。
+
+改了 `main.gd` 先单独跑一次：
+
+```
+godot --headless --path game --check-only --script res://scripts/main.gd
+```
+
 改了着色器必须真开一次图——着色器编译错误只在完整输出里报 `SHADER ERROR`。
+
+## 重新生成地图底图
+
+```bash
+python tools/map/build_map_layers.py              # 配色 + 阴影（约 2 分钟）
+python tools/map/build_map_layers.py --contours   # 等高线
+```
+
+数据固定时不用重跑；改高程或配色方案才需要。
+
+## 烘焙地貌编号图
+
+`game/data/generated/landform_id.bin`（32 MB）不在数据包里。缺它游戏仍能跑，但 3D 撒点会退回
+实时分类（慢几十倍）。需要时现烘（约 5 分钟，中途别中断）：
+
+```powershell
+godot --headless --path game --script res://tools/bake_landform_id.gd
+```
 
 ## 常用调试参数
 
-```powershell
-$g = "C:\Program Files (x86)\Steam\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe"
-& $g --path ias -- --start --fresh --map --mapzoom=60 --mapcenter=112.9,35.85 --at=112.45,34.62
-& $g --path ias -- --start --fresh --map --mapzoom=1 --shots="C:\a.png@8|C:\b.png@12"
-```
-
-完整参数表见 [交接_地图系统.md](交接_地图系统.md) 第 1 节。
-
-## 数据与素材许可
-
-| 来源 | 用途 | 许可 |
-|---|---|---|
-| 仓库 Release 附件 `qmc_data_v1.zip` | 高程底图、地表贴图 | 本项目数据包 |
-| CHGIS V6 Time Series | 汉书·地理志县治 1134 处 | CC0 1.0 |
-| Natural Earth | 江河湖泊（抽稀） | 公有领域 |
-| ambientCG | 地表/法线/树皮/草叶贴图 | CC0 |
-| GeoNames | 现代聚落（地图层已撤，数据保留） | CC BY 4.0 |
-
-代码部分暂未选择开源许可证。
+- `--start --fresh`：跳过标题直接开局
+- `--map --mapzoom=120 --mapcenter=118.3,36.9`：直接开图并定位
+- `--at=lon,lat`：3D 传送到坐标
+- `--shots=path@frame`：指定帧截图
+- `--pinkwater`：把水染成品红，确认水域位置

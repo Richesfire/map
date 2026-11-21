@@ -1,6 +1,6 @@
-# Godot 编辑器缓存
-ias/.godot/
-ias/.import/
+﻿# Godot 编辑器缓存
+game/.godot/
+game/.import/
 # 贴图导入元数据（Godot 会按 .godot/ 重新生成）
 *.import
 
@@ -9,29 +9,22 @@ __pycache__/
 *.pyc
 *.tmp
 *.log
-
 # 原始压缩包（体积大，可重新下载）
 *.zip
 C:/Users/12980/Downloads/acg_cache/
-
 # 明确不提交的坏数据与备份
 ias-core/data/dem2k_broken.bin
 项目备份/
-
 # 系统文件
 Thumbs.db
 desktop.ini
-
 # ias\data 是指向 ias-core\data 的目录联接，只保留一份
 ias/data/
-
 # 大型高程数据（可用 scripts 重新生成，见 DATA.md）
 ias-core/data/*.bin
 data/*.bin
-
 # 验证截图只留本地（2026-11-16 用户要求；历史里已有的不动）
 docs/截图/
-
 # 截图/导出等输出物
 artifacts/
 # 大型二进制（游戏用，但不进 git；见 DATA.md 重新生成）
@@ -39,3 +32,6 @@ game/data/raw/*.bin
 game/data/generated/*.bin
 game/data/raw/*.png
 game/data/generated/*.png
+
+game/.godot/
+game/.import/
