@@ -7,17 +7,17 @@
 ```bash
 git clone https://github.com/Richesfire/map.git
 cd map
-python tools/get_data.py          # 下载解压约 280 MB 数据包，并建 ias/data 联接
+python tools/get_data.py          # 下载解压约 280 MB 数据包，并建 game/data 联接
 ```
 
-然后双击 `ias/Play.bat`（或 Godot 打开 `ias/project.godot`）。
+然后双击 `game/Play.bat`（或 Godot 打开 `game/project.godot`）。
 
-> ⚠️ 游戏读的是 `res://data/`，而数据放在 `ias-core/data/`，两者靠 `ias/data` 这个**目录联接**
+> ⚠️ 游戏读的是 `res://data/`，而数据放在 `game/data/raw/`，两者靠 `game/data` 这个**目录联接**
 > 打通（Windows 用 `mklink /J`，不需要管理员；其它系统是 symlink）。`get_data.py` 会自动建，
 > 数据已在别处时用 `python tools/get_data.py --link-only` 补。
 > 没有联接时游戏不会报错，只会打印 `[地形] 没有高程数据，用平地` 并显示一片平地。
 
-数据会解压到 `ias-core/data/`：
+数据会解压到 `game/data/raw/`：
 
 | 文件 | 大小 | 用途 |
 |---|---|---|
@@ -26,7 +26,7 @@ python tools/get_data.py          # 下载解压约 280 MB 数据包，并建 ia
 | dem_map_lo.bin | 16 MB | 地图着色器用高程纹理（半分辨率） |
 | dem_map.bin | 64 MB | 地图用全分辨率高程（备用） |
 | land_mask.bin | 8 MB | 海陆掩膜 |
-| landform_id.bin | 32 MB | 预烘焙地貌编号图（8192×4096；不随数据包，用 `ias/tools/bake_landform_id.gd` 现烘） |
+| landform_id.bin | 32 MB | 预烘焙地貌编号图（8192×4096；不随数据包，用 `game/tools/bake_landform_id.gd` 现烘） |
 | hydro.json | 1.4 MB | 江河湖泊（Natural Earth 抽稀）；湖已按 tools/filter_lakes.py 滤掉现代水库，425 -> 199 |
 | settlements.json | 0.56 MB | GeoNames 现代聚落 10725 处（地图层已撤，留作 3D/调试） |
 | sites_han.json | — | 秦汉史事点位 82 处（城邑坐标取 CHGIS） |
@@ -52,11 +52,11 @@ Release 附件不占 LFS 配额，单独下载一次即可。
 > 所以那几个老提交里的 `.bin` 是指针文件（约 130 字节），不是真数据；
 > 本机的 LFS 缓存已经清掉（`git lfs prune` 不会清，因为指针还挂在历史里，只能手动删 `.git/lfs`）。
 > 要还原：`git lfs fetch`（远端若还留着）或按 Release 重下。**当前工作区不受影响**，
-> `ias-core/data/` 里都是真文件。
+> `game/data/raw/` 里都是真文件。
 
 ## 贴图
 
-`ias-core/data/textures/` 里的图集随数据包一起分发，游戏中不存在从网络拉取贴图的脚本：
+`game/data/raw/textures/` 里的图集随数据包一起分发，游戏中不存在从网络拉取贴图的脚本：
 
 | 文件 | 用途 |
 |---|---|

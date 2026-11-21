@@ -1,4 +1,4 @@
-"""下载并解压项目运行所需的数据包（GitHub Release 附件），并建好 ias/data 目录联接。
+"""下载并解压项目运行所需的数据包（GitHub Release 附件），（数据直接放进工程）。
 
 用法（在仓库根目录）：
     python tools/get_data.py                 # 下载 + 解压 + 建联接
@@ -8,12 +8,12 @@
 
 它会：
   1. 从 GitHub Release 下载 qmc_data_v1.zip（约 280 MB）
-  2. 解压到 ias-core/data/（dem2k.bin、dem_map.bin、land_mask.bin、textures/…）
-  3. 建 ias/data -> ias-core/data 的目录联接（Windows: mklink /J；其它系统: symlink）
-     —— 游戏里所有资源都走 res://data/，没有这个联接就看不到数据
+  2. 解压到 game/data/raw/（dem2k.bin、dem_map.bin、land_mask.bin、textures/…）
+  3. 数据已在工程内（game/data/raw），不需要目录联接
+     —— 游戏里所有资源都走 res://data/raw/ 与 res://data/generated/
 
 注意：landform_id.bin（预烘焙地貌编号图，32 MB）不在数据包里，
-需要用 ias/tools/bake_landform_id.gd 现烘，见 DATA.md。
+需要用 game/tools/bake_landform_id.gd 现烘，见 DATA.md。
 """
 import argparse
 import os
@@ -27,8 +27,8 @@ ASSET = "qmc_data_v1.zip"
 API = "https://api.github.com/repos/%s/releases" % REPO
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA = os.path.join(ROOT, "ias-core", "data")
-LINK = os.path.join(ROOT, "ias", "data")
+DATA = os.path.join(ROOT, "game", "data", "raw")
+LINK = os.path.join(ROOT, "game", "data")
 
 
 def find_asset_url() -> str:
@@ -84,6 +84,12 @@ def _same_path(a: str, b: str) -> bool:
 
 
 def ensure_link(link: str = "", target: str = "", dry: bool = False) -> bool:
+    # 结构变更后数据直接放在 game/data/raw，不再需要目录联接
+    print("[data] 数据已在 game/data/ 内，跳过联接")
+    return True
+
+
+def _ensure_link_legacy(link: str = "", target: str = "", dry: bool = False) -> bool:
     """建 ias/data -> ias-core/data。已存在且指向正确时什么也不做。
 
     返回 True 表示联接已就绪（或 dry 时"将要就绪"）。

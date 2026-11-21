@@ -5,8 +5,8 @@ rem   Play.bat            - start the game
 rem   Play.bat --check    - only print the resolved Godot / data paths
 setlocal enableextensions
 
-if not exist "%~dp0game\data\dem2k.bin" (
-    echo [Play] %~dp0game\data\dem2k.bin not found.
+if not exist "%~dp0game\data\raw\dem2k.bin" (
+    echo [Play] %~dp0game\data\raw\dem2k.bin not found.
     echo        Run from the repo root first:  python tools\get_data.py
     pause
     exit /b 1
