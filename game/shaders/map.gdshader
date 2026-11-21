@@ -235,7 +235,7 @@ void fragment() {
 	float hi = smoothstep(70.0, 220.0, zoom);
 	if (hi > 0.001) {
 		c = mix(c, paper, 0.04 * hi);
-		vec2 guv = SCREEN_UV * vec2(2.1, 2.1);
+		vec2 guv = vec2(uv.x * 620.0, uv.y * 620.0);   // 世界坐标，拖图时跟着地图走
 		float g1 = texture(noise_tex, guv).r;
 		float g2 = texture(noise_tex, guv * 3.3 + vec2(0.37, 0.21)).r;
 		float grain = (g1 * 0.62 + g2 * 0.38) - 0.5;
