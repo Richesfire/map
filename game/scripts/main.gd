@@ -2311,6 +2311,7 @@ func _pan_probe(delta: float) -> void:
 ## 打开城市目的地面板
 func _open_city_panel(c: Dictionary) -> void:
 	_panel_city = c
+	_save_last_panel(str(c.get("name", "")))
 	var title: Label = city_panel.get_node("Title")
 	title.text = String(c["name"])
 	var b0 := city_panel.get_node("Opt0") as Button
@@ -2349,15 +2350,53 @@ func _open_village_panel(v: Dictionary) -> void:
 
 ## 刚开图时的默认详情页：显示咸阳（找不到就退回占位）
 func _panel_default() -> void:
+	var nm := _load_last_panel()
+	if nm != "":
+		for c in TG.cities():
+			if String(c["name"]) == nm:
+				_open_city_panel(c)
+				return
 	for c in TG.cities():
 		if String(c["name"]) == "咸阳":
 			_open_city_panel(c)
 			return
-	_panel_placeholder()
 
 
-## 面板常显：没选中任何点位时（刚开图 / 点了空地）显示占位，不隐藏
+## 面板常显：没选中任何点位时（刚开图 / 点了空地）恢复上一次点开的聚落，不显示空壳
 func _panel_placeholder() -> void:
+	_panel_restore_last()
+	return
+
+
+func _panel_restore_last() -> void:
+	var nm := _load_last_panel()
+	for c in TG.cities():
+		if String(c["name"]) == nm:
+			_open_city_panel(c)
+			return
+	_panel_default()
+
+
+func _save_last_panel(nm: String) -> void:
+	_last_panel = nm
+	var f := FileAccess.open(LAST_PANEL_CFG, FileAccess.WRITE)
+	if f != null:
+		f.store_line(nm)
+		f.close()
+
+
+func _load_last_panel() -> String:
+	if _last_panel != "":
+		return _last_panel
+	var f := FileAccess.open(LAST_PANEL_CFG, FileAccess.READ)
+	if f == null:
+		return ""
+	_last_panel = f.get_line().strip_edges()
+	f.close()
+	return _last_panel
+
+
+func _panel_placeholder_old() -> void:
 	if city_panel == null:
 		return
 	_panel_city = {}
@@ -2390,6 +2429,7 @@ func _open_place_panel(title_txt: String, sub_txt: String, ll: Vector2) -> void:
 	_panel_city = {}
 	_panel_village = {}
 	_panel_place = {"name": title_txt, "ll": ll}
+	_save_last_panel(title_txt)
 	var title: Label = city_panel.get_node("Title")
 	title.text = title_txt
 	(city_panel.get_node("Sub") as Label).text = sub_txt
@@ -2425,8 +2465,8 @@ func _settle_fill_panel(nm: String) -> void:
 	var row: Dictionary = _settle_by_name.get(nm, {})
 	if row.is_empty():
 		return
-	var img_name := String(row.get("image", "")).strip_edges()
-	if img_name == "":
+	var img_name := str(row.get("image", "")).strip_edges()
+	if img_name == "" or img_name == "<null>":
 		img_name = "default"
 	if img_name.ends_with(".png"):
 		img_name = img_name.substr(0, img_name.length() - 4)
@@ -2437,10 +2477,13 @@ func _settle_fill_panel(nm: String) -> void:
 		pic.visible = tex != null
 	var desc := city_panel.get_node("Desc") as Label
 	if desc != null:
-		desc.text = String(row.get("note", ""))
+		var note := str(row.get("note", ""))
+		desc.text = "" if note == "<null>" else note
 	var sub := city_panel.get_node("Sub") as Label
 	if sub != null:
-		var fac := String(row.get("faction", ""))
+		var fac := str(row.get("faction", ""))
+		if fac == "<null>":
+			fac = ""
 		var tmap := {"capital": "都城", "city": "城", "town": "镇", "fort": "关", "village": "邑"}
 		var tname: String = tmap.get(String(row.get("type", "")), String(row.get("type", "")))
 		sub.text = "%s · %s" % [fac, tname] if fac != "" else tname
@@ -3740,6 +3783,8 @@ func _settle_icon(kind: String) -> Texture2D:
 ## ---------------- 配置表驱动的聚落层 ----------------
 var _settle_rows: Array = []
 var _settle_by_name := {}
+var _last_panel := ""      # 上一次点开的聚落名（持久化到 user://）
+const LAST_PANEL_CFG := "user://last_panel.cfg"
 var _settle_mtime: int = -1
 const SETTLE_CFG := "res://data/generated/settlements.json"
 
