@@ -183,7 +183,18 @@ void fragment() {
 
 	// —— 海面：按逐像素高程判定海陆（不用 4.9km 的编号图，否则放大后是方块台阶）——
 	float wf = max(fwidth(h) * 1.2, 0.4);
-	float wmask = smoothstep(-wf, wf, -h);          // 0=纯陆 1=纯水，边界 1-2 像素过渡
+	// 海岸细节：在 0 米附近叠分形扰动，让海岸线曲折起来（越高倍越明显，幅度不超过几米）
+	float coast_band = 1.0 - smoothstep(0.0, 12.0, abs(h));
+	float czoom = smoothstep(25.0, 90.0, zoom);
+	float cn = 0.0;
+	if (coast_band > 0.001 && czoom > 0.001) {
+		vec2 cp = vec2(uv.x, uv.y);
+		cn = (vnoise(cp * 9000.0) - 0.5) * 0.60
+		   + (vnoise(cp * 21000.0) - 0.5) * 0.28
+		   + (vnoise(cp * 46000.0) - 0.5) * 0.12;
+		cn *= coast_band * czoom * 2.2;           // ±1~2 m：只让岸线起小凹湾，不整片翻转          // 幅度：±几米，够让海岸曲折但不至于撕裂
+	}
+	float wmask = smoothstep(-wf, wf, -(h + cn));          // 0=纯陆 1=纯水，边界 1-2 像素过渡
 	if (wmask > 0.001) {
 		float depth = clamp(-h / 3500.0, 0.0, 1.0);
 		vec3 shall = vec3(0.47, 0.55, 0.55);

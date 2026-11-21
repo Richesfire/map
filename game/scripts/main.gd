@@ -1665,20 +1665,12 @@ func _draw_hydro_layer() -> void:
 			continue
 		var major: bool = int(r["r"]) <= 3
 		# 笔触化：宽而淡的墨晕 + 细而实的笔心，线宽随缩放略微加粗
-		# 两端收笔：河流画出海口时不再是一根硬邦邦的横线
 		var pts: PackedVector2Array = r["p"]
-		var n_pts := pts.size()
-		var ends_fade := 1.0
-		if n_pts >= 6:
-			var d0 := pts[1].distance_to(pts[0]) + pts[2].distance_to(pts[1])
-			var d1 := pts[n_pts - 2].distance_to(pts[n_pts - 1]) + pts[n_pts - 3].distance_to(pts[n_pts - 2])
-			var cut := clampf(minf(d0, d1) / 0.35, 0.0, 1.0)
-			ends_fade = 0.45 + 0.55 * cut
 		var core_w: float = (1.6 if major else 1.0) + clampf(map_zoom * 0.012, 0.0, 1.6)
 		var col := Color(0.24, 0.31, 0.37, (0.55 if major else 0.38) * fade)
 		var halo := Color(0.24, 0.31, 0.37, (0.16 if major else 0.11) * fade)
-		var col2 := Color(col.r, col.g, col.b, col.a * ends_fade)
-		var halo2 := Color(halo.r, halo.g, halo.b, halo.a * ends_fade)
+		var col2 := col
+		var halo2 := halo
 		# Chaikin 平滑一次再画：原始折线点距大，直接画会有硬折角
 		var smooth := PackedVector2Array()
 		for i2 in range(pts.size() - 1):
