@@ -1679,8 +1679,23 @@ func _draw_hydro_layer() -> void:
 		var halo := Color(0.24, 0.31, 0.37, (0.16 if major else 0.11) * fade)
 		var col2 := Color(col.r, col.g, col.b, col.a * ends_fade)
 		var halo2 := Color(halo.r, halo.g, halo.b, halo.a * ends_fade)
-		map_hydro.draw_polyline(pts, halo2, core_w * 2.3 / ppd)
-		map_hydro.draw_polyline(pts, col2, core_w / ppd)
+		# Chaikin 平滑一次再画：原始折线点距大，直接画会有硬折角
+		var smooth := PackedVector2Array()
+		for i2 in range(pts.size() - 1):
+			var a2 := pts[i2]
+			var b2 := pts[i2 + 1]
+			if i2 == 0:
+				smooth.append(a2)
+			smooth.append(a2.lerp(b2, 0.25))
+			smooth.append(a2.lerp(b2, 0.75))
+		smooth.append(pts[pts.size() - 1])
+		map_hydro.draw_polyline(smooth, halo2, core_w * 2.3 / ppd)
+		map_hydro.draw_polyline(smooth, col2, core_w / ppd)
+		# 折点补圆，模拟圆头笔触
+		var rr := core_w * 0.5 / ppd
+		if rr > 0.0:
+			for q2 in smooth:
+				map_hydro.draw_circle(q2, rr, col2)
 	var lake_col := Color(0.42, 0.38, 0.42, 0.9 * fade)
 	for l in _lake_list:
 		var bb2: Rect2 = l["bb"]

@@ -160,7 +160,17 @@ def main():
         keep = np.zeros(nl + 1, dtype=bool)
         keep[1:] = sizes >= 25
         is_sea = keep[lab]
-    color = np.where(is_sea[..., None], sea, land)
+    # 海岸线抗锯齿：把高程上采样 4 倍算海陆，再缩回来得到每格 0..1 的覆盖率，
+    # 这样放大后海岸是渐变的软边，不是 4.9km 一格的硬台阶。
+    from scipy import ndimage as _ndi
+    cover = is_sea.astype(np.float32)
+    up = _ndi.zoom(cover, 4.0, order=1).astype(np.float32)
+    hup = _ndi.zoom(h, 4.0, order=1).astype(np.float32)
+    soft = np.clip((0.0 - hup) / 12.0, 0.0, 1.0)      # ±12m 内渐变
+    up = np.clip(up * 0.35 + soft * 0.65, 0.0, 1.0)
+    cover = _ndi.zoom(up, 0.25, order=1).astype(np.float32)
+    cover = np.clip(cover, 0.0, 1.0)
+    color = land * (1.0 - cover[..., None]) + sea * cover[..., None]
     color = np.clip(color * 255.0, 0, 255).astype(np.uint8)
     color.tofile(DATA / "generated" / "map_color.bin")
     print("map_color.bin", round((DATA / "generated" / "map_color.bin").stat().st_size / 1048576, 1), "MB")

@@ -181,17 +181,19 @@ void fragment() {
 	}
 	float is_water = (lid > 10.5 && lid < 11.5) ? 1.0 : 0.0;
 
-	// —— 海面：浅海/深海分层 + 极淡的水纹（原来一整片均匀灰）——
-	if (is_water > 0.5) {
-		float depth = clamp((-h - 0.0) / 3500.0, 0.0, 1.0);      // 0=岸边 1=深海
+	// —— 海面：按逐像素高程判定海陆（不用 4.9km 的编号图，否则放大后是方块台阶）——
+	float wf = max(fwidth(h) * 1.2, 0.4);
+	float wmask = smoothstep(-wf, wf, -h);          // 0=纯陆 1=纯水，边界 1-2 像素过渡
+	if (wmask > 0.001) {
+		float depth = clamp(-h / 3500.0, 0.0, 1.0);
 		vec3 shall = vec3(0.47, 0.55, 0.55);
 		vec3 deepc = vec3(0.27, 0.34, 0.39);
 		vec3 sea = mix(shall, deepc, smoothstep(0.0, 1.0, depth));
-		c = mix(c, sea, 0.85);
-		// 水纹：世界坐标横向细纹，越深越淡
+		// 水纹：横向细纹，越深越淡
 		float wy = texture(noise_tex, vec2(uv.x * 300.0, uv.y * 2600.0)).r;
 		float wave = smoothstep(0.55, 0.95, wy) * (1.0 - 0.7 * depth);
-		c = mix(c, vec3(0.62, 0.68, 0.70), 0.05 * wave * clamp(zoom / 60.0, 0.0, 1.0));
+		sea = mix(sea, vec3(0.62, 0.68, 0.70), 0.05 * wave * clamp(zoom / 60.0, 0.0, 1.0));
+		c = mix(c, sea, wmask);
 	}
 
 	// 高山雪：雪线随纬度（和 3D terrain.gdshader 的 snow_line 同一公式），只落在陆地上。
