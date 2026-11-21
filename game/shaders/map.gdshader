@@ -181,6 +181,19 @@ void fragment() {
 	}
 	float is_water = (lid > 10.5 && lid < 11.5) ? 1.0 : 0.0;
 
+	// —— 海面：浅海/深海分层 + 极淡的水纹（原来一整片均匀灰）——
+	if (is_water > 0.5) {
+		float depth = clamp((-h - 0.0) / 3500.0, 0.0, 1.0);      // 0=岸边 1=深海
+		vec3 shall = vec3(0.47, 0.55, 0.55);
+		vec3 deepc = vec3(0.27, 0.34, 0.39);
+		vec3 sea = mix(shall, deepc, smoothstep(0.0, 1.0, depth));
+		c = mix(c, sea, 0.85);
+		// 水纹：世界坐标横向细纹，越深越淡
+		float wy = texture(noise_tex, vec2(uv.x * 300.0, uv.y * 2600.0)).r;
+		float wave = smoothstep(0.55, 0.95, wy) * (1.0 - 0.7 * depth);
+		c = mix(c, vec3(0.62, 0.68, 0.70), 0.05 * wave * clamp(zoom / 60.0, 0.0, 1.0));
+	}
+
 	// 高山雪：雪线随纬度（和 3D terrain.gdshader 的 snow_line 同一公式），只落在陆地上。
 	// 2D 以前只有极地冰盖，阿尔卑斯/喜马拉雅在图上都是灰褐色。
 	if (is_water < 0.5) {
@@ -212,7 +225,7 @@ void fragment() {
 	//   ① 水彩晕染（低频斑块，很轻）② 纸纤维（极细颗粒）③ 陡坡微阴影
 	float slope = length(vec2(sx, sy)) * 0.0016;
 	float rough = smoothstep(0.05, 0.9, slope);
-	float det_on = smoothstep(45.0, 120.0, zoom);
+	float det_on = smoothstep(22.0, 65.0, zoom);
 	if (det_on > 0.001) {
 		vec2 wp = vec2(uv.x, uv.y) * 2600.0;
 		// ① 水彩：两个尺度叠加，域扭曲打散方格
@@ -234,7 +247,7 @@ void fragment() {
 
 	// —— 高倍：底图是 4.9km/px 的拉伸，再往下放大只会更糊；
 	//    这里往纸色推 + 叠纸纤维噪声，让它读起来像"手绘纸面"而不是"放大的位图" ——
-	float hi = smoothstep(70.0, 220.0, zoom);
+	float hi = smoothstep(40.0, 130.0, zoom);
 	if (hi > 0.001) {
 		c = mix(c, paper, 0.04 * hi);
 		vec2 guv = vec2(uv.x * 620.0, uv.y * 620.0);   // 世界坐标，拖图时跟着地图走
