@@ -80,7 +80,7 @@ def read_shp_points(path, rows):
 
 def main():
     base = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else "ias-core/data/counties_han.json"
+    out = sys.argv[2] if len(sys.argv) > 2 else "game/data/counties_han.json"
     rows = read_dbf(base + ".dbf")
     rows = read_shp_points(base + ".shp", rows)
 

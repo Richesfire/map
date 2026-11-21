@@ -1,13 +1,13 @@
 """离线生成 2D 地图底图：高程配色 + Hillshade。
 
 用法（项目根目录）：
-  python ias/tools/build_map_layers.py            # 生成 color/shade（8192x4096）
-  python ias/tools/build_map_layers.py --preview  # 额外输出两张预览 PNG
+  python tools/map/build_map_layers.py            # 生成 color/shade（8192x4096）
+  python tools/map/build_map_layers.py --preview  # 额外输出两张预览 PNG
 
 输出：
-  ias-core/data/map_color.bin   8192x4096 RGB888
-  ias-core/data/map_shade.bin   8192x4096 灰度（255 = 亮）
-  ias-core/data/map_color_preview.png / map_shade_preview.png（--preview 时）
+  game/data/map_color.bin   8192x4096 RGB888
+  game/data/map_shade.bin   8192x4096 灰度（255 = 亮）
+  game/data/map_color_preview.png / map_shade_preview.png（--preview 时）
 """
 import sys
 from pathlib import Path
@@ -17,8 +17,8 @@ from PIL import Image
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "ias-core" / "data"
-DEM = DATA / "dem2k.bin"
+DATA = ROOT / "game" / "data"
+DEM = DATA / "raw" / "dem2k.bin"
 W, H = 8192, 4096
 DEM_W, DEM_H = 16384, 8192
 DEM_MIN, DEM_MAX = -11000.0, 9000.0
@@ -112,7 +112,7 @@ def build_contours(out_path, step=2):
 def main():
     preview = "--preview" in sys.argv
     if "--contours" in sys.argv:
-        build_contours(DATA / "map_contour.bin")
+        build_contours(DATA / "generated" / "map_contour.bin")
         return
     raw = np.fromfile(DEM, dtype="<u2")
     if raw.size != DEM_W * DEM_H:
@@ -162,8 +162,8 @@ def main():
         is_sea = keep[lab]
     color = np.where(is_sea[..., None], sea, land)
     color = np.clip(color * 255.0, 0, 255).astype(np.uint8)
-    color.tofile(DATA / "map_color.bin")
-    print("map_color.bin", round((DATA / "map_color.bin").stat().st_size / 1048576, 1), "MB")
+    color.tofile(DATA / "generated" / "map_color.bin")
+    print("map_color.bin", round((DATA / "generated" / "map_color.bin").stat().st_size / 1048576, 1), "MB")
 
     # ---- Hillshade：西北偏北来光，高度角 45° ----
     hs = ndimage.gaussian_filter(h, 1.2)
@@ -190,8 +190,8 @@ def main():
     shade[:12] = shade[12]
     shade[-12:] = shade[-13]
     shade = (shade * 255.0).astype(np.uint8)
-    shade.tofile(DATA / "map_shade.bin")
-    print("map_shade.bin", round((DATA / "map_shade.bin").stat().st_size / 1048576, 1), "MB")
+    shade.tofile(DATA / "generated" / "map_shade.bin")
+    print("map_shade.bin", round((DATA / "generated" / "map_shade.bin").stat().st_size / 1048576, 1), "MB")
 
     if preview:
         Image.fromarray(color).resize((1600, 800), Image.LANCZOS).save(DATA / "map_color_preview.png")

@@ -31,3 +31,11 @@ data/*.bin
 
 # 验证截图只留本地（2026-11-16 用户要求；历史里已有的不动）
 docs/截图/
+
+# 截图/导出等输出物
+artifacts/
+# 大型二进制（游戏用，但不进 git；见 DATA.md 重新生成）
+game/data/raw/*.bin
+game/data/generated/*.bin
+game/data/raw/*.png
+game/data/generated/*.png

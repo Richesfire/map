@@ -8,7 +8,7 @@
 这个脚本不改内容，只改名 + 删多余的：按 id 找到文件，改成 NN_<id>.tres
 （NN = biome_library.gd 里 LF_PROFILE 的地貌编号），不属于这 29 个名字的删掉。
 
-用法：python ias/tools/canon_biome_tres.py [--dry]
+用法：python tools/map/canon_biome_tres.py [--dry]
 """
 import re
 import sys
@@ -28,7 +28,7 @@ ID_RE = re.compile(r'^id = "([^"]*)"', re.M)
 def main() -> int:
     dry = "--dry" in sys.argv[1:]
     root = Path(__file__).resolve().parents[2]
-    folder = root / "ias-core" / "data" / "biomes"
+    folder = root / "game" / "data" / "biomes"
     files = sorted(folder.glob("*.tres"))
     print(f"[规范化] {folder}：{len(files)} 个 .tres")
 

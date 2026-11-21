@@ -1,8 +1,8 @@
 """从烘焙好的地貌编号图提取矢量轮廓（marching squares）+ 出预览图。
 
 用法（在项目根目录）：
-  python ias/tools/build_terrain_contours.py --region 118,122,29,33 --step 1 --out preview.png
-  python ias/tools/build_terrain_contours.py --out world.png --step 4 --preview 1600
+  python tools/map/build_terrain_contours.py --region 118,122,29,33 --step 1 --out preview.png
+  python tools/map/build_terrain_contours.py --out world.png --step 4 --preview 1600
 
 参数：
   --region lon0,lon1,lat0,lat1   只处理这块区域（不填 = 全球）
@@ -23,8 +23,8 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "ias-core" / "data" / "landform_id.bin"
-DB = ROOT / "ias" / "scripts" / "landform_db.gd"
+DATA = ROOT / "game" / "data" / "landform_id.bin"
+DB = ROOT / "game" / "scripts" / "landform_db.gd"
 
 W, H = 8192, 4096
 NAMES = ['平原', '丘陵', '山地', '高原', '盆地', '河谷', '荒漠', '草原', '森林', '湿地', '冰雪', '水',

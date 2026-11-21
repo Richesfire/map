@@ -1,7 +1,7 @@
 """把 settlements.xlsx 同步成 settlements.json（游戏读的表）。
 
 用法：双击 tools/sync_settlements.bat，或
-  python ias/tools/sync_settlements.py
+  python tools/map/sync_settlements.py
 """
 import json
 import shutil
@@ -11,11 +11,11 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "ias-core" / "data"
+DATA = ROOT / "game" / "data"
 CFG = DATA / "settlements"
 XLSX = ROOT / "配置表" / "settlements.xlsx"
-JSON = DATA / "settlements.json"
-BACKUP = DATA / "settlements.bak.json"
+JSON = DATA / "generated" / "settlements.json"
+BACKUP = DATA / "generated" / "settlements.bak.json"
 
 TYPES = {"capital", "city", "town", "village", "fort"}
 COLS = ["id", "name", "type", "faction", "rank", "lon", "lat", "icon", "image", "note"]

@@ -1,11 +1,11 @@
 """把四份地点数据合并成一张干净的表（settlements.json / settlements.xlsx）。
 
 用法（项目根目录）：
-  python ias/tools/merge_settlements.py
+  python tools/map/merge_settlements.py
 
 输出：
-  ias-core/data/settlements.json   游戏读的配置表
-  ias-core/data/settlements.xlsx   给你改的表格
+  game/data/settlements.json   游戏读的配置表
+  game/data/settlements.xlsx   给你改的表格
 """
 import json
 from pathlib import Path
@@ -13,7 +13,7 @@ from pathlib import Path
 from openpyxl import Workbook
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = ROOT / "ias-core" / "data"
+DATA = ROOT / "game" / "data"
 CFG = DATA / "settlements"
 
 KIND2TYPE = {
@@ -115,7 +115,7 @@ def main():
     for r in kept:
         r.pop("_pri", None)
         r.pop("_src", None)
-    DATA.joinpath("settlements.json").write_text(
+    DATA.joinpath("generated", "settlements.json").write_text(
         json.dumps({"_comment": "由 merge_settlements.py 生成；改表请用 settlements.xlsx + sync_settlements.bat",
                     "version": 1, "settlements": kept}, ensure_ascii=False, indent=1),
         encoding="utf-8")

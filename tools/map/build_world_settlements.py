@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""生成 ias-core/data/world_settlements.json —— 域外定居点（约前 209 年），三级。
+"""生成 game/data/world_settlements.json —— 域外定居点（约前 209 年），三级。
 
 tier 1 = 城（regional 大城/都城），地图上 1 倍就显示
 tier 2 = 镇（次级城市/港口/要塞），3 倍起显示
 tier 3 = 邑（小聚落/村镇/圣地），10 倍起显示
 
 坐标为古代城址的近似值（WGS84，两位小数），只用于地图层，不进 3D 地形。
-用法：python ias/tools/build_world_settlements.py
+用法：python tools/map/build_world_settlements.py
 """
 import json
 from collections import Counter
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parents[2] / "ias-core" / "data" / "world_settlements.json"
+OUT = Path(__file__).resolve().parents[2] / "game" / "data" / "world_settlements.json"
 S = []
 
 

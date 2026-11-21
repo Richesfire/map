@@ -7,7 +7,7 @@
       命中多个时取 bbox 最小的那个；命不中就留空（CHGIS 早期年份有缺口）。
 
 用法：
-  python tools/attrib_counties.py <pref不带后缀路径> ias-core/data/counties_han.json
+  python tools/attrib_counties.py <pref不带后缀路径> game/data/counties_han.json
 """
 import json
 import math
@@ -105,7 +105,7 @@ def in_ring(x, y, ring):
 
 def main():
     base = sys.argv[1]
-    cpath = sys.argv[2] if len(sys.argv) > 2 else "ias-core/data/counties_han.json"
+    cpath = sys.argv[2] if len(sys.argv) > 2 else "game/data/counties_han.json"
     rows = read_dbf(base + ".dbf")
     polys = read_polygons(base + ".shp", len(rows))
 

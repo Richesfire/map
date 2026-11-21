@@ -8,7 +8,7 @@
   · 关/津/仓/战场这类没有县治的，直接用考订坐标，标 coord_src=考订；
   · 产物 sites_han_add.json，人工审核后再并进 sites_han.json。
 
-用法：python tools/build_sites.py ias-core/data/counties_han.json <输出.json>
+用法：python tools/build_sites.py game/data/counties_han.json <输出.json>
 """
 import json
 import math
@@ -116,9 +116,9 @@ def dist_km(lon1, lat1, lon2, lat2):
 
 
 def main():
-    src_json = sys.argv[1] if len(sys.argv) > 1 else "ias-core/data/counties_han.json"
+    src_json = sys.argv[1] if len(sys.argv) > 1 else "game/data/counties_han.json"
     exist_json = sys.argv[2] if len(sys.argv) > 2 else ""
-    out_json = sys.argv[3] if len(sys.argv) > 3 else "ias-core/data/sites_han.json"
+    out_json = sys.argv[3] if len(sys.argv) > 3 else "game/data/sites_han.json"
     counties = json.load(open(src_json, encoding="utf-8"))["counties"]
 
     out = []
@@ -172,7 +172,7 @@ def main():
 
     doc = {
         "_comment": "秦汉史事点位（长平六处 + 秦末汉初 47 处）：城邑取 CHGIS 汉县坐标，"
-                    "关/津/仓/战场为考订近似值。由 ias/tools/build_sites.py 生成，改之前先看脚本里的表。",
+                    "关/津/仓/战场为考订近似值。由 tools/map/build_sites.py 生成，改之前先看脚本里的表。",
         "version": 2,
         "sites": merged,
     }

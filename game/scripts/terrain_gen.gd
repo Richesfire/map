@@ -1,0 +1,1941 @@
+extends RefCounted
+## 世界地形的唯一真源（single source of truth）。
+##
+## 策划案 3.2 的三层结构在这里落地：
+##   ① 宏观底图   data/dem2k.bin（2.4km 全球高程，墨卡托）
+##   ② 山体特征   data/mountain_features.json（位置/峰顶/山脚/范围/走向/种子）
+##   ③ 局部高度图 全局坐标确定性噪声（同坐标同高度，不依赖玩家位置）
+##
+## 渲染、碰撞、植被、小地图、世界地图阴影全部调用本文件的函数，
+## 不允许任何模块自己读 dem.bin 另行算高度。
+
+const DEM2K_W := 16384
+const DEM2K_H := 8192
+const DEM_W := 4096
+const DEM_H := 2048
+const DEM_MIN := -11000.0
+const DEM_MAX := 9000.0
+
+const FEATURES_PATH := "res://data/raw/mountain_features.json"
+const BiomeLib := preload("res://scripts/biome_library.gd")
+const LandformDb := preload("res://scripts/landform_db.gd")
+
+# ---- 地貌类型：温度带(9) × 湿度带(5) = 45 类，高地变体再 +45 ----
+const B_LAND_MAX := 90
+const B_OCEAN := 90
+const B_ICE := 91
+const B_SNOW := 92
+const B_ROCK := 93
+const BIOME_COUNT := 94
+
+const TEMP_NAMES := ["寒带", "亚寒带", "冷温带", "温带", "暖温带", "亚热带", "热带边缘", "热带", "赤道带"]
+const MOIST_NAMES := ["荒漠", "半荒漠", "干草原", "草原", "湿润"]
+
+static var _dem: PackedByteArray = PackedByteArray()
+static var _is_merc: bool = false
+static var _gw: int = 0
+static var _gh: int = 0
+static var _lon0: float = -180.0
+static var _lon1: float = 180.0
+static var _lat0: float = 90.0
+static var _lat1: float = -90.0
+static var _mask: PackedByteArray = PackedByteArray()
+# 近场高程补丁（局部高度图）
+static var _ov: PackedByteArray = PackedByteArray()
+static var _ov_w: int = 0
+static var _ov_h: int = 0
+static var _ov_lon0: float = 0.0
+static var _ov_lon1: float = 0.0
+static var _ov_lat0: float = 90.0
+static var _ov_lat1: float = -90.0
+static var _ov_blend: float = 6.0
+static var _ov_ready: bool = false
+static var _ov_disabled: bool = false
+static var _cities: Array = []
+const MASK_W := 4096
+const MASK_H := 2048
+static var _loaded: bool = false
+static var _features: Array = []
+static var _fa: Array = []                    # 打包特征（热路径）
+static var _fseed: PackedInt32Array = PackedInt32Array()
+static var _latmin: PackedFloat32Array = PackedFloat32Array()
+static var _latmax: PackedFloat32Array = PackedFloat32Array()
+static var _load_ms: int = 0
+# 近场置换贴图（可平铺 R8）：0 平原 / 1 丘陵 / 2 山地脊 / 3 沙丘
+static var _disp: Array = []
+const DISP_PX := 64
+const DISP_AMP := 6.0
+const DISP_AMP_SCALE := 320.0
+const DISP_TILE_M := 600.0
+
+
+# =====================================================================
+#  装载
+# =====================================================================
+static func ensure_loaded() -> void:
+	if _loaded:
+		return
+	_loaded = true
+	var t0 := Time.get_ticks_msec()
+	_load_dem()
+	_load_features()
+	_load_cities()
+	_load_overlay_manifest()
+	_load_mask()       # 以前是 bake_map 的副作用，跳过那张图就没加载了 → is_water 永远 false
+	_load_ms = Time.get_ticks_msec() - t0
+	print("[地形] 真源就绪：底图 %d 字节，山体特征 %d 条，用时 %d ms"
+			% [_dem.size(), _features.size(), _load_ms])
+
+
+static func _load_overlay_manifest() -> void:
+	if _ov_disabled:
+		return
+	var f := FileAccess.open("res://data/raw/overlay.json", FileAccess.READ)
+	if f == null:
+		return
+	var js: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(js) != TYPE_DICTIONARY:
+		return
+	var p := String(js.get("path", ""))
+	if p == "":
+		return
+	load_overlay(p, float(js.get("blend_km", 6.0)))
+
+
+static func _load_dem() -> void:
+	var f := FileAccess.open("res://data/raw/dem2k.bin", FileAccess.READ)
+	if f != null:
+		_dem = f.get_buffer(f.get_length())
+		f.close()
+		_is_merc = false
+		_gw = DEM2K_W
+		_gh = DEM2K_H
+		print("[地形] 2.4km 底图 %d 字节（等距圆柱 %dx%d）" % [_dem.size(), _gw, _gh])
+		return
+	f = FileAccess.open("res://data/raw/dem.bin", FileAccess.READ)
+	if f == null:
+		print("[地形] 没有高程数据，用平地")
+		return
+	_dem = f.get_buffer(f.get_length())
+	f.close()
+	_is_merc = false
+	_gw = DEM_W
+	_gh = DEM_H
+	print("[地形] 9.8km 底图 %d 字节" % _dem.size())
+
+
+## 载入区域底图（同目录同名 .json 给出 w/h/lon0/lat0/lon1/lat1）
+## 用于「300m 真值 vs 2.4km/1.2km 生成」的 A/B/C 对照。
+static func load_custom(path: String) -> bool:
+	var meta_path := path.get_basename() + ".json"
+	if not FileAccess.file_exists(meta_path):
+		meta_path = path + ".json"
+	var jf := FileAccess.open(meta_path, FileAccess.READ)
+	if jf == null:
+		print("[地形] 缺少区域元数据：", meta_path)
+		return false
+	var meta: Variant = JSON.parse_string(jf.get_as_text())
+	jf.close()
+	if typeof(meta) != TYPE_DICTIONARY:
+		return false
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return false
+	_dem = f.get_buffer(f.get_length())
+	f.close()
+	_gw = int(meta.get("w", 0))
+	_gh = int(meta.get("h", 0))
+	_lon0 = float(meta.get("lon0", -180.0))
+	_lon1 = float(meta.get("lon1", 180.0))
+	_lat0 = float(meta.get("lat0", 90.0))
+	_lat1 = float(meta.get("lat1", -90.0))
+	_is_merc = false
+	_loaded = true
+	if _features.is_empty():
+		_load_features()
+	print("[地形] 区域底图 %s  %dx%d  lon %.2f..%.2f lat %.2f..%.2f"
+			% [path.get_file(), _gw, _gh, _lon0, _lon1, _lat0, _lat1])
+	return true
+
+
+static func _load_features() -> void:
+	var f := FileAccess.open(FEATURES_PATH, FileAccess.READ)
+	if f == null:
+		print("[地形] 没有山体特征表，只用地形底图")
+		return
+	var txt := f.get_as_text()
+	f.close()
+	var js: Variant = JSON.parse_string(txt)
+	if typeof(js) != TYPE_DICTIONARY:
+		print("[地形] 山体特征表解析失败")
+		return
+	var arr: Array = js.get("features", [])
+	for d in arr:
+		if typeof(d) != TYPE_DICTIONARY:
+			continue
+		var flon := float(d.get("lon", 0.0))
+		var flat := float(d.get("lat", 0.0))
+		var halflen := maxf(float(d.get("length_km", 200.0)) * 0.5, 1.0)
+		var halfwid := maxf(float(d.get("width_km", 60.0)) * 0.5, 1.0)
+		var az := deg_to_rad(float(d.get("azimuth", 0.0)))
+		var su := sin(az)
+		var cu := cos(az)
+		var radius := sqrt(halflen * halflen + halfwid * halfwid)
+		# 主峰在走向坐标系里的位置（可给真实峰顶坐标，缺省取山系中心）
+		var plon := float(d.get("peak_lon", flon))
+		var plat := float(d.get("peak_lat", flat))
+		var pdx := (plon - flon) * 111.32 * cos(deg_to_rad(flat))
+		var pdy := (plat - flat) * 110.54
+		var pk := float(d.get("peak", 2000.0))
+		var ft := float(d.get("foot", 200.0))
+		var shp := maxf(float(d.get("shape", 1.35)), 0.2)
+		var gr := clampf(float(d.get("grain", 0.12)), 0.0, 0.5)
+		var sd := int(d.get("seed", 1))
+		var pu := clampf(pdx * su + pdy * cu, -halflen * 0.9, halflen * 0.9)
+		var pv := clampf(pdx * cu - pdy * su, -halfwid * 0.6, halfwid * 0.6)
+		var cosl := maxf(cos(deg_to_rad(flat)), 0.02)
+		_features.append({
+			"name": String(d.get("name", "")),
+			"lon": flon, "lat": flat, "cosl": cosl,
+			"peak": pk, "foot": ft,
+			"halflen": halflen, "halfwid": halfwid,
+			"su": su, "cu": cu,
+			"shape": shp, "grain": gr, "seed": sd,
+			"pu": pu, "pv": pv,
+			"dlat": radius / 110.54 + 0.15,
+			"radius": radius,
+		})
+		var packed := PackedFloat64Array([
+			flon, flat, cosl, pk, ft, halflen, halfwid,
+			su, cu, shp, gr, pu, pv,
+		])
+		_fa.append(packed)
+		_fseed.append(sd)
+		_latmin.append(flat - radius / 110.54 - 0.2)
+		_latmax.append(flat + radius / 110.54 + 0.2)
+	print("[地形] 山体特征 %d 条" % _features.size())
+
+
+static func feature_names() -> Array:
+	ensure_loaded()
+	var out: Array = []
+	for f in _features:
+		out.append(f["name"])
+	return out
+
+
+# =====================================================================
+#  ① 宏观底图
+# =====================================================================
+static func _merc_y(lat: float) -> float:
+	var la := clampf(lat, -85.05, 85.05)
+	var r := deg_to_rad(la)
+	return (1.0 - log(tan(r) + 1.0 / cos(r)) / PI) * 0.5
+
+
+static func dem_at(lon: float, lat: float) -> float:
+	if _dem.is_empty():
+		return 0.0
+	var gw := _gw
+	var gh := _gh
+	var fx := ((lon - _lon0) / (_lon1 - _lon0) * float(gw)) - 0.5
+	var fy := ((_lat0 - lat) / (_lat0 - _lat1) * float(gh)) - 0.5
+	var x0 := int(floor(fx))
+	var y0 := int(floor(fy))
+	var tx := fx - float(x0)
+	var ty := fy - float(y0)
+	var acc := 0.0
+	var dem := _dem
+	var size := dem.size()
+	for dy in 2:
+		var py := clampi(y0 + dy, 0, gh - 1) * gw
+		var wy := ty if dy == 1 else 1.0 - ty
+		for dx in 2:
+			var i := (py + clampi(x0 + dx, 0, gw - 1)) * 2
+			if i + 1 >= size:
+				continue
+			var raw := float(dem[i]) + float(dem[i + 1]) * 256.0
+			acc += (raw / 65535.0 * (DEM_MAX - DEM_MIN) + DEM_MIN) * wy * (tx if dx == 1 else 1.0 - tx)
+	return acc
+
+
+# =====================================================================
+#  ② 山体特征层
+# =====================================================================
+## 在底图之上按“替换目标高度”抬升，而不是把峰顶海拔直接加上去，
+## 因此重叠的多个山体不会重复抬升（只会向更高的目标收敛）。
+static func _raise(lon: float, lat: float, h: float,
+		flon: float, flat: float, cosl: float, peak: float, foot: float,
+		halflen: float, halfwid: float, su: float, cu: float,
+		shape: float, grain: float, seed: int, pu: float, pv: float) -> float:
+	var dlon := lon - flon
+	if dlon > 180.0:
+		dlon -= 360.0
+	elif dlon < -180.0:
+		dlon += 360.0
+	var dx := dlon * 111.32 * cosl
+	var dy := (lat - flat) * 110.54
+	var u := dx * su + dy * cu
+	if absf(u) > halflen:
+		return h
+	var v := dx * cu - dy * su
+	if absf(v) > halfwid:
+		return h
+	# 已经高于这条山脉能抬到的上限，直接跳过（省掉两次噪声）
+	if h >= peak * 1.15:
+		return h
+
+	# 主峰 / 山脊补高：以真实峰顶为中心，沿走向拉长的高斯。
+	# 底图已经把山脉画出来了，这里只补“被平滑掉的高度”，所以窗口很小，
+	# 山脚和平原不会被整体垫高。
+	var sgu := clampf(halfwid * 0.8, 3.0, 12.0)
+	var sgv := clampf(halfwid * 0.4, 2.5, 8.0)
+	var du := (u - pu) / sgu
+	var dv := (v - pv) / sgv
+	var hub := exp(-(du * du + dv * dv))
+	if hub < 0.002:
+		return h
+	var target := h + (peak - h) * hub
+	# 主峰附近的脊状起伏
+	var g := _vnoise(u * 0.045 + 11.3, v * 0.055 - 7.7, seed + 91) * 2.0 - 1.0
+	g = 1.0 - absf(g) * 1.6
+	target += (peak - h) * hub * grain * g
+	target = minf(target, peak)
+	if target <= h:
+		return h
+	return target
+
+
+static func _raise_packed(lon: float, lat: float, h: float, f: PackedFloat64Array, seed: int) -> float:
+	return _raise(lon, lat, h, f[0], f[1], f[2], f[3], f[4], f[5], f[6],
+			f[7], f[8], f[9], f[10], seed, f[11], f[12])
+
+
+static func _feature_raise(f: Dictionary, lon: float, lat: float, h: float) -> float:
+	return _raise(lon, lat, h, float(f['lon']), float(f['lat']), float(f['cosl']),
+			float(f['peak']), float(f['foot']), float(f['halflen']), float(f['halfwid']),
+			float(f['su']), float(f['cu']), float(f['shape']), float(f['grain']),
+			int(f['seed']), float(f['pu']), float(f['pv']))
+
+
+static func _load_mask() -> void:
+	var f := FileAccess.open("res://data/raw/land_mask.bin", FileAccess.READ)
+	if f == null:
+		return
+	_mask = f.get_buffer(f.get_length())
+	f.close()
+	print("[地形] 海陆掩膜 %d 字节" % _mask.size())
+
+
+## 预烘焙地貌编号（landform_id.bin）的快速查询：撒点/装饰用。
+## 一次查表 0.5 µs，比 landform_kind 的 31 µs 便宜 60 倍；分辨率 2.3 km，够撒点用。
+## 注意：地图配色、地形网格仍然必须走 landform_kind（实时分类），别混。
+static var _kind_bin := PackedByteArray()
+
+
+static func _load_kind_bin() -> void:
+	if not _kind_bin.is_empty():
+		return
+	var f := FileAccess.open("res://data/generated/landform_id.bin", FileAccess.READ)
+	if f == null:
+		return
+	_kind_bin = f.get_buffer(f.get_length())
+	f.close()
+	print("[地形] 编号图查表 %d KB（撒点用）" % int(_kind_bin.size() / 1024))
+
+
+static func kind_baked(lon: float, lat: float, h: float = 0.0) -> int:
+	_load_kind_bin()
+	if _kind_bin.is_empty():
+		return landform_kind(lon, lat, h if h != 0.0 else dem_at(lon, lat))
+	var bh := int(sqrt(float(_kind_bin.size()) / 2.0))
+	var bw := bh * 2
+	var x := clampi(int((lon + 180.0) / 360.0 * float(bw)), 0, bw - 1)
+	var y := clampi(int((90.0 - lat) / 180.0 * float(bh)), 0, bh - 1)
+	return _kind_bin[y * bw + x]
+
+
+## 掩膜判定是否水域（世界地图用；三维地形用高度判断即可）
+static func is_water(lon: float, lat: float) -> bool:
+	if _mask.is_empty():
+		return false
+	var x := clampi(int((lon + 180.0) / 360.0 * MASK_W), 0, MASK_W - 1)
+	var y := clampi(int((90.0 - lat) / 180.0 * MASK_H), 0, MASK_H - 1)
+	return _mask[y * MASK_W + x] <= 127
+
+
+## 手工城市（策划案 3.2：城市保护范围内地表不受程序置换影响）
+static func _load_cities() -> void:
+	var f := FileAccess.open("res://data/raw/cities.json", FileAccess.READ)
+	if f == null:
+		return
+	var js: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(js) != TYPE_DICTIONARY:
+		return
+	for c in js.get("cities", []):
+		_cities.append({
+			"id": String(c.get("id", "")),
+			"name": String(c.get("name", "")),
+			"lon": float(c.get("lon", 0.0)),
+			"lat": float(c.get("lat", 0.0)),
+			"radius": float(c.get("radius_km", 1.5)),
+			"blend": maxf(float(c.get("blend_km", 4.0)), 0.2),
+			"height": float(c.get("height", 0.0)),
+			"coslat": maxf(cos(deg_to_rad(float(c.get("lat", 0.0)))), 0.05),
+		})
+	# height 为 0 的按底图自动取（dem_at 不依赖城市，不会递归）
+	for i in _cities.size():
+		var c2: Dictionary = _cities[i]
+		if float(c2["height"]) <= 0.001:
+			c2["height"] = dem_at(float(c2["lon"]), float(c2["lat"])) + 3.0
+			_cities[i] = c2
+	if not _cities.is_empty():
+		print("[地形] 手工城市 %d 座" % _cities.size())
+
+
+## 秦汉关城/邑/要地表（sites_han.json）
+static var _sites: Array = []
+static var _sites_loaded := false
+
+static func sites() -> Array:
+	if not _sites_loaded:
+		_sites_loaded = true
+		var f := FileAccess.open("res://data/raw/sites_han.json", FileAccess.READ)
+		if f != null:
+			var j = JSON.parse_string(f.get_as_text())
+			if j is Dictionary and j.has("sites"):
+				_sites = j["sites"]
+	return _sites
+
+
+## 汉书·地理志（元始二年，公元 2 年）县治点位。
+## 数据源 CHGIS V6 Time Series County Points（CC0），由 ias/tools/import_chgis_counties.py 生成。
+## 返回 [{ll: Vector2, n: 名称, t: 类型, loc: 今地}]
+static var _counties: Array = []
+static var _counties_loaded := false
+
+static func counties() -> Array:
+	if not _counties_loaded:
+		_counties_loaded = true
+		var f := FileAccess.open("res://data/raw/counties_han.json", FileAccess.READ)
+		if f != null:
+			var j = JSON.parse_string(f.get_as_text())
+			if j is Dictionary and j.has("counties"):
+				for c in j["counties"]:
+					_counties.append({
+						"ll": Vector2(float(c["lon"]), float(c["lat"])),
+						"n": String(c["n"]),
+						"t": String(c.get("t", "县")),
+						"loc": String(c.get("loc", "")),
+					})
+				print("[地图] 汉书县 %d 处（元始二年）" % _counties.size())
+	return _counties
+
+
+static func cities() -> Array:
+	ensure_loaded()
+	return _cities
+
+
+## 域外定居点（world_settlements.json）：tier 1 = 城邦/大城，tier 2 = 附邑/镇。
+## 只做地图层，不进 3D 手工城市，也不影响地形与撒点。改 JSON 即可生效，不用重烘。
+static var _world: Array = []
+static var _world_loaded := false
+
+static func world_settlements() -> Array:
+	if _world_loaded:
+		return _world
+	_world_loaded = true
+	var f := FileAccess.open("res://data/raw/world_settlements.json", FileAccess.READ)
+	if f == null:
+		return _world
+	var js: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if typeof(js) != TYPE_DICTIONARY:
+		return _world
+	var t1 := 0
+	var t2 := 0
+	var t3 := 0
+	for c in js.get("settlements", []):
+		var lon := float(c.get("lon", 0.0))
+		var lat := float(c.get("lat", 0.0))
+		var tier := int(c.get("tier", 1))
+		if tier <= 1:
+			t1 += 1
+		elif tier == 2:
+			t2 += 1
+		else:
+			t3 += 1
+		_world.append({
+			"name": String(c.get("name", "")),
+			"lon": lon, "lat": lat,
+			"tier": tier,
+			"region": String(c.get("region", "")),
+			"parent": String(c.get("parent", "")),
+			"note": String(c.get("note", "")),
+			"ll": Vector2(lon, lat),
+		})
+	if not _world.is_empty():
+		print("[地图] 域外定居点 %d 处（城 %d / 镇 %d / 邑 %d）" % [_world.size(), t1, t2, t3])
+	return _world
+
+
+## 城市权重与手工高程：x = 权重（1=完全手工地面），y = 手工高程
+static func city_blend(lon: float, lat: float) -> Vector2:
+	var best_w := 0.0
+	var best_h := 0.0
+	for i in _cities.size():
+		var c: Dictionary = _cities[i]
+		var cosl: float = c["coslat"]
+		var dx := (lon - float(c["lon"])) * 111.32 * cosl
+		var dy := (lat - float(c["lat"])) * 110.54
+		var d := sqrt(dx * dx + dy * dy)
+		var r := float(c["radius"])
+		var b := float(c["blend"])
+		if d >= r + b:
+			continue
+		var w := 1.0 - smoothstep(r, r + b, d)
+		if w > best_w:
+			best_w = w
+			best_h = float(c["height"])
+	return Vector2(best_w, best_h)
+
+
+## 载入近场补丁（同目录同名 .json 给边界）
+static func load_overlay(path: String, blend_km: float = 6.0) -> bool:
+	var meta_path := path.get_basename() + ".json"
+	if not FileAccess.file_exists(meta_path):
+		meta_path = path + ".json"
+	var jf := FileAccess.open(meta_path, FileAccess.READ)
+	if jf == null:
+		print("[地形] 近场补丁缺少元数据：", meta_path)
+		return false
+	var meta: Variant = JSON.parse_string(jf.get_as_text())
+	jf.close()
+	if typeof(meta) != TYPE_DICTIONARY:
+		return false
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return false
+	_ov = f.get_buffer(f.get_length())
+	f.close()
+	_ov_w = int(meta.get("w", 0))
+	_ov_h = int(meta.get("h", 0))
+	_ov_lon0 = float(meta.get("lon0", -180.0))
+	_ov_lon1 = float(meta.get("lon1", 180.0))
+	_ov_lat0 = float(meta.get("lat0", 90.0))
+	_ov_lat1 = float(meta.get("lat1", -90.0))
+	_ov_blend = maxf(blend_km, 0.5)
+	_ov_ready = _ov.size() == _ov_w * _ov_h * 2
+	print("[地形] 近场补丁 %s  %dx%d  lon %.2f..%.2f lat %.2f..%.2f  融合 %.1f km"
+			% [path.get_file(), _ov_w, _ov_h, _ov_lon0, _ov_lon1, _ov_lat0, _ov_lat1, _ov_blend])
+	return _ov_ready
+
+
+static func disable_overlay() -> void:
+	_ov_ready = false
+	_ov_disabled = true
+	_ov = PackedByteArray()
+	print("[地形] 近场补丁已关闭")
+
+
+## 补丁内双线性采样
+static func overlay_at(lon: float, lat: float) -> float:
+	if not _ov_ready:
+		return 0.0
+	var fx := ((lon - _ov_lon0) / (_ov_lon1 - _ov_lon0) * float(_ov_w)) - 0.5
+	var fy := ((_ov_lat0 - lat) / (_ov_lat0 - _ov_lat1) * float(_ov_h)) - 0.5
+	var x0 := int(floor(fx))
+	var y0 := int(floor(fy))
+	var tx := fx - float(x0)
+	var ty := fy - float(y0)
+	var acc := 0.0
+	var ov := _ov
+	var size := ov.size()
+	for dy in 2:
+		var py := clampi(y0 + dy, 0, _ov_h - 1) * _ov_w
+		var wy := ty if dy == 1 else 1.0 - ty
+		for dx in 2:
+			var i := (py + clampi(x0 + dx, 0, _ov_w - 1)) * 2
+			if i + 1 >= size:
+				continue
+			var raw := float(ov[i]) + float(ov[i + 1]) * 256.0
+			acc += (raw / 65535.0 * (DEM_MAX - DEM_MIN) + DEM_MIN) * wy * (tx if dx == 1 else 1.0 - tx)
+	return acc
+
+
+## 补丁权重：越靠近补丁边缘越小，0 表示完全不用补丁
+static func overlay_weight(lon: float, lat: float) -> float:
+	if not _ov_ready:
+		return 0.0
+	if lon < _ov_lon0 or lon > _ov_lon1 or lat > _ov_lat0 or lat < _ov_lat1:
+		return 0.0
+	var cosl := maxf(cos(deg_to_rad(lat)), 0.05)
+	var d_w := (lon - _ov_lon0) * 111.32 * cosl
+	var d_e := (_ov_lon1 - lon) * 111.32 * cosl
+	var d_n := (_ov_lat0 - lat) * 110.54
+	var d_s := (lat - _ov_lat1) * 110.54
+	var d := minf(minf(d_w, d_e), minf(d_n, d_s))
+	return smoothstep(0.0, _ov_blend, d)
+
+
+## 底图（有近场补丁时按权重混合）
+static func base_height(lon: float, lat: float) -> float:
+	var h := dem_at(lon, lat)
+	if _ov_ready:
+		var w := overlay_weight(lon, lat)
+		if w > 0.001:
+			h = lerpf(h, overlay_at(lon, lat), w)
+	return h
+
+
+## 只叠山体特征（不含底图与细节）
+static func _features_only(h: float, lon: float, lat: float) -> float:
+	for i in _fa.size():
+		if lat < _latmin[i] or lat > _latmax[i]:
+			continue
+		h = _raise_packed(lon, lat, h, _fa[i], _fseed[i])
+	return h
+
+
+## 宏观地势：底图（含近场补丁）+ 山体特征（不含细节噪声）—— 地图阴影用的就是它
+static func macro_height(lon: float, lat: float) -> float:
+	ensure_loaded()
+	return _macro(lon, lat, city_blend(lon, lat))
+
+
+static func _macro(lon: float, lat: float, cb: Vector2) -> float:
+	var h := _features_only(base_height(lon, lat), lon, lat)
+	if cb.x > 0.001:
+		h = lerpf(h, cb.y, cb.x)
+	return h
+
+
+## 同上，但强制不用近场补丁（接缝对照用）
+static func macro_height_no_ov(lon: float, lat: float) -> float:
+	ensure_loaded()
+	return _features_only(dem_at(lon, lat), lon, lat)
+
+
+# =====================================================================
+#  ③ 局部高度图（全局坐标确定性噪声）
+# =====================================================================
+static func _hash(ix: int, iy: int, seed: int) -> float:
+	var n: int = (ix * 73856093) ^ (iy * 19349663) ^ (seed * 83492791)
+	n = (n ^ (n >> 13)) * 1274126177
+	n = n ^ (n >> 16)
+	return float(n & 0xFFFFFF) / 16777215.0
+
+
+static func _vnoise(x: float, y: float, seed: int) -> float:
+	var ix := int(floor(x))
+	var iy := int(floor(y))
+	var fx := x - float(ix)
+	var fy := y - float(iy)
+	var sx := fx * fx * (3.0 - 2.0 * fx)
+	var sy := fy * fy * (3.0 - 2.0 * fy)
+	var a := _hash(ix, iy, seed)
+	var b := _hash(ix + 1, iy, seed)
+	var c := _hash(ix, iy + 1, seed)
+	var d := _hash(ix + 1, iy + 1, seed)
+	return lerpf(lerpf(a, b, sx), lerpf(c, d, sx), sy)
+
+
+static func _fbm(x: float, y: float, seed: int, octaves: int) -> float:
+	var amp := 0.5
+	var freq := 1.0
+	var acc := 0.0
+	var norm := 0.0
+	for i in octaves:
+		acc += (_vnoise(x * freq, y * freq, seed + i * 131) * 2.0 - 1.0) * amp
+		norm += amp
+		amp *= 0.5
+		freq *= 2.03
+	if norm <= 0.0:
+		return 0.0
+	return acc / norm
+
+
+## 可平铺的 2D 值噪声：period 为格点数，超出即回绕 → 贴图无缝
+static func _tile_vnoise(x: float, y: float, period: int, seed: int) -> float:
+	var ix := int(floor(x))
+	var iy := int(floor(y))
+	var fx := x - float(ix)
+	var fy := y - float(iy)
+	var sx := fx * fx * (3.0 - 2.0 * fx)
+	var sy := fy * fy * (3.0 - 2.0 * fy)
+	var x0 := ((ix % period) + period) % period
+	var y0 := ((iy % period) + period) % period
+	var x1 := (x0 + 1) % period
+	var y1 := (y0 + 1) % period
+	var a := _hash(x0, y0, seed)
+	var b := _hash(x1, y0, seed)
+	var c := _hash(x0, y1, seed)
+	var d := _hash(x1, y1, seed)
+	return lerpf(lerpf(a, b, sx), lerpf(c, d, sx), sy)
+
+
+static func _tile_fbm(x: float, y: float, period: int, seed: int, ridged: bool) -> float:
+	var v := _tile_vnoise(x, y, period, seed) * 0.65
+	v += _tile_vnoise(x * 2.0, y * 2.0, period * 2, seed + 7) * 0.35
+	if ridged:
+		v = 1.0 - absf(v * 2.0 - 1.0)
+	return clampf(v, 0.0, 1.0)
+
+
+## 四张置换贴图：平原(缓)、丘陵(中)、山地(脊)、沙丘(波)
+static func _build_disp() -> void:
+	if not _disp.is_empty():
+		return
+	var seeds := [1101, 2203, 3307, 4409, 5519, 6607, 7717, 8803, 9901, 12007, 13043]
+	var ridged := [false, false, true, false, false, true, true, false, true, true, false]
+	var total := 11
+	for k in total:
+		var buf := PackedByteArray()
+		buf.resize(DISP_PX * DISP_PX)
+		for y in DISP_PX:
+			for x in DISP_PX:
+				var u := float(x) / float(DISP_PX)
+				var v := float(y) / float(DISP_PX)
+				var val := _tile_fbm(u * 8.0, v * 8.0, 8, seeds[k], ridged[k])
+				if k == 3:
+					# 沙丘：叠一条低频波
+					val = clampf(val * 0.55 + 0.45 * (0.5 + 0.5 * sin(u * TAU * 3.0 + val * 2.0)), 0.0, 1.0)
+				elif k == 4:
+					# 水面/湿地的缓波
+					val = clampf(val * 0.6 + 0.4 * (0.5 + 0.5 * sin(v * TAU * 2.0 + val * 3.0)), 0.0, 1.0)
+				elif k == 6:
+					# 喀斯特：溶蚀洼地 + 石芽
+					var pit := _tile_vnoise(u * 26.0, v * 26.0, 26, seeds[k])
+					val = clampf(val * 0.55 + 0.45 * (1.0 - smoothstep(0.42, 0.75, pit)), 0.0, 1.0)
+				elif k == 7:
+					# 雅丹：平行风蚀垄
+					val = clampf(val * 0.5 + 0.5 * (0.5 + 0.5 * sin(u * TAU * 7.0 + val * 2.4)), 0.0, 1.0)
+				elif k == 8:
+					# 黄土：树枝状沟壑
+					var gx := _tile_vnoise(u * 14.0, v * 3.0, 14, seeds[k])
+					val = clampf(1.0 - absf(gx * 2.0 - 1.0) * 1.6, 0.0, 1.0) * 0.75 + val * 0.25
+				elif k == 9:
+					# 冰裂/碎石：多组方向交错的裂隙
+					var c1 := _tile_vnoise(u * 11.0, v * 11.0, 11, seeds[k])
+					var c2 := _tile_vnoise(u * 17.0 + 5.0, v * 17.0 - 3.0, 17, seeds[k] + 1)
+					var cr := minf(c1, c2)
+					val = clampf(1.0 - smoothstep(0.16, 0.42, cr) * 1.25 + val * 0.30, 0.0, 1.0)
+				elif k == 10:
+					# 缓波：低频大起伏（平原/盆地用）
+					val = clampf(0.35 + 0.65 * _tile_fbm(u * 2.2, v * 2.2, 4, seeds[k], false), 0.0, 1.0)
+				buf[y * DISP_PX + x] = int(clampf(val, 0.0, 1.0) * 255.0)
+		_disp.append(buf)
+	print("[地形] 置换贴图 %d 张（%dpx，平铺 %.0f m）" % [_disp.size(), DISP_PX, DISP_TILE_M])
+
+
+## 双线性采样置换贴图（可平铺），返回 0..1
+static func _disp_at(k: int, u: float, v: float) -> float:
+	var b: PackedByteArray = _disp[k]
+	var fx := u * float(DISP_PX)
+	var fy := v * float(DISP_PX)
+	var x0 := int(floor(fx))
+	var y0 := int(floor(fy))
+	var tx := fx - float(x0)
+	var ty := fy - float(y0)
+	var xa := ((x0 % DISP_PX) + DISP_PX) % DISP_PX
+	var ya := ((y0 % DISP_PX) + DISP_PX) % DISP_PX
+	var xb := (xa + 1) % DISP_PX
+	var yb := (ya + 1) % DISP_PX
+	var c00 := float(b[ya * DISP_PX + xa])
+	var c10 := float(b[ya * DISP_PX + xb])
+	var c01 := float(b[yb * DISP_PX + xa])
+	var c11 := float(b[yb * DISP_PX + xb])
+	return lerpf(lerpf(c00, c10, tx), lerpf(c01, c11, tx), ty) / 255.0
+
+
+## 细节起伏：细尺度 ~1km（近处）+ 粗尺度 ~6km（远景也能看出山脊沟谷）
+static func _amp(h: float) -> float:
+	if h > 2200.0:
+		return 32.0
+	if h > 900.0:
+		return 24.0
+	if h > 350.0:
+		return 16.0
+	if h > 80.0:
+		return 13.0
+	return 10.0
+
+
+static func detail_fine(lon: float, lat: float, h: float) -> float:
+	if h < -2.0:
+		return 0.0
+	_build_disp()
+	var mx := lon * 111320.0 * cos(deg_to_rad(lat))
+	var my := lat * 110540.0
+	var u := mx / DISP_TILE_M
+	var v := my / DISP_TILE_M
+
+	# 按高程连续混合三类地形（不会在边界出现台阶）
+	var w_ridge := smoothstep(700.0, 1700.0, h)
+	var w_hill := smoothstep(120.0, 620.0, h) * (1.0 - w_ridge)
+	var w_flat := maxf(1.0 - w_ridge - w_hill, 0.0)
+	# 干燥低地（草原/荒漠）用沙丘纹
+	var w_dune := 0.0
+	var moist := _vnoise(lon * 0.42 + 100.0, lat * 0.42 - 30.0, 2027)
+	var belt := clampf(1.0 - absf(absf(lat) - 25.0) / 13.0, 0.0, 1.0)
+	if h < 900.0:
+		w_dune = clampf((0.42 - moist * (1.0 - 0.62 * belt)) * 3.0, 0.0, 1.0) * (1.0 - w_hill - w_ridge)
+		w_flat = maxf(w_flat - w_dune, 0.0)
+
+	var dv := 0.0
+	# 置换贴图是“近处细节”，振幅必须跟波长匹配：600m 尺度只给 1.5~4m
+	# 振幅/平铺尺度/用哪两张贴图，全部来自该地貌的配置
+	var kind := landform_kind(lon, lat, h)
+	var prof: Dictionary = BiomeLib.profile_for(kind)
+	# 简化：每种地貌只用一张置换图，振幅/尺度全局统一，起伏性格由贴图本身表达
+	var ids: Array = prof["disp_tiles"]
+	var u2 := mx / DISP_AMP_SCALE
+	var v2 := my / DISP_AMP_SCALE
+	dv = _disp_at(int(ids[0]), u2, v2)
+	var d := (dv - 0.5) * 2.0 * DISP_AMP
+
+	# 坡度越大越“崎岖”：用底图梯度估个坡，陡坡加脊状起伏、平地保持平缓
+	var dd := 0.0018
+	var h_e := dem_at(lon + dd, lat)
+	var h_n := dem_at(lon, lat + dd)
+	var kmk := dd * 111.0
+	var slope := sqrt(pow((h_e - h) / kmk, 2.0) + pow((h_n - h) / kmk, 2.0))
+	var sk := clampf(slope / 260.0, 0.0, 1.0)
+	var x := lon * 111.32 * cos(deg_to_rad(lat)) * 0.001
+	var y := lat * 110.54 * 0.001
+	var rough := 1.0 - absf(_fbm(x * 2.6, y * 2.6, 551, 3) * 2.0 - 1.0)
+	var fine := _vnoise(x * 14.0, y * 14.0, 733)
+	d += (rough - 0.5) * 2.0 * (1.2 + DISP_AMP * 0.35 * sk)
+	d += (fine - 0.5) * 2.0 * (0.4 + DISP_AMP * 0.12 * sk)
+	return d
+
+
+# =====================================================================
+#  地形模块拼装（stamp）：小 heightfield 按格子摆放、旋转、叠到宏观地形上
+# =====================================================================
+const CELL_M := 2048.0          # 格子边长（米，x=经度方向、y=纬度方向）
+const SN := 129                 # 模块贴图分辨率
+const SN_F := 129.0
+const STAMP_KINDS := 6          # 0 山脊 / 1 孤峰 / 2 V谷 / 3 台地 / 4 缓丘 / 5 陡坎
+## 近景只加视觉细节，不改宏观地形 —— 模块振幅置 0（按《地貌分类系统》第 48/160 条）
+const STAMP_SCALE := 0.0
+
+static var _stamp_tex: Array = []
+static var _cell_cache: Dictionary = {}
+
+## 模块贴图：返回 -1..1 的高度（未乘振幅），边缘已压到 0
+static func _build_stamp(kind: int) -> PackedFloat32Array:
+	var a := PackedFloat32Array()
+	a.resize(SN * SN)
+	for j in SN:
+		for i in SN:
+			var u := (float(i) + 0.5) / SN_F * 2.0 - 1.0
+			var v := (float(j) + 0.5) / SN_F * 2.0 - 1.0
+			var r := sqrt(u * u + v * v)
+			var val := 0.0
+			match kind:
+				0:
+					# 山脊：一条略微弯曲的脊线，两侧下切
+					var d := absf(v - 0.32 * sin(u * 3.4))
+					val = maxf(0.0, 1.0 - d * 3.0) * (0.62 + 0.55 * _vnoise(u * 4.0, v * 4.0, 11))
+					val *= 0.75 + 0.35 * (1.0 - absf(u))
+				1:
+					# 孤峰：锥形 + 噪声
+					val = pow(maxf(0.0, 1.0 - r), 1.2) * (0.55 + 0.65 * _vnoise(u * 5.0, v * 5.0, 12))
+				2:
+					# V 形谷（负高度）
+					var d2 := absf(v - 0.28 * sin(u * 2.6))
+					val = -maxf(0.0, 1.0 - d2 * 2.4) * (0.65 + 0.45 * _vnoise(u * 3.0, v * 3.0, 13))
+				3:
+					# 台地：平顶 + 陡边
+					val = smoothstep(0.92, 0.62, r) * (0.88 + 0.22 * _vnoise(u * 2.0, v * 2.0, 14))
+				4:
+					# 缓丘
+					val = pow(maxf(0.0, 1.0 - r * r), 1.4) * (0.82 + 0.32 * _vnoise(u * 2.5, v * 2.5, 15))
+				5:
+					# 陡坎：一侧高、一侧低，中间陡降
+					val = smoothstep(-0.30, 0.30, v) * (0.85 + 0.25 * _vnoise(u * 3.0, v * 3.0, 16))
+			var edge := 1.0 - smoothstep(0.74, 1.0, maxf(absf(u), absf(v)))
+			a[j * SN + i] = val * edge
+	return a
+
+
+static func _ensure_stamps() -> void:
+	if not _stamp_tex.is_empty():
+		return
+	for k in STAMP_KINDS:
+		_stamp_tex.append(_build_stamp(k))
+	print("[地形] 地形模块 %d 种就绪" % STAMP_KINDS)
+
+
+static func _sample_stamp(k: int, u: float, v: float) -> float:
+	var a: PackedFloat32Array = _stamp_tex[k]
+	var fx := (u * 0.5 + 0.5) * SN_F - 0.5
+	var fy := (v * 0.5 + 0.5) * SN_F - 0.5
+	var x0 := int(floor(fx))
+	var y0 := int(floor(fy))
+	var tx := fx - float(x0)
+	var ty := fy - float(y0)
+	var xa := clampi(x0, 0, SN - 1)
+	var xb := clampi(x0 + 1, 0, SN - 1)
+	var ya := clampi(y0, 0, SN - 1) * SN
+	var yb := clampi(y0 + 1, 0, SN - 1) * SN
+	var c00 := a[ya + xa]
+	var c10 := a[ya + xb]
+	var c01 := a[yb + xa]
+	var c11 := a[yb + xb]
+	return lerpf(lerpf(c00, c10, tx), lerpf(c01, c11, tx), ty)
+
+
+## 该格子里放哪些模块（确定性：只由格子坐标决定）
+static func _cell_stamps(cx: int, cy: int) -> Array:
+	var key := Vector2i(cx, cy)
+	if _cell_cache.has(key):
+		return _cell_cache[key]
+	_ensure_stamps()
+	var out: Array = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(key) ^ 0x9E3779B9
+
+	# 该格子的宏观海拔与纬度（决定放山还是放丘）
+	var clat := ((float(cy) + 0.5) * CELL_M) / 110540.0
+	var clon := ((float(cx) + 0.5) * CELL_M) / 111320.0
+	var hh := macro_height(clon, clat)
+
+	var n := 0
+	if hh > 1500.0:
+		n = 2
+	elif hh > 700.0:
+		n = rng.randi_range(1, 2)
+	elif hh > 250.0:
+		n = 1 if rng.randf() < 0.75 else 0
+	else:
+		n = 1 if rng.randf() < 0.35 else 0
+
+	for i in n:
+		var kind := 4
+		var amp := 12.0
+		if hh > 2600.0:
+			kind = [0, 0, 1, 1, 3, 5][rng.randi_range(0, 5)]
+			amp = rng.randf_range(140.0, 240.0)
+		elif hh > 1500.0:
+			kind = [0, 1, 2, 3, 5][rng.randi_range(0, 4)]
+			amp = rng.randf_range(90.0, 170.0)
+		elif hh > 700.0:
+			kind = [0, 1, 2, 4][rng.randi_range(0, 3)]
+			amp = rng.randf_range(40.0, 90.0)
+		elif hh > 250.0:
+			kind = [2, 4, 5][rng.randi_range(0, 2)]
+			amp = rng.randf_range(15.0, 40.0)
+		else:
+			kind = [2, 4][rng.randi_range(0, 1)]
+			amp = rng.randf_range(6.0, 18.0)
+		# 谷地是负高度
+		if kind == 2:
+			amp = -amp * 0.8
+
+		var size := rng.randf_range(950.0, 1500.0)
+		var sx := (float(cx) + rng.randf_range(0.28, 0.72)) * CELL_M
+		var sy := (float(cy) + rng.randf_range(0.28, 0.72)) * CELL_M
+		out.append({
+			"kind": kind, "amp": amp, "size": size,
+			"x": sx, "y": sy, "rot": rng.randf() * TAU,
+			"cos": cos(rng.randf() * TAU), "sin": sin(rng.randf() * TAU),
+		})
+	_cell_cache[key] = out
+	return out
+
+
+## 查询某点被模块抬升/压低多少米
+static func stamps_height(lon: float, lat: float) -> float:
+	if STAMP_SCALE <= 0.0:
+		return 0.0
+	var mx := lon * 111320.0
+	var my := lat * 110540.0
+	var cx := int(floor(mx / CELL_M))
+	var cy := int(floor(my / CELL_M))
+	var add := 0.0
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			for s in _cell_stamps(cx + dx, cy + dy):
+				var px: float = mx - float(s["x"])
+				var py: float = my - float(s["y"])
+				var c: float = s["cos"]
+				var sn: float = s["sin"]
+				# 反向旋转到模块局部坐标
+				var lx := px * c + py * sn
+				var ly := -px * sn + py * c
+				var half: float = float(s["size"]) * 0.5
+				var u := lx / half
+				var v := ly / half
+				if absf(u) > 1.0 or absf(v) > 1.0:
+					continue
+				var w := 1.0 - smoothstep(0.74, 1.0, maxf(absf(u), absf(v)))
+				add += _sample_stamp(int(s["kind"]), u, v) * float(s["amp"]) * w * STAMP_SCALE
+	return add
+
+
+# =====================================================================
+#  地貌形态分类（《地貌分类系统》第三节的 12 个一级地貌）
+# =====================================================================
+const LF_PLAIN := 0
+const LF_HILL := 1
+const LF_MOUNTAIN := 2
+const LF_PLATEAU := 3
+const LF_BASIN := 4
+const LF_VALLEY := 5
+const LF_DESERT := 6
+const LF_STEPPE := 7
+const LF_FOREST := 8
+const LF_WETLAND := 9
+const LF_ICE := 10
+const LF_COAST := 11
+const LF_KARST := 12
+const LF_YARDANG := 13
+const LF_LOESS := 14
+const LF_DUNE := 15
+const LF_GLACIAL := 16
+const LF_DELTA := 17
+const LF_MTN_GRANITE := 18
+const LF_MTN_KARST := 19
+const LF_MTN_LOESS := 20
+const LF_MTN_VOLCANIC := 21
+const LF_MTN_ICE := 22
+const LF_HILL_RED := 23
+const LF_HILL_LOESS := 24
+const LF_HILL_DANXIA := 25
+const LF_DESERT_SAND := 26
+const LF_DESERT_GOBI := 27
+const LF_DESERT_SALT := 28
+const LF_TAIGA := 29        # 亚寒带针叶林（西伯利亚/加拿大/北欧）
+const LF_TUNDRA := 30       # 苔原（极地边缘、高山苔原）
+const LF_COUNT := LandformDb.COUNT
+
+## 地貌代表色：表在 landform_db.gd（唯一事实表）
+const LF_COLORS := LandformDb.COLORS
+
+
+static func landform_color(kind: int) -> Color:
+	return LF_COLORS[clampi(kind, 0, LF_COLORS.size() - 1)]
+
+
+const MAT_NAMES := ["壤土", "砂质", "岩质"]
+
+
+## 地貌材质：0 壤土 / 1 砂质 / 2 岩质（低频噪声，成片分布）
+static func landform_material(lon: float, lat: float) -> int:
+	var v := _vnoise(lon * 2.3 + 41.0, lat * 2.3 - 17.0, 8081)
+	if v > 0.66:
+		return 2
+	if v < 0.34:
+		return 1
+	return 0
+
+
+## 地貌名字：表在 landform_db.gd
+const LF_NAMES := LandformDb.NAMES
+
+
+## 地貌形态：由海拔、坡度、相对起伏和气候代理共同决定。
+## 只用于选近景资源，不参与宏观高度。
+## 坡度/起伏的取样半径（度）：试过 0.0225（底图一格），分类结果几乎不变，
+## 说明现在 2 km 尺度上的“散点”就是坡度过阈值的真实轮廓，不是采样噪声，故保持原值。
+const LF_SLOPE_DD := 0.0135
+
+
+static func landform_kind(lon: float, lat: float, h: float) -> int:
+	# 极端纬度：等距圆柱投影在这里把整行拉成一条线，统一按冰盖处理，避免出现拉伸色块
+	if lat > 84.0 or lat < -84.0:
+		return LF_ICE
+	# 水：按高程判（海岸线跟 DEM 等高线走，任何倍率都平滑）。
+	# 曾经用 10 km 海陆掩膜判浅水 → 60 倍以上海岸是台阶、还和水线错位。
+	# 低于海平面的内陆洼地（约旦河谷/死海/死亡谷/阿法尔/盖塔拉/吐鲁番）用名单排除。
+	if h < -2.0 and not _in_deep_basin(lon, lat):
+		return LF_COAST
+	var alat := absf(lat)
+	# 极地冰盖：边界按经度起伏（真实冰缘受洋流影响，大西洋侧更北、太平洋侧更南）
+	var edge_n := _vnoise(lon * 0.055 + 11.0, 0.0, 4242) - 0.5
+	var edge_n2 := _vnoise(lon * 0.17 - 3.0, 1.7, 5151) - 0.5
+	var ice_north := 71.0 + edge_n * 9.0 + edge_n2 * 3.0
+	var ice_south := -59.0 + edge_n * 7.0 + edge_n2 * 3.0
+	if lat > ice_north:
+		return LF_COAST if is_water(lon, lat) else LF_ICE
+	if lat < ice_south:
+		return LF_COAST if is_water(lon, lat) else LF_ICE
+	if alat > 73.0 and h < 500.0:
+		return LF_ICE
+	if h > 5800.0 - maxf(alat - 30.0, 0.0) * 110.0:
+		return LF_ICE
+	# 注意：低地（0–8 m）不再算海岸。以前 h<8 一律算 id 11，而 id 11 在着色器里
+	# 就是海水蓝，于是江苏/渤海那种 2–5 米的平原整片变成海。现在低地按
+	# 平原/三角洲/湿地走，id 11 只表示真正的水。
+
+	# 坡度与相对起伏（用 2.5 km 邻域的高低差近似，约等于底图一个格子）
+	var dd := LF_SLOPE_DD
+	var h_e := dem_at(lon + dd, lat)
+	var h_w := dem_at(lon - dd, lat)
+	var h_n := dem_at(lon, lat + dd)
+	var h_s := dem_at(lon, lat - dd)
+	var km := dd * 111.0
+	var slope := sqrt(pow((h_e - h_w) / (2.0 * km), 2.0) + pow((h_n - h_s) / (2.0 * km), 2.0))
+	var hi := maxf(maxf(h_e, h_w), maxf(h_n, h_s))
+	var lo := minf(minf(h_e, h_w), minf(h_n, h_s))
+	var relief := hi - lo
+
+	var m := moist_at(lon, lat)
+	# 分类用的温度不带高频噪声，否则逐顶点在阈值上来回跳，地表会出同心环带
+	var t := 28.0 - 0.42 * absf(lat) - 0.0062 * maxf(h, 0.0)
+
+	# 喀斯特排在山区判定之前：峰丛本来就陡，但成因不同
+	# 喀斯特只在中国西南（桂黔滇）与中南半岛北部出现，不再全球热带都算
+	# 喀斯特区：边界用噪声抖动，避免出现矩形
+	# 区域边界抖动：单层噪声是圆斑，边界会变成"人工圆"；改用 3–4 层 fbm，边界是碎的
+	var kj := _fbm(lon * 0.9, lat * 0.9, 6061, 2) * 1.8
+	var karst_region := (lon + kj > 104.0 and lon + kj < 112.5 and lat + kj > 21.0 and lat + kj < 29.0)
+	if karst_region and m > 0.45 and h > 60.0 and h < 1800.0 and relief < 700.0:
+		return LF_KARST
+
+	# 黄土高原：区域优先（水热条件不适用，这里是风积黄土堆积区）
+	var lj := _fbm(lon * 0.7 + 3.0, lat * 0.7 - 2.0, 7072, 2) * 2.2
+	if lat + lj > 33.5 and lat + lj < 40.5 and lon + lj > 100.0 and lon + lj < 114.5 \
+			and h > 200.0 and h < 1900.0 and relief < 800.0:
+		return LF_LOESS if slope < 12.0 else LF_MTN_LOESS
+
+	# 干旱区优先判定（否则低平的沙漠会被判成丘陵/平原）
+	# 盐碱：只在极干、极平的内陆盆地（柴达木、死海、盐湖周边），不能泛化到三大沙漠
+	if m < 0.10 and relief < 120.0 and h < 4500.0 and slope < 2.0:
+		return LF_DESERT_SALT
+	if m < 0.38 and h < 2200.0 and relief < 400.0:
+		if m < 0.24:
+			return LF_DESERT_GOBI
+		if m < 0.31:
+			return LF_DESERT_SAND
+		return LF_DUNE if slope < 6.0 else LF_DESERT_GOBI
+
+	# 起伏大 → 山地；中等 → 丘陵
+	if slope > 22.0 or relief > 700.0:
+		# 高海拔山谷 → 冰川谷
+		if h > 4500.0:
+			return LF_GLACIAL
+		# 山地按岩性/成因细分
+		if h > 3200.0:
+			return LF_MTN_ICE
+		if karst_region and m > 0.45:
+			return LF_MTN_KARST
+		if lat > 33.0 and lat < 40.5 and lon > 100.0 and lon < 114.5 and m > 0.18 and m < 0.46 and h < 2200.0:
+			return LF_MTN_LOESS
+		if _vnoise(lon * 0.21 + 13.0, lat * 0.21 - 5.0, 9917) > 0.90:
+			return LF_MTN_VOLCANIC
+		return LF_MTN_GRANITE
+	if slope > 7.0 or relief > 220.0:
+		# 红壤只在中国南方与中南半岛（以前是全球热带，亚马逊/印度/东南亚全变红点）
+		var rj := _fbm(lon * 0.9 + 5.0, lat * 0.9 - 3.0, 5150, 2) * 1.8
+		var red_region := (lon + rj > 100.0 and lon + rj < 125.0 and lat + rj > 15.0 and lat + rj < 33.0)
+		if red_region and t > 15.0 and m > 0.50:
+			return LF_HILL_RED
+		if lat > 33.0 and lat < 40.5 and lon > 100.0 and lon < 114.5 and m > 0.18 and m < 0.46:
+			return LF_HILL_LOESS
+		if relief > 180.0 and slope > 12.0 and h < 900.0:
+			return LF_HILL_DANXIA
+		return LF_HILL
+
+	# —— 特殊地貌（都是相对平坦但成因不同的区域）——
+	# 雅丹/风蚀垄：极干旱、低平
+	if m < 0.14 and h < 1400.0 and slope < 3.0:
+		return LF_YARDANG
+	# 沙丘：干旱、平坦、低海拔
+	if m < 0.20 and h < 900.0 and slope < 1.5:
+		return LF_DUNE
+	# 黄土：中纬半干旱、台地边缘
+	if lat > 33.0 and lat < 40.5 and lon > 100.0 and lon < 114.5 and m > 0.20 and m < 0.46 and h > 250.0 and h < 1700.0 and slope < 5.0:
+		return LF_LOESS
+	# 三角洲：只留真正贴着海/大湖的低平河口（以前"h<25 且湿润"把整个渤海平原
+	# 判成三角洲，地图上东部看起来像海）
+	if h < 20.0 and slope < 1.0 and m > 0.55 and _near_sea(lon, lat, 0.5):
+		return LF_DELTA
+	# 高而平 → 高原
+	if h > 1200.0:
+		return LF_PLATEAU
+	# 局部低洼 → 盆地
+	if h < (h_e + h_w + h_n + h_s) * 0.25 - 25.0:
+		return LF_BASIN
+	# 干旱区
+	if m < 0.12 and h < 1200.0:
+		return LF_DESERT_SALT
+	if m < 0.18:
+		return LF_DESERT_GOBI
+	if m < 0.24:
+		return LF_DESERT_SAND
+	if m < 0.30 and absf(lat) > 24.0 and absf(lat) < 45.0:
+		return LF_DESERT_GOBI
+	# 湿地：必须是真正的低洼积水（比四周平均低），不能把整片湿润平原都算进来
+	if m > 0.75 and slope < 0.8 and h < 120.0 and relief < 40.0 \
+			and h < (h_e + h_w + h_n + h_s) * 0.25 - 1.5:
+		return LF_WETLAND
+	# 高纬蒸发弱 → 有效湿度更高（以前按同一套湿度判，西伯利亚/加拿大全被画成草原）
+	var m2 := clampf(m + maxf(absf(lat) - 40.0, 0.0) * 0.0065, 0.0, 1.0)
+	# 平坦低地：先看冷不冷（苔原 / 针叶林），再按干湿分草原 / 平原
+	if slope < 1.5 and relief < 30.0 and h < 600.0:
+		if t < -3.0:
+			return LF_TUNDRA
+		if t < 5.0 and m2 > 0.40:
+			return LF_TAIGA
+		if t < 10.0 or m2 < 0.42:
+			return LF_STEPPE
+		if m2 < 0.80:
+			return LF_PLAIN
+	# 温度带区分苔原 / 针叶林 / 草原 / 森林
+	if t < -3.0:
+		return LF_TUNDRA
+	if t < 5.0 and m2 > 0.40:
+		return LF_TAIGA
+	if m2 < 0.45:
+		return LF_STEPPE
+	return LF_FOREST
+
+
+## 低于海平面、但不是海的内陆洼地（按高程判水后必须排除，否则会被涂成海）
+const DEEP_LAND_BOXES := [
+	[34.7, 36.3, 29.4, 33.6],     # 约旦河谷 / 死海 / 加利利海
+	[-117.6, -115.9, 34.8, 37.2], # 加州死亡谷
+	[40.3, 42.6, 10.6, 14.2],     # 埃塞俄比亚阿法尔
+	[25.8, 29.2, 28.8, 31.2],     # 埃及盖塔拉洼地
+	[88.6, 89.9, 41.6, 43.4],     # 吐鲁番盆地
+]
+
+
+static func _in_deep_basin(lon: float, lat: float) -> bool:
+	for b in DEEP_LAND_BOXES:
+		if lon > b[0] and lon < b[1] and lat > b[2] and lat < b[3]:
+			return true
+	return false
+
+
+## 附近（半径 deg 度，8 个方向）有没有水：给"三角洲"用。
+## 用高程判（h < -2），不用 10 km 海陆掩膜——掩膜会把三角洲切成方块（60 倍以上很明显）。
+static func _near_sea(lon: float, lat: float, deg: float = 0.5) -> bool:
+	var cosl := maxf(cos(deg_to_rad(lat)), 0.2)
+	for k in 8:
+		var a := TAU * float(k) / 8.0
+		if dem_at(lon + cos(a) * deg / cosl, lat + sin(a) * deg) < -2.0:
+			return true
+	return false
+
+
+## 局部地貌：域扭曲 + 脊状多重分形。
+## 不追求和真实地形一致，只要求在玩家周围长出血肉：山有脊、谷有沟、平原是缓丘。
+static func landform(lon: float, lat: float, h: float) -> float:
+	var mx := lon * 111320.0 * cos(deg_to_rad(lat))
+	var my := lat * 110540.0
+	# 域扭曲：让山脊不是直的
+	var w1 := _fbm(mx * 0.00033, my * 0.00033, 6101, 3)
+	var w2 := _fbm(mx * 0.00033 + 7.3, my * 0.00033 - 2.1, 6102, 3)
+	var wx := mx + (w1 - 0.5) * 3000.0
+	var wy := my + (w2 - 0.5) * 3000.0
+
+	# 脊状多重分形（5 个倍频，1/f）
+	var r := 0.0
+	var amp := 0.55
+	var freq := 0.00038
+	var tot := 0.0
+	for i in 5:
+		var v := 1.0 - absf(_vnoise(wx * freq, wy * freq, 7100 + i) * 2.0 - 1.0)
+		r += v * amp
+		tot += amp
+		amp *= 0.52
+		freq *= 2.15
+	r /= tot
+
+	# 振幅按地形类别：这就是“这里是山 / 丘陵 / 平原”的区别
+	var amp_m := 8.0
+	if h > 2600.0:
+		amp_m = 85.0
+	elif h > 1500.0:
+		amp_m = 62.0
+	elif h > 700.0:
+		amp_m = 34.0
+	elif h > 250.0:
+		amp_m = 18.0
+	# 脊线本身再抬一点，沟谷压低，形成“山脊—山谷”
+	var shape := pow(r, 1.35)
+	return (shape - 0.48) * 2.0 * amp_m
+
+
+static func detail_coarse(lon: float, lat: float, h: float) -> float:
+	if h < -2.0:
+		return 0.0
+	return landform(lon, lat, h)
+
+
+# =====================================================================
+#  地形特征（近场崎岖度的来源）
+#  噪声是各向同性的，加多大振幅都只是"大起伏的缓坡"。要像骑砍战场那样
+#  有平缓有崎岖，必须有"单元 + 边界"：断崖、冲沟、山脊、阶地、岩体、洼地。
+#  这些特征按 1.2 km 的格网逐格生成（每格 0～1 个），按地貌类型选型，
+#  只在近场（spacing < 260 m）生效 —— 远场会混叠，地图也不该显示它。
+# =====================================================================
+const FEAT_CELL := 1200.0
+
+static var _feat_cache := {}
+
+
+static func _hash2(ix: int, iz: int, salt: int) -> int:
+	var n := ix * 374761393 + iz * 668265263 + salt * 1442695041
+	n = (n ^ (n >> 13)) * 1274126177
+	return absi(n ^ (n >> 16))
+
+
+## 特征格网：按纬度带切行，行内按该纬度的米宽切列（避免高纬东西向被拉长）
+static func _feat_cell(lon: float, lat: float) -> Vector2i:
+	var row := int(floor(lat * 110540.0 / FEAT_CELL))
+	var lat_c := (float(row) + 0.5) * FEAT_CELL / 110540.0
+	var w := FEAT_CELL / (111320.0 * maxf(cos(deg_to_rad(lat_c)), 0.05))
+	return Vector2i(int(floor(lon / w)), row)
+
+
+static func _feat_geom(cell: Vector2i) -> Vector4:
+	var lat_c := (float(cell.y) + 0.5) * FEAT_CELL / 110540.0
+	var w := FEAT_CELL / (111320.0 * maxf(cos(deg_to_rad(lat_c)), 0.05))
+	return Vector4(float(cell.x) * w, lat_c + 0.5 * FEAT_CELL / 110540.0, w,
+			FEAT_CELL / 110540.0)
+
+
+## 格子里有什么特征（每格只算一次，缓存在字典里）
+static func _feature_of(cell: Vector2i) -> Dictionary:
+	var key: int = cell.x * 1000003 + cell.y
+	if _feat_cache.has(key):
+		return _feat_cache[key]
+	var g := _feat_geom(cell)
+	var lon_c: float = g.x + g.z * 0.5
+	var lat_c: float = g.y - g.w * 0.5
+	var d := {}
+	# 78% 的格子放一个特征（1.2 km 格，约 0.65 个/km²）
+	if _hash2(cell.x, cell.y, 11) % 100 >= 78:
+		_feat_cache[key] = d
+		return d
+	var r1 := float(_hash2(cell.x, cell.y, 23) % 10000) * 0.0001
+	var r2 := float(_hash2(cell.x, cell.y, 37) % 10000) * 0.0001
+	var r3 := float(_hash2(cell.x, cell.y, 53) % 10000) * 0.0001
+	var r4 := float(_hash2(cell.x, cell.y, 71) % 10000) * 0.0001
+	var hx := _hash2(cell.x, cell.y, 89)
+	# 按地貌类型 + 局部坡度选型（坡度决定"该长什么"：平的地方出台地/洼地，陡的地方出崖/脊）
+	var lf := kind_baked(lon_c, lat_c)
+	var gx1 := (macro_height(lon_c + 0.006, lat_c) - macro_height(lon_c - 0.006, lat_c)) / 1336.0
+	var gz1 := (macro_height(lon_c, lat_c + 0.006) - macro_height(lon_c, lat_c - 0.006)) / 1326.0
+	var slope := sqrt(gx1 * gx1 + gz1 * gz1) * 100.0
+	# 局部起伏（±1.2 km 内的高差）用来缩放特征幅度：起伏小的地方别塞大山脊
+	var h1 := macro_height(lon_c + 0.011, lat_c)
+	var h2 := macro_height(lon_c - 0.011, lat_c)
+	var h3 := macro_height(lon_c, lat_c + 0.011)
+	var h4 := macro_height(lon_c, lat_c - 0.011)
+	var hc := macro_height(lon_c, lat_c)
+	var relief: float = maxf(maxf(h1, h2), maxf(maxf(h3, h4), hc)) - minf(minf(h1, h2), minf(minf(h3, h4), hc))
+	var rs: float = clampf(relief / 90.0, 0.35, 1.25)
+	var t := 3
+	if slope < 2.5:
+		# 平坦区：阶地要少（真实台地不会一格一片），荒漠/沙地只出洼地
+		match lf:
+			12, 19, 25, 6, 13, 15, 26, 27:
+				t = 5
+			_:
+				t = 3 if hx % 10 < 2 else 2      # 阶地只留 20%，其余给冲沟
+	elif slope < 9.0:
+		match lf:
+			2, 18, 21, 22:
+				t = [1, 4, 0][hx % 3]
+			12, 19, 25:
+				t = [4, 1][hx % 2]
+			_:
+				t = [2, 3, 1][hx % 3]
+	else:
+		match lf:
+			12, 19, 25:
+				t = [4, 1][hx % 2]
+			_:
+				t = [1, 0, 4][hx % 3]
+	var hgt := 0.0
+	var wid := 0.0
+	var leng := 0.0
+	match t:
+		0:
+			hgt = (6.0 + 26.0 * r3) * rs
+			wid = 40.0 + 90.0 * r4
+			leng = 220.0 + 380.0 * r3
+		1:
+			hgt = (4.0 + 18.0 * r3) * rs
+			wid = 6.0 + 14.0 * r4
+			leng = 120.0 + 300.0 * r3
+		2:
+			hgt = (3.0 + 13.0 * r3) * rs
+			wid = 10.0 + 26.0 * r4
+			leng = 150.0 + 350.0 * r3
+		3:
+			hgt = (2.0 + 9.0 * r3) * rs
+			wid = 12.0 + 30.0 * r4
+			leng = 180.0 + 300.0 * r3
+		4:
+			hgt = (5.0 + 18.0 * r3) * rs
+			wid = 18.0 + 40.0 * r4
+			leng = wid
+		5:
+			hgt = (4.0 + 16.0 * r3) * rs
+			wid = 25.0 + 60.0 * r4
+			leng = wid
+	# 区域走向：低频噪声给出连贯的"坡向"，同一片区的冲沟/断崖大致平行
+	var ang: float = _vnoise(lon_c * 0.02, lat_c * 0.02, 333) * TAU * 2.0 \
+			+ (r2 - 0.5) * 0.6
+	var ox: float = g.z * 0.5 * 111320.0 * cos(deg_to_rad(lat_c)) + (r1 - 0.5) * 380.0
+	var oz: float = g.w * 0.5 * 110540.0 + (r2 - 0.5) * 380.0
+	d = {
+		"t": t, "H": hgt, "W": wid, "L": leng, "ox": ox, "oz": oz,
+		"c": cos(ang), "s": sin(ang), "ph": r4 * TAU * 3.0,
+		"plateau": macro_height(lon_c, lat_c) + (r3 - 0.5) * 6.0,
+	}
+	_feat_cache[key] = d
+	return d
+
+
+## 特征带来的高度增量（米）。spacing 为采样间距：远场淡出，避免混叠。
+## 注意：不要在这里加"当前格"静态缓存 —— 地形网格是分线程算的，静态量会被别的线程串掉。
+## _feature_of() 的格子缓存由主线程 prewarm_features() 预热，worker 只读。
+static func prewarm_features(lon: float, lat: float, radius_m: float) -> void:
+	var row0 := int(floor((lat - radius_m / 110540.0) * 110540.0 / FEAT_CELL))
+	var row1 := int(floor((lat + radius_m / 110540.0) * 110540.0 / FEAT_CELL))
+	for row in range(row0, row1 + 1):
+		var lat_c := (float(row) + 0.5) * FEAT_CELL / 110540.0
+		var w := FEAT_CELL / (111320.0 * maxf(cos(deg_to_rad(lat_c)), 0.05))
+		var dlon := radius_m / (111320.0 * maxf(cos(deg_to_rad(lat_c)), 0.05))
+		var col0 := int(floor((lon - dlon) / w))
+		var col1 := int(floor((lon + dlon) / w))
+		for col in range(col0, col1 + 1):
+			_feature_of(Vector2i(col, row))
+
+
+static func feat_delta(lon: float, lat: float, h: float, spacing: float) -> float:
+	if h < 1.0:
+		return 0.0            # 水面/海底不放特征（海床不需要沟壑）
+	var amp := 1.0
+	var cell := _feat_cell(lon, lat)
+	var d := _feature_of(cell)
+	if d.is_empty():
+		return 0.0
+	var H: float = float(d["H"])
+	var W: float = float(d["W"])
+	var L: float = float(d["L"])
+	var ph: float = float(d["ph"])
+	if spacing > 0.0:
+		# 大特征（高 >10 m 或长 >240 m）撑到 3–6 km，小特征 1.5 km 淡掉：
+		# 否则远山上一片 20 m 的坎在网格间距 150 m 时闪成噪点
+		var big := 1.0 if (H > 10.0 or L > 240.0) else 0.0
+		amp = 1.0 - smoothstep(lerpf(90.0, 230.0, big), lerpf(260.0, 560.0, big), spacing)
+		if amp <= 0.002:
+			return 0.0
+	var ca := cos(deg_to_rad(lat))
+	var g := _feat_geom(cell)
+	var mx := (lon - g.x) * 111320.0 * ca
+	var mz := (g.y - lat) * 110540.0
+	var c_ang: float = float(d["c"])
+	var s_ang: float = float(d["s"])
+	var du := mx - float(d["ox"])
+	var dv := mz - float(d["oz"])
+	var u := du * c_ang + dv * s_ang
+	var v := -du * s_ang + dv * c_ang
+	var plateau: float = float(d["plateau"])
+	var r := 0.0
+	match int(d["t"]):
+		0:
+			# 山脊：脊线摆动 + 两侧支脊，端部收细（用乘法代替 pow/exp，GDScript 里这些都是函数调用）
+			var w2 := W * (1.0 + 0.35 * sin(u * 0.012 + ph))
+			var q := 1.0 - absf(v) / w2
+			var core := 0.0
+			if q > 0.0:
+				core = q * q * sqrt(q)
+			var spur := 0.0
+			for i in 2:
+				var uu := (u - (float(i) * 2.0 - 1.0) * L * 0.45) / (L * 0.22)
+				if absf(uu) > 3.0:
+					continue
+				var vv := (absf(v) - W * (0.55 + 0.25 * float(i))) / (W * 0.45)
+				spur = maxf(spur, 0.55 * core / ((1.0 + vv * vv) * (1.0 + uu * uu)))
+			r = H * maxf(core, spur) * (1.0 - smoothstep(L * 0.7, L, absf(u)))
+		1:
+			# 断崖：崖面 + 崖顶平台 + 崖脚倒石堆
+			var step := smoothstep(-W * 0.5, W * 0.5, v)
+			var mask := (1.0 - smoothstep(L * 0.7, L, absf(u))) \
+					* (1.0 - smoothstep(W * 2.5, W * 7.0, absf(v)))
+			var tz2 := maxf(-v - W * 1.2, 0.0) / (W * 2.2)
+			var talus := 0.22 / (1.0 + tz2 * tz2)
+			r = ((step - 0.5) + talus) * H * mask
+		2:
+			# 冲沟：越往下游越深越宽（汇水），沟口带冲积扇
+			var tp := clampf(u / L * 0.5 + 0.5, 0.0, 1.0)      # 0 沟头 1 沟口
+			var ww := W * (0.45 + 0.9 * tp)
+			var v0 := 0.9 * ww * sin(u * 0.014 + ph)
+			var dd := (v - v0) / ww
+			var depth := H * (0.35 + 0.75 * tp)
+			var fu := (u - L * 0.72) / (L * 0.30)
+			var fv := v / (W * 3.2)
+			var fan := 0.0
+			if absf(fu) < 3.5 and absf(fv) < 3.5:
+				fan = 0.5 * depth / ((1.0 + fu * fu) * (1.0 + fv * fv))
+			r = (-depth / (1.0 + dd * dd * 1.4427) + fan) \
+					* (1.0 - smoothstep(L * 0.75, L * 1.05, absf(u)))
+		3:
+			var rr := sqrt(u * u + v * v) / W
+			var m3 := 1.0 - smoothstep(0.55, 1.0, rr)
+			r = (plateau - h) * m3 * 0.60
+		4:
+			var au := u / W
+			var av := v / (W * 0.75)
+			var r4 := sqrt(au * au + av * av)
+			r = H * (1.0 - smoothstep(0.55, 1.0, r4)) * (0.85 + 0.15 * sin(u * 0.25))
+		5:
+			var r5 := sqrt(u * u + v * v) / W
+			r = -H * (1.0 - smoothstep(0.0, 1.0, r5))
+	return r * amp
+
+
+## spacing 为网格顶点间距（米）：间距多大，就只保留能分辨的尺度，避免混叠。
+## spacing <= 0 表示全精度（玩家位置、植被、小地图）。
+static func height_ll(lon: float, lat: float, spacing: float) -> float:
+	var cb := city_blend(lon, lat)
+	var h := _macro(lon, lat, cb)
+	var dscale := 1.0 - cb.x          # 城市内地面保持平整
+	if dscale <= 0.001:
+		return h
+	if spacing <= 0.0:
+		return h + (detail_fine(lon, lat, h) + detail_coarse(lon, lat, h)
+				+ stamps_height(lon, lat)) * dscale + feat_delta(lon, lat, h, spacing) * dscale
+	var f := 1.0 - smoothstep(180.0, 900.0, spacing)
+	var c := 1.0 - smoothstep(1200.0, 3500.0, spacing)
+	if f > 0.002:
+		h += detail_fine(lon, lat, h) * f * dscale
+	if c > 0.002:
+		h += detail_coarse(lon, lat, h) * c * dscale
+		h += stamps_height(lon, lat) * c * dscale
+	h += feat_delta(lon, lat, h, spacing) * dscale
+	return h
+
+
+# =====================================================================
+#  坐标
+# =====================================================================
+static func lonlat_of(x: float, z: float, clon: float, clat: float) -> Vector2:
+	return Vector2(clon + x / (111320.0 * cos(deg_to_rad(clat))), clat - z / 110540.0)
+
+
+static func height_xyz(x: float, z: float, clon: float, clat: float, detail_fade: float) -> float:
+	var ll := lonlat_of(x, z, clon, clat)
+	return height_ll(ll.x, ll.y, detail_fade)
+
+
+## 两点间大圆距离（米）
+static func distance_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+	var p1 := deg_to_rad(lat1)
+	var p2 := deg_to_rad(lat2)
+	var dp := deg_to_rad(lat2 - lat1)
+	var dl := deg_to_rad(lon2 - lon1)
+	var a := sin(dp * 0.5) * sin(dp * 0.5) + cos(p1) * cos(p2) * sin(dl * 0.5) * sin(dl * 0.5)
+	return 6371000.0 * 2.0 * atan2(sqrt(a), sqrt(maxf(1.0 - a, 0.0)))
+
+
+# =====================================================================
+#  地貌分类
+# =====================================================================
+## 只用现有数据（纬度、海拔、低频湿度噪声）做的近似分类。
+## 后续接入真实气候/降水/植被数据时替换本函数即可，调用方不用改。
+## 温度代理：基准 28℃，纬度递减，海拔每千米约 -6.2℃
+static func temp_at(lon: float, lat: float, h: float) -> float:
+	var tn := (_vnoise(lon * 0.12, lat * 0.12, 4242) - 0.5) * 7.0
+	return 28.0 - 0.42 * absf(lat) - 0.0062 * maxf(h, 0.0) + tn
+
+
+## 湿度代理：低频噪声 + 副热带干旱带（撒哈拉/阿拉伯/澳洲中部）
+## 季风区湿润加成：这些地方在 10-40 度依然多雨，不能被副高判成沙漠
+## 每个矩形给出 [lon0, lon1, lat0, lat1]，返回 0..1 的接近程度
+const ARID_BOXES := [
+	[74.0, 92.0, 36.0, 42.0],     # 塔克拉玛干
+	[88.0, 112.0, 40.0, 48.0],    # 戈壁
+	[40.0, 66.0, 25.0, 38.0],     # 伊朗高原
+	[55.0, 70.0, 36.0, 45.0],     # 卡拉库姆
+	[-72.0, -68.0, -28.0, -18.0], # 阿塔卡马
+	[-72.0, -66.0, -50.0, -40.0], # 巴塔哥尼亚
+	[18.0, 26.0, -30.0, -22.0],   # 卡拉哈里
+	[120.0, 142.0, -30.0, -20.0], # 澳洲中部
+]
+
+const MONSOON_BOXES := [
+	[100.0, 128.0, 8.0, 42.0],     # 东亚（中国东南、日本）
+	[65.0, 100.0, 5.0, 35.0],      # 南亚（印度季风，含恒河平原）
+	[-100.0, -72.0, 24.0, 40.0],   # 美国东南
+	[-75.0, -32.0, -35.0, 5.0],    # 南美（亚马逊—巴西高原）
+	[143.0, 156.0, -40.0, -12.0],  # 澳洲东岸
+	[22.0, 42.0, -35.0, -5.0],     # 非洲东南
+	[95.0, 112.0, 4.0, 24.0],      # 中南半岛
+	[96.0, 106.0, 19.0, 30.0],     # 中国西南（云南、川西）
+]
+
+
+static func _monsoon(lon: float, lat: float) -> float:
+	var best := 0.0
+	# 抖动噪声与盒子无关，算一次即可（原先在循环里算了 8 次）
+	var wob := _fbm(lon * 1.5 + 5.0, lat * 1.5, 9191, 2) * 0.24
+	for b in MONSOON_BOXES:
+		var cx: float = (b[0] + b[1]) * 0.5
+		var cy: float = (b[2] + b[3]) * 0.5
+		var hx: float = (b[1] - b[0]) * 0.5
+		var hy: float = (b[3] - b[2]) * 0.5
+		var dx: float = absf(lon - cx) / hx
+		var dy: float = absf(lat - cy) / hy
+		var d: float = maxf(dx, dy) + wob
+		if d < 1.0:
+			best = maxf(best, 1.0 - smoothstep(0.30, 1.0, d))
+	return best
+
+
+static func moist_at(lon: float, lat: float) -> float:
+	var m := _vnoise(lon * 0.42 + 100.0, lat * 0.42 - 30.0, 2027) * 0.5 + 0.5
+	var belt := clampf(1.0 - absf(absf(lat) - 25.0) / 13.0, 0.0, 1.0)
+	var dyn := m * (1.0 - 0.78 * belt)
+	# 季风区：把湿度抬回 0.45 以上，避免被判成荒漠
+	var mon := _monsoon(lon, lat)
+	var abslat := absf(lat)
+	if mon > 0.0:
+		# 季风区：越靠近赤道越湿（华北 0.44 干草原，越南/印度 0.65+ 湿润）
+		var wet := 0.34 + 0.34 * mon + 0.45 * mon * clampf(1.0 - abslat / 45.0, 0.0, 1.0)
+		dyn = maxf(dyn, wet)
+	# 赤道多雨带：低纬低地本来就湿（雨林），别被判成干草原
+	if abslat < 10.0:
+		dyn = maxf(dyn, 0.92 - abslat * 0.02)
+	# 大陆内部沙漠（塔克拉玛干、戈壁、伊朗、卡拉库姆、阿塔卡马、巴塔哥尼亚、卡拉哈里、澳洲中部）
+	# 抖动噪声与盒子无关，循环外算一次（原来每个盒子算一遍，8 倍浪费）
+	var wob2 := _fbm(lon * 1.5, lat * 1.5, 8181, 2) * 0.26
+	for b in ARID_BOXES:
+		var cx2: float = (b[0] + b[1]) * 0.5
+		var cy2: float = (b[2] + b[3]) * 0.5
+		var hx2: float = (b[1] - b[0]) * 0.5
+		var hy2: float = (b[3] - b[2]) * 0.5
+		var d2: float = maxf(absf(lon - cx2) / hx2, absf(lat - cy2) / hy2) + wob2
+		var w2: float = 1.0 - smoothstep(0.30, 1.0, d2)
+		if w2 > 0.0:
+			dyn = lerpf(dyn, minf(dyn, 0.14), w2)
+	return clampf(dyn, 0.0, 1.0)
+
+
+static func biome_at(lon: float, lat: float, h: float) -> int:
+	if h < -8.0:
+		return B_OCEAN
+	var alat := absf(lat)
+	if alat > 73.0 and h < 500.0:
+		return B_ICE
+	var snowline := 5800.0 - maxf(alat - 30.0, 0.0) * 110.0
+	if h > snowline:
+		return B_SNOW
+	var t := temp_at(lon, lat, h)
+	if h > 3400.0 and t < 6.0:
+		return B_ROCK
+	var m := moist_at(lon, lat)
+	var tb := clampi(int(floor((t + 12.0) / 6.0)), 0, 8)
+	var mb := clampi(int(floor(m * 5.0)), 0, 4)
+	var idx := tb * 5 + mb
+	if h > 1200.0:
+		idx += 45
+	return idx
+
+
+## 解出 (温度带, 湿度带)
+static func _bands(b: int) -> Vector2i:
+	if b >= B_LAND_MAX:
+		return Vector2i(-1, -1)
+	var highland := b >= 45
+	var k := b - 45 if highland else b
+	return Vector2i(int(k / 5), k % 5)
+
+
+static func biome_name(b: int) -> String:
+	match b:
+		B_OCEAN:
+			return "海洋"
+		B_ICE:
+			return "冰盖"
+		B_SNOW:
+			return "雪线以上"
+		B_ROCK:
+			return "高山裸岩"
+	var bd := _bands(b)
+	if bd.x < 0:
+		return "未知"
+	var nm: String = TEMP_NAMES[bd.x] + MOIST_NAMES[bd.y]
+	if b >= 45:
+		nm += "（高地）"
+	return nm
+
+
+static func biome_color(b: int) -> Color:
+	match b:
+		B_OCEAN:
+			return Color(0.09, 0.17, 0.25)
+		B_ICE:
+			return Color(0.91, 0.94, 0.96)
+		B_SNOW:
+			return Color(0.92, 0.93, 0.94)
+		B_ROCK:
+			return Color(0.49, 0.46, 0.41)
+	var bd := _bands(b)
+	if bd.x < 0:
+		return Color(0.3, 0.3, 0.3)
+	var t01 := float(bd.x) / 8.0
+	var m01 := float(bd.y) / 4.0
+	var dry := Color(0.60, 0.55, 0.38)
+	var wet := Color(0.19, 0.32, 0.15)
+	var c := dry.lerp(wet, pow(m01, 0.85))
+	var cold := clampf(1.0 - t01 * 1.7, 0.0, 1.0)
+	c = c.lerp(Color(0.46, 0.48, 0.42), cold * 0.42)
+	if b >= 45:
+		c = c.lerp(Color(0.40, 0.38, 0.33), 0.22)
+	var j := (0.93 + 0.14 * _vnoise(float(b) * 3.1, float(b) * 7.7, 88)) * 0.84
+	return Color(clampf(c.r * j, 0.0, 1.0), clampf(c.g * j, 0.0, 1.0), clampf(c.b * j, 0.0, 1.0))
+
+
+static func biome_map_color(b: int) -> Color:
+	var c := biome_color(b)
+	var lum := c.r * 0.35 + c.g * 0.45 + c.b * 0.20
+	var paper := Color(lum + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04)
+	return c.lerp(paper, 0.55)
+
+
+## 植被密度权重（0..1.2）
+static func tree_density(b: int) -> float:
+	if b >= B_LAND_MAX:
+		return 0.0
+	var bd := _bands(b)
+	var t01 := float(bd.x) / 8.0
+	var m01 := float(bd.y) / 4.0
+	var d := clampf((m01 - 0.22) * 1.75, 0.0, 1.2)
+	d *= 1.0 - clampf((t01 - 0.72) * 1.4, 0.0, 1.0) * 0.35
+	if b >= 45:
+		d *= 0.45
+	return d
+
+
+## 针叶还是阔叶：冷带 / 高地用针叶
+static func is_conifer(b: int) -> bool:
+	if b >= B_LAND_MAX:
+		return false
+	var bd := _bands(b)
+	return bd.x <= 2 or b >= 45
+
+
+# =====================================================================
+#  世界地图烘焙（1024×512）：底图 + 山体特征 + 地貌配色 + 地势阴影
+# =====================================================================
+static func bake_map(w: int, hgt: int) -> Array:
+	ensure_loaded()
+	if _mask.is_empty():
+		_load_mask()
+	var n := w * hgt
+	if _dem.is_empty():
+		return []
+
+	var gw := _gw
+	var gh := _gh
+	var lon_step := 360.0 / float(w)
+	var lat_step := 180.0 / float(hgt)
+
+	# 列索引 / 行索引只算一次
+	var cols := PackedInt32Array()
+	cols.resize(w)
+	for x in w:
+		var lon := -180.0 + (float(x) + 0.5) * lon_step
+		cols[x] = clampi(int((lon + 180.0) / 360.0 * float(gw)), 0, gw - 1) * 2
+
+	var rows := PackedInt32Array()
+	var lats := PackedFloat32Array()
+	rows.resize(hgt)
+	lats.resize(hgt)
+	for y in hgt:
+		var lat := 90.0 - (float(y) + 0.5) * lat_step
+		lats[y] = lat
+		var fy := (90.0 - lat) / 180.0 * float(gh)
+		rows[y] = clampi(int(fy), 0, gh - 1) * gw * 2
+
+	# ① 底图
+	var heights := PackedFloat32Array()
+	heights.resize(n)
+	var dem := _dem
+	var dem_size := dem.size()
+	for y in hgt:
+		var base: int = rows[y]
+		var o: int = y * w
+		for x in w:
+			var i: int = base + cols[x]
+			if i + 1 >= dem_size:
+				continue
+			var raw := float(dem[i]) + float(dem[i + 1]) * 256.0
+			heights[o + x] = raw / 65535.0 * (DEM_MAX - DEM_MIN) + DEM_MIN
+
+	# ①.5 近场补丁（只影响补丁覆盖的几十个像素，代价可忽略）
+	if _ov_ready:
+		var ox0 := int(floor((_ov_lon0 + 180.0) / lon_step))
+		var ox1 := int(ceil((_ov_lon1 + 180.0) / lon_step))
+		var oy0 := clampi(int(floor((90.0 - _ov_lat0) / lat_step)), 0, hgt - 1)
+		var oy1 := clampi(int(ceil((90.0 - _ov_lat1) / lat_step)), 0, hgt - 1)
+		for oy in range(oy0, oy1 + 1):
+			var olat := lats[oy]
+			for oxc in range(ox0, ox1 + 1):
+				var oxm := ((oxc % w) + w) % w
+				var olon := -180.0 + (float(oxm) + 0.5) * lon_step
+				var ow := overlay_weight(olon, olat)
+				if ow > 0.001:
+					var oidx := oy * w + oxm
+					heights[oidx] = lerpf(heights[oidx], overlay_at(olon, olat), ow)
+
+	# ② 山体特征：只遍历每条山脉自己的包围盒，代价很小
+	for fi in _fa.size():
+		var f: PackedFloat64Array = _fa[fi]
+		var seed: int = _fseed[fi]
+		var flon: float = f[0]
+		var flat: float = f[1]
+		var cosl: float = f[2]
+		var rad: float = sqrt(f[5] * f[5] + f[6] * f[6])
+		var dlat := rad / 110.54
+		var dlon := rad / (111.32 * maxf(cosl, 0.05))
+		var y0 := clampi(int(floor((90.0 - (flat + dlat)) / lat_step)), 0, hgt - 1)
+		var y1 := clampi(int(ceil((90.0 - (flat - dlat)) / lat_step)), 0, hgt - 1)
+		var x0 := int(floor((flon - dlon + 180.0) / lon_step))
+		var x1 := int(ceil((flon + dlon + 180.0) / lon_step))
+		for y in range(y0, y1 + 1):
+			var lat := lats[y]
+			var o := y * w
+			for xc in range(x0, x1 + 1):
+				var xm := ((xc % w) + w) % w
+				var lon := -180.0 + (float(xm) + 0.5) * lon_step
+				var idx := o + xm
+				var hh := heights[idx]
+				var nv := _raise_packed(lon, lat, hh, f, seed)
+				if nv > hh:
+					heights[idx] = nv
+
+	var sea_c := biome_map_color(B_OCEAN)
+	var sea_lum := sea_c.r * 0.35 + sea_c.g * 0.45 + sea_c.b * 0.20
+	var sea_paper := Color(sea_lum * 1.00 + 0.16, sea_lum * 0.92 + 0.11, sea_lum * 0.72 + 0.04)
+	sea_c = sea_c.lerp(sea_paper, 0.55)
+	var sea_rgb := Vector3i(int(sea_c.r * 255.0), int(sea_c.g * 255.0), int(sea_c.b * 255.0))
+
+	# ③ 配色（1/4 分辨率，地貌是大色块，放到全分辨率算只是浪费）+ 地势阴影（全分辨率）
+	var cw := maxi(w / 2, 1)
+	var ch := maxi(hgt / 2, 1)
+	var colbuf := PackedByteArray()
+	colbuf.resize(cw * ch * 3)
+	for cy in ch:
+		var clat := 90.0 - (float(cy) + 0.5) / float(ch) * 180.0
+		for cx in cw:
+			var clon := -180.0 + (float(cx) + 0.5) / float(cw) * 360.0
+			# 高度直接取全分辨率结果，别再算一遍山体特征
+			var hsrc: float = heights[mini(cy * 2, hgt - 1) * w + mini(cx * 2, w - 1)]
+			var bid := B_OCEAN if is_water(clon, clat) else biome_at(clon, clat, hsrc)
+			var c := biome_map_color(bid)
+			var lum := c.r * 0.35 + c.g * 0.45 + c.b * 0.20
+			var paper := Color(lum * 1.00 + 0.16, lum * 0.92 + 0.11, lum * 0.72 + 0.04)
+			c = c.lerp(paper, 0.55)
+			var ci := (cy * cw + cx) * 3
+			colbuf[ci] = int(clampf(c.r, 0.0, 1.0) * 255.0)
+			colbuf[ci + 1] = int(clampf(c.g, 0.0, 1.0) * 255.0)
+			colbuf[ci + 2] = int(clampf(c.b, 0.0, 1.0) * 255.0)
+
+	var sb := PackedByteArray()
+	sb.resize(n)
+	for y in hgt:
+		var lat := lats[y]
+		var km_x := 40075.0 * maxf(cos(deg_to_rad(lat)), 0.02) / float(w)
+		var km_y := 20004.0 / float(hgt)
+		var o := y * w
+		var ym := maxi(y - 1, 0) * w
+		var yp := mini(y + 1, hgt - 1) * w
+		for x in w:
+			var idx := o + x
+			var hxm := heights[o + (x - 1 + w) % w]
+			var hxp := heights[o + (x + 1) % w]
+			var sx := (hxp - hxm) * 0.5 / km_x
+			var sy := (heights[yp + x] - heights[ym + x]) * 0.5 / km_y
+			var shade := 0.60 - (sx * 0.60 + sy * 0.80) * 0.0032
+			shade = clampf(shade, 0.22, 1.0)
+			sb[idx] = int(shade * 255.0)
+
+
+
+	var img := Image.create_from_data(cw, ch, false, Image.FORMAT_RGB8, colbuf)
+	var sh := Image.create_from_data(w, hgt, false, Image.FORMAT_L8, sb)
+	return [img, sh, heights]
+
+
+# =====================================================================
+#  验收用：山体统计
+# =====================================================================
+## 在一条山系自己的“走向矩形”内采样，返回
+##   底图峰顶 / 该山系抬升后的峰顶 / 山脚（两侧山麓平均）/ 峰顶坐标
+## 只统计这条山系自己的作用范围，不会被相邻山系（如横断山）干扰。
+static func feature_stats(nm: String) -> Dictionary:
+	ensure_loaded()
+	for f in _features:
+		if String(f["name"]) != nm:
+			continue
+		var flon := float(f["lon"])
+		var flat := float(f["lat"])
+		var halflen := float(f["halflen"])
+		var halfwid := float(f["halfwid"])
+		var su := float(f["su"])
+		var cu := float(f["cu"])
+		var peak_h := float(f["peak"])
+		var foot_h := float(f["foot"])
+		var shape := float(f["shape"])
+		var grain := float(f["grain"])
+		var seed := int(f["seed"])
+		var pu := float(f["pu"])
+		var pv := float(f["pv"])
+		var cosl := maxf(cos(deg_to_rad(flat)), 0.05)
+		# 真实峰顶坐标
+		var plon := flon + (pu * su + pv * cu) / (111.32 * cosl)
+		var plat := flat + (pu * cu - pv * su) / 110.54
+
+		# 峰顶附近 ±0.15°（约 15km）扫 31×31
+		var pdem := -99999.0
+		var pfin := -99999.0
+		var blon := plon
+		var blat := plat
+		for iy in 31:
+			for ix in 31:
+				var lon := plon - 0.15 + 0.30 * float(ix) / 30.0
+				var lat := plat - 0.15 + 0.30 * float(iy) / 30.0
+				var hd := dem_at(lon, lat)
+				pdem = maxf(pdem, hd)
+				var hf := _raise(lon, lat, hd, flon, flat, cosl, peak_h, foot_h,
+						halflen, halfwid, su, cu, shape, grain, seed, pu, pv)
+				if hf > pfin:
+					pfin = hf
+					blon = lon
+					blat = lat
+
+		# 山脚：山体两侧 |v| = halfwid 一线的平均
+		var foot_sum := 0.0
+		var foot_n := 0
+		for iu in 21:
+			for side in [-1.0, 1.0]:
+				var u := -halflen * 0.6 + 1.2 * halflen * float(iu) / 20.0
+				var v: float = side * halfwid
+				var dx := u * su + v * cu
+				var dy := u * cu - v * su
+				var lon := flon + dx / (111.32 * cosl)
+				var lat := flat + dy / 110.54
+				foot_sum += _raise(lon, lat, dem_at(lon, lat), flon, flat, cosl,
+						peak_h, foot_h, halflen, halfwid, su, cu, shape, grain, seed, pu, pv)
+				foot_n += 1
+		return {
+			"name": nm, "dem_peak": pdem, "peak": pfin,
+			"foot": foot_sum / maxf(float(foot_n), 1.0),
+			"lon": blon, "lat": blat,
+		}
+	return {}

@@ -7,7 +7,7 @@ HydroLAKES 是现代湖泊，没有"天然/水库"类型字段，只能按两条
 2. 名字里带 Reservoir / 以及一份已知人工湖黑名单（Bratsk、Toktogul 这类
    名字里不带 Reservoir 的）。
 
-用法：python ias/tools/filter_lakes.py [--dry]
+用法：python tools/map/filter_lakes.py [--dry]
 """
 import json
 import math
@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "ias-core" / "data" / "hydro.json"
+ROOT = Path(__file__).resolve().parents[2] / "game" / "data" / "hydro.json"
 MIN_KM2 = 500.0
 BLACKLIST = {
     "ijsselmeer",          # 1932 年拦海大坝形成
