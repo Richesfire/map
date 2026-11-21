@@ -1688,8 +1688,10 @@ func _draw_hydro_layer() -> void:
 		if rr > 0.0:
 			for q2 in smooth:
 				map_hydro.draw_circle(q2, rr, col2)
-	var lake_col := Color(0.42, 0.38, 0.42, 0.9 * fade)
+	var lake_col := Color(0.42, 0.38, 0.42, 0.0)     # 湖岸不画线（和海岸一致）
 	for l in _lake_list:
+		if lake_col.a <= 0.0:
+			break
 		var bb2: Rect2 = l["bb"]
 		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
 			continue
@@ -1736,6 +1738,45 @@ func _ensure_hydro() -> void:
 		if lp.size() >= 3:
 			lp.append(lp[0])
 			_lake_list.append({"bb": Rect2(mn2, mx2 - mn2), "p": lp})
+	# 接断口：同一条河被数据切成多段，端点相距 < 0.06° 就合并
+	for _pass in 3:
+		var merged := false
+		for i in range(_riv_list.size()):
+			if i >= _riv_list.size():
+				break
+			var a: PackedVector2Array = _riv_list[i]["p"]
+			if a.is_empty():
+				continue
+			var a_end := a[a.size() - 1]
+			for j in range(_riv_list.size()):
+				if i == j:
+					continue
+				var b: PackedVector2Array = _riv_list[j]["p"]
+				if b.is_empty():
+					continue
+				if a_end.distance_to(b[0]) < 0.06:
+					for q in range(1, b.size()):
+						a.append(b[q])
+					_riv_list[i]["p"] = a
+					_riv_list.remove_at(j)
+					merged = true
+					break
+			if merged:
+				break
+		if not merged:
+			break
+	# 重算包围盒（合并后变了）
+	for r in _riv_list:
+		var pa2: PackedVector2Array = r["p"]
+		var mn3 := Vector2(999, 999)
+		var mx3 := Vector2(-999, -999)
+		for v3 in pa2:
+			mn3.x = minf(mn3.x, v3.x)
+			mn3.y = minf(mn3.y, v3.y)
+			mx3.x = maxf(mx3.x, v3.x)
+			mx3.y = maxf(mx3.y, v3.y)
+		r["bb"] = Rect2(mn3, mx3 - mn3)
+
 	# 河点网格（抽样每 3 个点一个）
 	for r in _riv_list:
 		var pa2: PackedVector2Array = r["p"]
