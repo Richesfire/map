@@ -85,6 +85,31 @@ vec3 elev_color(float h) {
 	return c;
 }
 
+float hash21(vec2 p) {
+	p = fract(p * vec2(123.34, 345.45));
+	p += dot(p, p + 34.345);
+	return fract(p.x * p.y);
+}
+
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	float a = hash21(i);
+	float b = hash21(i + vec2(1.0, 0.0));
+	float c = hash21(i + vec2(0.0, 1.0));
+	float d = hash21(i + vec2(1.0, 1.0));
+	return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm3(vec2 p) {
+	float v = 0.0;
+	v += vnoise(p) * 0.55;
+	v += vnoise(p * 2.13) * 0.28;
+	v += vnoise(p * 4.37) * 0.17;
+	return v;
+}
+
 void fragment() {
 	// 可见区是 ±lat_limit，贴图仍是整幅世界：把屏幕 uv 映射到世界 uv
 	float v0 = (90.0 - lat_limit) / 180.0;
@@ -113,8 +138,18 @@ void fragment() {
 	float sh2 = 1.0;
 	if (textureSize(color_tex, 0).x > 1) {
 		vec2 cuv = vec2(uv.x, clamp(uv.y, 0.0, 1.0));
+		vec2 px = 1.0 / vec2(textureSize(color_tex, 0));
 		c = texture(color_tex, cuv).rgb;
 		sh2 = texture(hill_tex, cuv).r;
+		// 高倍锐化：双击取四邻平均做非锐化掩膜，把放大后的双线性糊边拉回来
+		float hi0 = smoothstep(60.0, 160.0, zoom);
+		if (hi0 > 0.001) {
+			vec3 avg = (texture(color_tex, cuv + vec2(px.x, 0.0)).rgb
+					+ texture(color_tex, cuv - vec2(px.x, 0.0)).rgb
+					+ texture(color_tex, cuv + vec2(0.0, px.y)).rgb
+					+ texture(color_tex, cuv - vec2(0.0, px.y)).rgb) * 0.25;
+			c = mix(c, clamp(c + (c - avg) * 2.2, 0.0, 1.0), hi0);
+		}
 	}
 
 	// 细节层：贴在地理坐标上。A 通道 = 这块 texel 已烘好（块级 255/0），
@@ -170,6 +205,38 @@ void fragment() {
 	// 越放大越往纸色靠（最高 30%）、顺带降对比 —— 地形只是旅行图的底。
 	float paperize = clamp((zoom - 3.0) / 50.0, 0.0, 1.0) * 0.30;
 	c = mix(c, paper, paperize);
+
+	// —— 4.9km 以下的细节：真实数据到不了，用哈希噪声现场“画”山纹 ——
+	float slope = length(vec2(sx, sy)) * 0.0016;
+	float rough = smoothstep(0.05, 0.9, slope);
+	float det_on = smoothstep(45.0, 120.0, zoom);
+	if (det_on > 0.001) {
+		// 世界坐标定尺：一格约 3 km；ridged 噪声当山脊
+		// 域扭曲：先用一层噪声把采样坐标揉乱，避免值噪声的方格感
+		vec2 wq = vec2(uv.x, uv.y) * 620.0;
+		vec2 warp = vec2(fbm3(wq), fbm3(wq + 17.3)) * 1.6;
+		vec2 wp = vec2(uv.x, uv.y) * 2600.0 + warp;
+		float n0 = fbm3(wp);
+		float nx = fbm3(wp + vec2(0.10, 0.0));
+		float ny = fbm3(wp + vec2(0.0, 0.10));
+		float ridge = 1.0 - abs(2.0 * n0 - 1.0);
+		float bump = (nx - n0) * 3.4 + (ny - n0) * 4.6 + (ridge - 0.5) * 0.35;
+		c *= 1.0 + clamp(bump, -1.0, 1.0) * (0.42 * rough + 0.06) * det_on;
+	}
+
+	// —— 高倍：底图是 4.9km/px 的拉伸，再往下放大只会更糊；
+	//    这里往纸色推 + 叠纸纤维噪声，让它读起来像"手绘纸面"而不是"放大的位图" ——
+	float hi = smoothstep(70.0, 220.0, zoom);
+	if (hi > 0.001) {
+		c = mix(c, paper, 0.04 * hi);
+		vec2 guv = SCREEN_UV * vec2(2.1, 2.1);
+		float g1 = texture(noise_tex, guv).r;
+		float g2 = texture(noise_tex, guv * 3.3 + vec2(0.37, 0.21)).r;
+		float grain = (g1 * 0.62 + g2 * 0.38) - 0.5;
+		c += vec3(grain) * (0.085 * hi);
+		// 轻微色阶化：把渐变压成几档，观感更像手工上色
+		c = mix(c, floor(c * 26.0 + 0.5) / 26.0, 0.10 * hi);
+	}
 
 	// 阴影叠上去
 	c = mix(c, c * (0.66 + 0.42 * sh2), 0.85);

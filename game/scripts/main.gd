@@ -1664,8 +1664,12 @@ func _draw_hydro_layer() -> void:
 		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
 			continue
 		var major: bool = int(r["r"]) <= 3
-		var col := Color(0.26, 0.34, 0.40, (0.62 if major else 0.42) * fade)
-		map_hydro.draw_polyline(r["p"], col, (3.0 if major else 1.6) / ppd)
+		# 笔触化：宽而淡的墨晕 + 细而实的笔心，线宽随缩放略微加粗
+		var core_w: float = (1.6 if major else 1.0) + clampf(map_zoom * 0.012, 0.0, 1.6)
+		var col := Color(0.24, 0.31, 0.37, (0.55 if major else 0.38) * fade)
+		var halo := Color(0.24, 0.31, 0.37, (0.16 if major else 0.11) * fade)
+		map_hydro.draw_polyline(r["p"], halo, core_w * 2.3 / ppd)
+		map_hydro.draw_polyline(r["p"], col, core_w / ppd)
 	var lake_col := Color(0.42, 0.38, 0.42, 0.9 * fade)
 	for l in _lake_list:
 		var bb2: Rect2 = l["bb"]
