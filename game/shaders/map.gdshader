@@ -183,18 +183,7 @@ void fragment() {
 
 	// —— 海面：按逐像素高程判定海陆（不用 4.9km 的编号图，否则放大后是方块台阶）——
 	float wf = max(fwidth(h) * 1.2, 0.4);
-	// 海岸细节：在 0 米附近叠分形扰动，让海岸线曲折起来（越高倍越明显，幅度不超过几米）
-	float coast_band = 1.0 - smoothstep(0.0, 12.0, abs(h));
-	float czoom = smoothstep(25.0, 90.0, zoom);
-	float cn = 0.0;
-	if (coast_band > 0.001 && czoom > 0.001) {
-		vec2 cp = vec2(uv.x, uv.y);
-		cn = (vnoise(cp * 9000.0) - 0.5) * 0.60
-		   + (vnoise(cp * 21000.0) - 0.5) * 0.28
-		   + (vnoise(cp * 46000.0) - 0.5) * 0.12;
-		cn *= coast_band * czoom * 2.2;           // ±1~2 m：只让岸线起小凹湾，不整片翻转          // 幅度：±几米，够让海岸曲折但不至于撕裂
-	}
-	float wmask = smoothstep(-wf, wf, -(h + cn));          // 0=纯陆 1=纯水，边界 1-2 像素过渡
+	float wmask = smoothstep(-wf, wf, -h);          // 0=纯陆 1=纯水，边界 1-2 像素过渡
 	if (wmask > 0.001) {
 		float depth = clamp(-h / 3500.0, 0.0, 1.0);
 		vec3 shall = vec3(0.47, 0.55, 0.55);
@@ -238,7 +227,7 @@ void fragment() {
 	//   ① 水彩晕染（低频斑块，很轻）② 纸纤维（极细颗粒）③ 陡坡微阴影
 	float slope = length(vec2(sx, sy)) * 0.0016;
 	float rough = smoothstep(0.05, 0.9, slope);
-	float det_on = smoothstep(22.0, 65.0, zoom);
+	float det_on = smoothstep(45.0, 110.0, zoom);
 	if (det_on > 0.001) {
 		vec2 wp = vec2(uv.x, uv.y) * 2600.0;
 		// ① 水彩：两个尺度叠加，域扭曲打散方格
@@ -260,7 +249,7 @@ void fragment() {
 
 	// —— 高倍：底图是 4.9km/px 的拉伸，再往下放大只会更糊；
 	//    这里往纸色推 + 叠纸纤维噪声，让它读起来像"手绘纸面"而不是"放大的位图" ——
-	float hi = smoothstep(40.0, 130.0, zoom);
+	float hi = smoothstep(60.0, 160.0, zoom);
 	if (hi > 0.001) {
 		c = mix(c, paper, 0.04 * hi);
 		vec2 guv = vec2(uv.x * 620.0, uv.y * 620.0);   // 世界坐标，拖图时跟着地图走
