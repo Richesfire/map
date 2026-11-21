@@ -206,22 +206,28 @@ void fragment() {
 	float paperize = clamp((zoom - 3.0) / 50.0, 0.0, 1.0) * 0.30;
 	c = mix(c, paper, paperize);
 
-	// —— 4.9km 以下的细节：真实数据到不了，用哈希噪声现场“画”山纹 ——
+	// —— 4.9km 以下的细节：真实数据到不了，分三层“画”出来 ——
+	//   ① 水彩晕染（低频斑块，很轻）② 纸纤维（极细颗粒）③ 陡坡微阴影
 	float slope = length(vec2(sx, sy)) * 0.0016;
 	float rough = smoothstep(0.05, 0.9, slope);
 	float det_on = smoothstep(45.0, 120.0, zoom);
 	if (det_on > 0.001) {
-		// 世界坐标定尺：一格约 3 km；ridged 噪声当山脊
-		// 域扭曲：先用一层噪声把采样坐标揉乱，避免值噪声的方格感
-		vec2 wq = vec2(uv.x, uv.y) * 620.0;
-		vec2 warp = vec2(fbm3(wq), fbm3(wq + 17.3)) * 1.6;
-		vec2 wp = vec2(uv.x, uv.y) * 2600.0 + warp;
+		vec2 wp = vec2(uv.x, uv.y) * 2600.0;
+		// ① 水彩：两个尺度叠加，域扭曲打散方格
+		vec2 wq = wp * 0.22 + vec2(fbm3(wp * 0.11), fbm3(wp * 0.11 + 5.7)) * 2.4;
+		float m1 = fbm3(wq);
+		float m2 = fbm3(wq * 2.7 + 31.7);
+		float mottle = (m1 - 0.5) * 0.62 + (m2 - 0.5) * 0.38;
+		c *= 1.0 + mottle * 0.13 * det_on;
+		// ② 纸纤维：高频细颗粒，几乎不改变明暗，只加“纸感”
+		float fiber = vnoise(wp * 21.0) * 0.6 + vnoise(wp * 53.0) * 0.4 - 0.5;
+		c += vec3(fiber) * (0.028 * det_on);
+		// ③ 陡坡微阴影：顺着西北光加一点高频起伏，平原没有
 		float n0 = fbm3(wp);
-		float nx = fbm3(wp + vec2(0.10, 0.0));
-		float ny = fbm3(wp + vec2(0.0, 0.10));
-		float ridge = 1.0 - abs(2.0 * n0 - 1.0);
-		float bump = (nx - n0) * 3.4 + (ny - n0) * 4.6 + (ridge - 0.5) * 0.35;
-		c *= 1.0 + clamp(bump, -1.0, 1.0) * (0.42 * rough + 0.06) * det_on;
+		float nx = fbm3(wp + vec2(0.08, 0.0));
+		float ny = fbm3(wp + vec2(0.0, 0.08));
+		float bump = (nx - n0) * 2.0 + (ny - n0) * 2.6;
+		c *= 1.0 + clamp(bump, -1.0, 1.0) * 0.22 * rough * det_on;
 	}
 
 	// —— 高倍：底图是 4.9km/px 的拉伸，再往下放大只会更糊；
