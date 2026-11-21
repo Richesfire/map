@@ -1912,8 +1912,9 @@ func _poi_open(hit: Dictionary) -> void:
 func _draw_minimap() -> void:
 	var c := Vector2(90.0, 90.0)
 	var R := 88.0
-	# 漆底
-	hud_minimap.draw_circle(c, R + 3.0, Color(0.12, 0.10, 0.07, 0.97))
+	# 方形漆底（原来画成圆镜，2026-11-21 用户要求改方形）
+	hud_minimap.draw_rect(Rect2(c - Vector2(R + 3.0, R + 3.0), Vector2(R + 3.0, R + 3.0) * 2.0),
+			Color(0.12, 0.10, 0.07, 0.97))
 
 	if terrain != null:
 		var n := 26
@@ -1927,7 +1928,7 @@ func _draw_minimap() -> void:
 			for gx in n:
 				var wx := (float(gx) - float(n) * 0.5 + 0.5) * cell
 				var wz := (float(gy) - float(n) * 0.5 + 0.5) * cell
-				if wx * wx + wz * wz > lim * lim:
+				if absf(wx) > lim or absf(wz) > lim:
 					continue
 				var ll: Vector2 = terrain.lonlat_of(pcx + wx, pcz + wz)
 				var hh: float = TG.dem_at(ll.x, ll.y)
@@ -1945,25 +1946,27 @@ func _draw_minimap() -> void:
 			var cz: float = -(float(ct["lat"]) - terrain.center_lat) * 110540.0
 			var lx := (cx - pcx) * ppm
 			var lz := (cz - pcz) * ppm
-			if Vector2(lx, lz).length() < R - 12.0:
+			if absf(lx) < R - 12.0 and absf(lz) < R - 12.0:
 				var cp := c + Vector2(lx, lz)
 				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.42, 0.17, 0.09))
 				hud_minimap.draw_rect(Rect2(cp - Vector2(3.5, 3.5), Vector2(7, 7)), Color(0.92, 0.78, 0.44), false, 1.5)
 
-	# 青铜外环（先秦铜镜感）
-	hud_minimap.draw_arc(c, R + 2.0, 0.0, TAU, 80, Color(0.40, 0.36, 0.22, 0.95), 4.0)
-	hud_minimap.draw_arc(c, R + 0.6, 0.0, TAU, 80, Color(0.78, 0.66, 0.36, 0.85), 1.4)
-	hud_minimap.draw_arc(c, R - 2.2, 0.0, TAU, 80, Color(0.16, 0.13, 0.09, 0.95), 1.6)
+	# 青铜方框（先秦铜镜感）
+	var fr := Rect2(c - Vector2(R + 2.0, R + 2.0), Vector2(R + 2.0, R + 2.0) * 2.0)
+	hud_minimap.draw_rect(fr, Color(0.40, 0.36, 0.22, 0.95), false, 4.0)
+	hud_minimap.draw_rect(fr.grow(-1.4), Color(0.78, 0.66, 0.36, 0.85), false, 1.4)
+	hud_minimap.draw_rect(fr.grow(-4.2), Color(0.16, 0.13, 0.09, 0.95), false, 1.6)
 
-	# 四方位刻度
+	# 四方位刻度：方框四边中点各一道短刻线（不再写字）
+	var half := R + 2.0
 	for k in 4:
 		var a := TAU * float(k) / 4.0 - PI * 0.5
-		var inner := c + Vector2(cos(a), sin(a)) * (R - 5.0)
-		var outer := c + Vector2(cos(a), sin(a)) * (R + 4.0)
-		hud_minimap.draw_line(inner, outer, Color(0.86, 0.74, 0.42, 0.9), 1.6)
-
-	var afont: Font = ThemeDB.fallback_font
-	hud_minimap.draw_string(afont, c + Vector2(-7, -R + 15), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.92, 0.82, 0.54))
+		var dir := Vector2(cos(a), sin(a))
+		# 贴到方框边上的点
+		var t := minf(half / maxf(absf(dir.x), 0.001), half / maxf(absf(dir.y), 0.001))
+		var inner := c + dir * (t - 9.0)
+		var outer := c + dir * (t + 4.0)
+		hud_minimap.draw_line(inner, outer, Color(0.86, 0.74, 0.42, 0.9), 1.8)
 
 	# 玩家：朝北固定的箭头（北朝上，箭头随视角转）
 	var yawv: float = float(player.yaw) if player != null else 0.0
