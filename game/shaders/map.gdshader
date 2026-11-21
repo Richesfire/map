@@ -196,7 +196,7 @@ void fragment() {
 	if (coast > 0.001) {
 		vec3 wl = mix(vec3(0.62, 0.64, 0.55), vec3(0.44, 0.57, 0.65), is_water);
 		c = mix(c, wl, 0.34 * coast * water_ink);
-		float ink = smoothstep(0.72, 1.0, coast) * smoothstep(30.0, 120.0, zoom);
+		float ink = smoothstep(0.72, 1.0, coast) * smoothstep(30.0, 120.0, zoom) * is_water;   // 只画海侧，免得陆上冒出一堆线
 		c = mix(c, vec3(0.32, 0.35, 0.31), 0.30 * ink * water_ink);
 	}
 
