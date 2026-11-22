@@ -1781,27 +1781,33 @@ func _ensure_hydro() -> void:
 				else:
 					pa.insert(0, best)
 		if pa.size() >= 2:
-			# 穿山检查：河道经过 700 m 以上高地就断开
-			var segs: Array = []
-			var curr := PackedVector2Array()
+			# 穿山：不切断，改为就近绕行——把过高的点挪到附近最低的位置
+			var fixed := PackedVector2Array()
 			for q in pa:
 				if TG.dem_at(q.x, q.y) > 700.0:
-					if curr.size() >= 2:
-						segs.append(curr)
-					curr = PackedVector2Array()
+					var bestq := q
+					var besth := TG.dem_at(q.x, q.y)
+					for kq in 8:
+						var aq := TAU * float(kq) / 8.0
+						for rr2 in [0.03, 0.06, 0.09, 0.12]:
+							var cand: Vector2 = q + Vector2(cos(aq), sin(aq)) * float(rr2)
+							var hq: float = TG.dem_at(cand.x, cand.y)
+							if hq < besth:
+								besth = hq
+								bestq = cand
+						if besth < 400.0:
+							break
+					fixed.append(bestq)
 				else:
-					curr.append(q)
-			if curr.size() >= 2:
-				segs.append(curr)
-			for sg in segs:
-				var mn4 := Vector2(999, 999)
-				var mx4 := Vector2(-999, -999)
-				for v4 in sg:
-					mn4.x = minf(mn4.x, v4.x)
-					mn4.y = minf(mn4.y, v4.y)
-					mx4.x = maxf(mx4.x, v4.x)
-					mx4.y = maxf(mx4.y, v4.y)
-				_riv_list.append({"bb": Rect2(mn4, mx4 - mn4), "p": sg, "r": int(r["r"])})
+					fixed.append(q)
+			var mn4 := Vector2(999, 999)
+			var mx4 := Vector2(-999, -999)
+			for v4 in fixed:
+				mn4.x = minf(mn4.x, v4.x)
+				mn4.y = minf(mn4.y, v4.y)
+				mx4.x = maxf(mx4.x, v4.x)
+				mx4.y = maxf(mx4.y, v4.y)
+			_riv_list.append({"bb": Rect2(mn4, mx4 - mn4), "p": fixed, "r": int(r["r"])})
 	for l in d.get("lakes", []):
 		var lp := PackedVector2Array()
 		var mn2 := Vector2(999, 999)
