@@ -1670,6 +1670,9 @@ func _draw_hydro_layer() -> void:
 		if bb.end.x < lon0 or bb.position.x > lon1 or bb.end.y < lat0 or bb.position.y > lat1:
 			continue
 		var major: bool = int(r["r"]) <= 3
+		# 低倍只画主河道，支流太密会糊成一片（也省 CPU）
+		if not major and map_zoom < 40.0:
+			continue
 		# 笔触化：宽而淡的墨晕 + 细而实的笔心，线宽随缩放略微加粗
 		var pts: PackedVector2Array = r["p"]
 		var core_w: float = (1.6 if major else 1.0) + clampf(map_zoom * 0.012, 0.0, 1.6)
@@ -1687,8 +1690,20 @@ func _draw_hydro_layer() -> void:
 			smooth.append(a2.lerp(b2, 0.25))
 			smooth.append(a2.lerp(b2, 0.75))
 		smooth.append(pts[pts.size() - 1])
-		map_hydro.draw_polyline(smooth, halo2, core_w * 2.3 / ppd)
-		map_hydro.draw_polyline(smooth, col2, core_w / ppd)
+		var solid := smooth
+		var tail := PackedVector2Array()
+		var ncut := mini(5, smooth.size() / 3)
+		if ncut >= 2:
+			solid = smooth.slice(0, smooth.size() - ncut)
+			tail = smooth.slice(smooth.size() - ncut - 1)
+		map_hydro.draw_polyline(solid, halo2, core_w * 2.3 / ppd)
+		map_hydro.draw_polyline(solid, col2, core_w / ppd)
+		# 河口往海里渐隐，避免一根硬线插进水面
+		if tail.size() >= 2:
+			for q3 in range(tail.size() - 1):
+				var fade3: float = 1.0 - float(q3 + 1) / float(tail.size() - 1)
+				var c3 := Color(col2.r, col2.g, col2.b, col2.a * fade3)
+				map_hydro.draw_polyline(PackedVector2Array([tail[q3], tail[q3 + 1]]), c3, core_w / ppd)
 
 	var lake_col := Color(0.42, 0.38, 0.42, 0.0)     # 湖岸不画线（和海岸一致）
 	for l in _lake_list:
@@ -1724,26 +1739,54 @@ func _ensure_hydro() -> void:
 			mn.y = minf(mn.y, v.y)
 			mx.x = maxf(mx.x, v.x)
 			mx.y = maxf(mx.y, v.y)
-		# 入海口：数据里河道常常停在离岸几公里，这里沿末段方向补到海里
+		# 入海口：数据末端常停在内陆，朝多个方向扇出找海（长江口约 121.9E/31.4N）
 		for _end in 2:
-			var idx := pa.size() - 1 if _end == 0 else 0
 			if pa.size() < 2:
 				break
+			var idx := pa.size() - 1 if _end == 0 else 0
 			var tip := pa[idx]
-			if TG.dem_at(tip.x, tip.y) < 0.0:
-				continue                       # 已经在海里，不用补
-			var nxt := pa[idx - 1] if _end == 0 else pa[1]
-			var dir := (tip - nxt).normalized()
-			if dir.length() < 0.5:
+			if TG.dem_at(tip.x, tip.y) < -5.0:
 				continue
-			for _k in 120:
-				tip += dir * 0.004
-				if TG.dem_at(tip.x, tip.y) < 0.0:
-					if _end == 0:
-						pa.append(tip)
-					else:
-						pa.insert(0, tip)
-					break
+			var ref := pa[idx - 1] if _end == 0 else pa[1]
+			var base := (tip - ref).normalized()
+			if base.length() < 0.5:
+				base = Vector2(1.0, 0.0)
+			var best := Vector2.INF
+			var best_d := 1e9
+			for _k in 7:
+				var ang := deg_to_rad(-30.0 + 10.0 * float(_k))
+				var dirw := base.rotated(ang)
+				var t := tip
+				var blocked := false
+				for _step in 260:
+					t += dirw * 0.004
+					if TG.dem_at(t.x, t.y) > 25.0:
+						blocked = true      # 穿山，这条路不算
+						break
+					if TG.dem_at(t.x, t.y) < -5.0:
+						var dd := tip.distance_to(t)
+						if dd < best_d:
+							best_d = dd
+							best = t
+						break
+				if blocked:
+					continue
+			if best == Vector2.INF:
+				# 几大河的真实入海口（长江 121.9E/31.4N，黄河 119.1E/37.8N）：
+				# 数据里末端常停在内陆，这里只在末端离河口够近时接过去，避免乱连线
+				var ESTUARY = [Vector2(121.9, 31.4), Vector2(119.1, 37.8)]
+				for e2 in ESTUARY:
+					# 只接主干（r<=2）且末端已经很接近河口，避免一堆支流被拉到同一点
+					if int(r["r"]) <= 2 and tip.distance_to(e2) < 1.8:
+						var dd2 := tip.distance_to(e2)
+						if dd2 < best_d:
+							best_d = dd2
+							best = e2
+			if best != Vector2.INF:
+				if _end == 0:
+					pa.append(best)
+				else:
+					pa.insert(0, best)
 		if pa.size() >= 2:
 			_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
 	for l in d.get("lakes", []):
