@@ -1780,7 +1780,27 @@ func _ensure_hydro() -> void:
 				else:
 					pa.insert(0, best)
 		if pa.size() >= 2:
-			_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
+			# 穿山检查：河道经过 700 m 以上高地就断开
+			var segs: Array = []
+			var curr := PackedVector2Array()
+			for q in pa:
+				if TG.dem_at(q.x, q.y) > 700.0:
+					if curr.size() >= 2:
+						segs.append(curr)
+					curr = PackedVector2Array()
+				else:
+					curr.append(q)
+			if curr.size() >= 2:
+				segs.append(curr)
+			for sg in segs:
+				var mn4 := Vector2(999, 999)
+				var mx4 := Vector2(-999, -999)
+				for v4 in sg:
+					mn4.x = minf(mn4.x, v4.x)
+					mn4.y = minf(mn4.y, v4.y)
+					mx4.x = maxf(mx4.x, v4.x)
+					mx4.y = maxf(mx4.y, v4.y)
+				_riv_list.append({"bb": Rect2(mn4, mx4 - mn4), "p": sg, "r": int(r["r"])})
 	for l in d.get("lakes", []):
 		var lp := PackedVector2Array()
 		var mn2 := Vector2(999, 999)
