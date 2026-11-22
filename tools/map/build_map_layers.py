@@ -153,12 +153,13 @@ def main():
                              (40.3, 42.6, 10.6, 14.2), (25.8, 29.2, 28.8, 31.2),
                              (88.6, 89.9, 41.6, 43.4)]:
         is_sea &= ~((LON > x0) & (LON < x1) & (LAT > y0) & (LAT < y1))
-    # 去掉陆地上的小水坑：只保留面积 > 25 像素的连通水体（约 600 km² 以上）
+    # 去掉小水体/现代水库：只保留面积 > 200 像素的连通水体（约 4800 km² 以上）；
+    # 大湖由 hydro.json 单独填充，不依赖这里
     lab, nl = ndimage.label(is_sea)
     if nl > 0:
         sizes = ndimage.sum(is_sea, lab, range(1, nl + 1))
         keep = np.zeros(nl + 1, dtype=bool)
-        keep[1:] = sizes >= 25
+        keep[1:] = sizes >= 200
         is_sea = keep[lab]
     # 海岸线抗锯齿：把高程上采样 4 倍算海陆，再缩回来得到每格 0..1 的覆盖率，
     # 这样放大后海岸是渐变的软边，不是 4.9km 一格的硬台阶。
