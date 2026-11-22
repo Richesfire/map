@@ -1871,6 +1871,14 @@ func _ensure_hydro() -> void:
 			mx2.y = maxf(mx2.y, v2.y)
 		if lp.size() >= 3:
 			lp.append(lp[0])
+			# 湖岸线平滑：直边折线磨成曲线（Chaikin 两轮）
+			for _ci in 2:
+				var sm := PackedVector2Array()
+				for _k2 in range(lp.size() - 1):
+					sm.append(lp[_k2].lerp(lp[_k2 + 1], 0.25))
+					sm.append(lp[_k2].lerp(lp[_k2 + 1], 0.75))
+				sm.append(sm[0])
+				lp = sm
 			_lake_list.append({"bb": Rect2(mn2, mx2 - mn2), "p": lp})
 	# 接断口：同一条河被数据切成多段，端点相距 < 0.06° 就合并
 	for _pass in 3:
