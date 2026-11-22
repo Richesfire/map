@@ -1722,10 +1722,10 @@ func _ensure_hydro() -> void:
 			mn.y = minf(mn.y, v.y)
 			mx.x = maxf(mx.x, v.x)
 			mx.y = maxf(mx.y, v.y)
-		# 入海口不该画进海里：裁掉落在海平面以下的端点
-		while pa.size() >= 2 and TG.dem_at(pa[pa.size() - 1].x, pa[pa.size() - 1].y) < -1.0:
+		# 入海口：只裁掉已经明显在海里（低于 -12 m）的端点，河口留在岸上
+		while pa.size() >= 2 and TG.dem_at(pa[pa.size() - 1].x, pa[pa.size() - 1].y) < -12.0:
 			pa.remove_at(pa.size() - 1)
-		while pa.size() >= 2 and TG.dem_at(pa[0].x, pa[0].y) < -1.0:
+		while pa.size() >= 2 and TG.dem_at(pa[0].x, pa[0].y) < -12.0:
 			pa.remove_at(0)
 		if pa.size() >= 2:
 			_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
