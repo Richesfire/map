@@ -1675,7 +1675,10 @@ func _draw_hydro_layer() -> void:
 			continue
 		# 笔触化：宽而淡的墨晕 + 细而实的笔心，线宽随缩放略微加粗
 		var pts: PackedVector2Array = r["p"]
-		var core_w: float = (1.6 if major else 1.0) + clampf(map_zoom * 0.012, 0.0, 1.6)
+		# 宽度按等级分级：等级数字越小河越大（黄河/长江 r=1~3，支流到 7）
+		var lvl := int(r["r"])
+		var wscale := clampf((7.0 - float(lvl)) / 6.0, 0.30, 1.60)
+		var core_w: float = (0.9 + 1.7 * wscale) + clampf(map_zoom * 0.012, 0.0, 1.6)
 		var col := Color(0.24, 0.31, 0.37, (0.55 if major else 0.38) * fade)
 		var halo := Color(0.24, 0.31, 0.37, (0.16 if major else 0.11) * fade)
 		var col2 := col
