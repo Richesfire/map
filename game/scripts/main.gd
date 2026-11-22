@@ -1709,7 +1709,7 @@ func _draw_hydro_layer() -> void:
 				map_hydro.draw_polyline(PackedVector2Array([tail[q3], tail[q3 + 1]]), c3, core_w / ppd)
 
 	# 湖泊/沼泽：填水色（不描边），史记里的云梦泽这类靠这份数据表现
-	var lake_col := Color(0.40, 0.47, 0.49, 0.80 * fade)
+	var lake_col := Color(0.44, 0.52, 0.54, 0.85 * fade)   # 与海水浅色统一
 	for l in _lake_list:
 		var bb2: Rect2 = l["bb"]
 		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
