@@ -172,6 +172,9 @@ def main():
     cover = _ndi.zoom(up, 0.25, order=1).astype(np.float32)
     cover = np.clip(cover, 0.0, 1.0)
     color = land * (1.0 - cover[..., None]) + sea * cover[..., None]
+    # 轻微高斯模糊：把 4.9km 格子的直边化开，放大后不再看成方块拼贴
+    for _c in range(3):
+        color[..., _c] = ndimage.gaussian_filter(color[..., _c], 1.5)
     color = np.clip(color * 255.0, 0, 255).astype(np.uint8)
     color.tofile(DATA / "generated" / "map_color.bin")
     print("map_color.bin", round((DATA / "generated" / "map_color.bin").stat().st_size / 1048576, 1), "MB")
