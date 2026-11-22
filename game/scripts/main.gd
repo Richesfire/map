@@ -1771,17 +1771,6 @@ func _ensure_hydro() -> void:
 						break
 				if blocked:
 					continue
-			if best == Vector2.INF:
-				# 几大河的真实入海口（长江 121.9E/31.4N，黄河 119.1E/37.8N）：
-				# 数据里末端常停在内陆，这里只在末端离河口够近时接过去，避免乱连线
-				var ESTUARY = [Vector2(121.9, 31.4), Vector2(119.1, 37.8)]
-				for e2 in ESTUARY:
-					# 只接主干（r<=2）且末端已经很接近河口，避免一堆支流被拉到同一点
-					if int(r["r"]) <= 2 and tip.distance_to(e2) < 1.8:
-						var dd2 := tip.distance_to(e2)
-						if dd2 < best_d:
-							best_d = dd2
-							best = e2
 			if best != Vector2.INF:
 				if _end == 0:
 					pa.append(best)
