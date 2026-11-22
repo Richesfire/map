@@ -1827,6 +1827,37 @@ func _ensure_hydro() -> void:
 				mx4.x = maxf(mx4.x, v4.x)
 				mx4.y = maxf(mx4.y, v4.y)
 			_riv_list.append({"bb": Rect2(mn4, mx4 - mn4), "p": fixed, "r": int(r["r"])})
+	# 绕行/加密之后可能又拉开小缺口：再做两轮端点缝合（<0.12°）
+	for _pass2 in 2:
+		var joined_any := false
+		for i6 in range(_riv_list.size()):
+			if i6 >= _riv_list.size():
+				break
+			var a6: PackedVector2Array = _riv_list[i6]["p"]
+			if a6.size() < 2:
+				continue
+			for j6 in range(_riv_list.size()):
+				if i6 == j6:
+					continue
+				var b6: PackedVector2Array = _riv_list[j6]["p"]
+				if b6.size() < 2:
+					continue
+				var tail6 := a6[a6.size() - 1]
+				if tail6.distance_to(b6[0]) < 0.12:
+					for q6 in range(1, b6.size()):
+						a6.append(b6[q6])
+				elif tail6.distance_to(b6[b6.size() - 1]) < 0.12:
+					for q6 in range(b6.size() - 2, -1, -1):
+						a6.append(b6[q6])
+				else:
+					continue
+				_riv_list[i6]["p"] = a6
+				_riv_list.remove_at(j6)
+				joined_any = true
+				break
+		if not joined_any:
+			break
+
 	for l in d.get("lakes", []):
 		var lp := PackedVector2Array()
 		var mn2 := Vector2(999, 999)
