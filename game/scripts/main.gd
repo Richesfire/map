@@ -1782,6 +1782,25 @@ func _ensure_hydro() -> void:
 					pa.insert(0, best)
 		if pa.size() >= 2:
 			# 穿山：不切断，改为就近绕行——把过高的点挪到附近最低的位置
+			# 点距太大（>0.12°）的老是直线：用 Catmull-Rom 插值加密，并加一点横向扰动
+			var dense := PackedVector2Array()
+			for i5 in range(pa.size() - 1):
+				var a5 := pa[i5]
+				var b5 := pa[i5 + 1]
+				dense.append(a5)
+				var gap := a5.distance_to(b5)
+				if gap > 0.12:
+					var steps := int(minf(gap / 0.05, 20.0))
+					var perp := Vector2(-(b5 - a5).y, (b5 - a5).x).normalized()
+					for k5 in range(1, steps):
+						var t5 := float(k5) / float(steps)
+						var mid := a5.lerp(b5, t5)
+						var wob := sin(t5 * PI) * 0.012 * sin(float(i5) * 2.7 + t5 * 5.1)
+						dense.append(mid + perp * wob)
+			if pa.size() >= 1:
+				dense.append(pa[pa.size() - 1])
+			pa = dense
+
 			var fixed := PackedVector2Array()
 			for q in pa:
 				if TG.dem_at(q.x, q.y) > 700.0:
