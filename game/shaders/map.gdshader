@@ -10,8 +10,8 @@ uniform float shade_alpha = 0.62;
 uniform float shade_gain = 1.0;
 uniform float lat_limit = 85.0;
 uniform sampler2D palette_tex : filter_nearest, repeat_disable;
-uniform sampler2D color_tex : filter_linear, repeat_disable;   // 离线高程配色
-uniform sampler2D hill_tex : filter_linear, repeat_disable;    // 离线 Hillshade   // 29 类本色（唯一一套调色板）
+uniform sampler2D color_tex : filter_linear_mipmap, repeat_disable;   // 离线高程配色
+uniform sampler2D hill_tex : filter_linear_mipmap, repeat_disable;    // 离线 Hillshade   // 29 类本色（唯一一套调色板）
 uniform sampler2D landform_tex : filter_nearest, repeat_disable;
 
 // 细节层：R = 地貌编号，G = 阴影，B = 水线标记，A = 该 texel 已烘好。

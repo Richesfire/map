@@ -1722,6 +1722,11 @@ func _ensure_hydro() -> void:
 			mn.y = minf(mn.y, v.y)
 			mx.x = maxf(mx.x, v.x)
 			mx.y = maxf(mx.y, v.y)
+		# 入海口不该画进海里：裁掉落在海平面以下的端点
+		while pa.size() >= 2 and TG.dem_at(pa[pa.size() - 1].x, pa[pa.size() - 1].y) < -1.0:
+			pa.remove_at(pa.size() - 1)
+		while pa.size() >= 2 and TG.dem_at(pa[0].x, pa[0].y) < -1.0:
+			pa.remove_at(0)
 		if pa.size() >= 2:
 			_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
 	for l in d.get("lakes", []):
@@ -2887,6 +2892,7 @@ func _setup_map_shader() -> void:
 		var cb := cf.get_buffer(cf.get_length())
 		cf.close()
 		var cimg := Image.create_from_data(8192, 4096, false, Image.FORMAT_RGB8, cb)
+		cimg.generate_mipmaps()
 		_map_mat.set_shader_parameter("color_tex", ImageTexture.create_from_image(cimg))
 		print("[地图] 配色底图 %d MB" % int(cb.size() / 1048576))
 	var sf := FileAccess.open("res://data/generated/map_shade.bin", FileAccess.READ)
@@ -2894,6 +2900,7 @@ func _setup_map_shader() -> void:
 		var sb := sf.get_buffer(sf.get_length())
 		sf.close()
 		var simg := Image.create_from_data(8192, 4096, false, Image.FORMAT_R8, sb)
+		simg.generate_mipmaps()
 		_map_mat.set_shader_parameter("hill_tex", ImageTexture.create_from_image(simg))
 		print("[地图] 阴影底图 %d MB" % int(sb.size() / 1048576))
 	_map_mat.set_shader_parameter("shade_gain", 1.0)
