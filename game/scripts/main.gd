@@ -1683,11 +1683,7 @@ func _draw_hydro_layer() -> void:
 		smooth.append(pts[pts.size() - 1])
 		map_hydro.draw_polyline(smooth, halo2, core_w * 2.3 / ppd)
 		map_hydro.draw_polyline(smooth, col2, core_w / ppd)
-		# 折点补圆，模拟圆头笔触
-		var rr := core_w * 0.5 / ppd
-		if rr > 0.0:
-			for q2 in smooth:
-				map_hydro.draw_circle(q2, rr, col2)
+
 	var lake_col := Color(0.42, 0.38, 0.42, 0.0)     # 湖岸不画线（和海岸一致）
 	for l in _lake_list:
 		if lake_col.a <= 0.0:
@@ -1722,11 +1718,26 @@ func _ensure_hydro() -> void:
 			mn.y = minf(mn.y, v.y)
 			mx.x = maxf(mx.x, v.x)
 			mx.y = maxf(mx.y, v.y)
-		# 入海口：只裁掉已经明显在海里（低于 -12 m）的端点，河口留在岸上
-		while pa.size() >= 2 and TG.dem_at(pa[pa.size() - 1].x, pa[pa.size() - 1].y) < -12.0:
-			pa.remove_at(pa.size() - 1)
-		while pa.size() >= 2 and TG.dem_at(pa[0].x, pa[0].y) < -12.0:
-			pa.remove_at(0)
+		# 入海口：数据里河道常常停在离岸几公里，这里沿末段方向补到海里
+		for _end in 2:
+			var idx := pa.size() - 1 if _end == 0 else 0
+			if pa.size() < 2:
+				break
+			var tip := pa[idx]
+			if TG.dem_at(tip.x, tip.y) < 0.0:
+				continue                       # 已经在海里，不用补
+			var nxt := pa[idx - 1] if _end == 0 else pa[1]
+			var dir := (tip - nxt).normalized()
+			if dir.length() < 0.5:
+				continue
+			for _k in 120:
+				tip += dir * 0.004
+				if TG.dem_at(tip.x, tip.y) < 0.0:
+					if _end == 0:
+						pa.append(tip)
+					else:
+						pa.insert(0, tip)
+					break
 		if pa.size() >= 2:
 			_riv_list.append({"bb": Rect2(mn, mx - mn), "p": pa, "r": int(r["r"])})
 	for l in d.get("lakes", []):
@@ -2668,19 +2679,6 @@ func _draw_map() -> void:
 			if a > 0.01:
 				map_root.draw_texture_rect(_shade_tex, rect, false, Color(0.32, 0.29, 0.24, a))
 
-	# 经纬网（墨线）
-	var y_top := vs.y * 0.5 - (90.0 - map_center.y) * (h / 180.0)
-	var y_bot := y_top + h
-	for lon in range(-180, 181, 30):
-		var gx := _lonlat_to_screen_off(Vector2(float(lon), 0.0), 0.0).x
-		if gx > 62.0 and gx < vs.x - 62.0:
-			map_root.draw_line(Vector2(gx, maxf(y_top, 26.0)), Vector2(gx, minf(y_bot, vs.y - 26.0)),
-					Color(0.34, 0.27, 0.17, 0.18), 1.0)
-	for lat in range(-60, 61, 30):
-		var gy := vs.y * 0.5 - (float(lat) - map_center.y) * (h / 180.0)
-		if gy > 26.0 and gy < vs.y - 26.0:
-			map_root.draw_line(Vector2(62, gy), Vector2(vs.x - 62, gy),
-					Color(0.34, 0.27, 0.17, 0.18), 1.0)
 
 	# 地图上不写任何文字（缩放读数也去掉了）：要读倍率用 --mapsize 或看 debug
 
