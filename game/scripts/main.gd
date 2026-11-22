@@ -136,6 +136,7 @@ var pin_ll := Vector2(INF, INF)   # 旅行标：经纬度（钉在地图上）
 var has_pin := false
 var loading_box: Control = null
 var dragging := false
+var _press_pos := Vector2.ZERO
 var pin_drag := false
 var _world_tex: ImageTexture = null
 var _shade_tex: ImageTexture = null
@@ -1042,12 +1043,17 @@ func _map_input(e: InputEvent) -> void:
 		var mb := e as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			if mb.pressed:
-				var hit := _poi_pick(mb.position, true)
-				if not hit.is_empty():
-					_poi_open(hit)
-					return
-				_close_city_panel()
-			dragging = mb.pressed
+				_press_pos = mb.position
+				dragging = true          # 按下就允许拖动，点在聚落上也能拖
+			else:
+				dragging = false
+				# 松开时没怎么移动才算点击（避免拖动地图时误开面板）
+				if _press_pos.distance_to(mb.position) < 6.0:
+					var hit := _poi_pick(mb.position, true)
+					if not hit.is_empty():
+						_poi_open(hit)
+						return
+					_close_city_panel()
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
 			pin_drag = mb.pressed
 			if mb.pressed:
@@ -1770,9 +1776,18 @@ func _ensure_hydro() -> void:
 				var b: PackedVector2Array = _riv_list[j]["p"]
 				if b.is_empty():
 					continue
+				var b_end := b[b.size() - 1]
+				var joined := false
+				# 四种接法都试：首尾、尾首、尾尾、首首
 				if a_end.distance_to(b[0]) < 0.06:
 					for q in range(1, b.size()):
 						a.append(b[q])
+					joined = true
+				elif a_end.distance_to(b_end) < 0.06:
+					for q in range(b.size() - 2, -1, -1):
+						a.append(b[q])
+					joined = true
+				if joined:
 					_riv_list[i]["p"] = a
 					_riv_list.remove_at(j)
 					merged = true
