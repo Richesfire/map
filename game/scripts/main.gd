@@ -1708,14 +1708,15 @@ func _draw_hydro_layer() -> void:
 				var c3 := Color(col2.r, col2.g, col2.b, col2.a * fade3)
 				map_hydro.draw_polyline(PackedVector2Array([tail[q3], tail[q3 + 1]]), c3, core_w / ppd)
 
-	var lake_col := Color(0.42, 0.38, 0.42, 0.0)     # 湖岸不画线（和海岸一致）
+	# 湖泊/沼泽：填水色（不描边），史记里的云梦泽这类靠这份数据表现
+	var lake_col := Color(0.40, 0.47, 0.49, 0.80 * fade)
 	for l in _lake_list:
-		if lake_col.a <= 0.0:
-			break
 		var bb2: Rect2 = l["bb"]
 		if bb2.end.x < lon0 or bb2.position.x > lon1 or bb2.end.y < lat0 or bb2.position.y > lat1:
 			continue
-		map_hydro.draw_polyline(l["p"], lake_col, 2.0 / ppd)
+		var poly: PackedVector2Array = l["p"]
+		if poly.size() >= 3:
+			map_hydro.draw_colored_polygon(poly, lake_col)
 	map_hydro.draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
